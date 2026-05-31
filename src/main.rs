@@ -473,18 +473,8 @@ fn build_provider_brains(
                     .clone()
                     .unwrap_or_else(|| "https://api.openai.com/v1".into());
                 for model in &pconfig.models {
-                    let adapter = if pconfig.adapter == "ollama" {
-                        sparrow::provider::openai_compat::OpenAICompatAdapter::ollama(
-                            model, &base_url,
-                        )
-                    } else {
-                        sparrow::provider::openai_compat::OpenAICompatAdapter::new(
-                            model,
-                            api_key.clone(),
-                            &base_url,
-                        )
-                    };
-                    brains.push(Arc::new(adapter));
+                    let adapter: Arc<dyn sparrow::provider::Brain> = if pconfig.adapter == "ollama" { Arc::new(sparrow::provider::ollama::OllamaAdapter::new(model, &base_url)) } else { Arc::new(sparrow::provider::openai_compat::OpenAICompatAdapter::new(model, api_key.clone(), &base_url)) };
+                    brains.push(adapter);
                 }
             }
             _ if warn => eprintln!("Unknown adapter: {}", pconfig.adapter),
@@ -506,7 +496,7 @@ fn build_provider_brains(
             );
         }
         let adapter =
-            sparrow::provider::openai_compat::OpenAICompatAdapter::ollama("qwen3.5:32b", &ollama_url);
+            sparrow::provider::ollama::OllamaAdapter::new("qwen3.5:32b", &ollama_url);
         providers.insert(
             "ollama".into(),
             vec![Arc::new(adapter) as Arc<dyn sparrow::provider::Brain>],
@@ -595,7 +585,7 @@ async fn run_swarm(
     use std::sync::Arc;
 
     let auth = sparrow::auth::store::ChainedAuthStore::new(config.config_dir.clone());
-    let mut providers: HashMap<String, Vec<Arc<dyn Brain>>> = HashMap::new();
+    let mut providers: HashMap<String, Vec<Arc<dyn sparrow::provider::Brain>>> = HashMap::new();
 
     for (name, pconfig) in &config.providers {
         let cred = auth.get(name);
@@ -605,7 +595,7 @@ async fn run_swarm(
         if api_key.is_empty() && pconfig.adapter != "ollama" {
             continue;
         }
-        let mut brains: Vec<Arc<dyn Brain>> = Vec::new();
+        let mut brains: Vec<Arc<dyn sparrow::provider::Brain>> = Vec::new();
         match pconfig.adapter.as_str() {
             "anthropic-messages" => {
                 for model in &pconfig.models {
@@ -624,18 +614,8 @@ async fn run_swarm(
                     .clone()
                     .unwrap_or_else(|| "https://api.openai.com/v1".into());
                 for model in &pconfig.models {
-                    let adapter = if pconfig.adapter == "ollama" {
-                        sparrow::provider::openai_compat::OpenAICompatAdapter::ollama(
-                            model, &base_url,
-                        )
-                    } else {
-                        sparrow::provider::openai_compat::OpenAICompatAdapter::new(
-                            model,
-                            api_key.clone(),
-                            &base_url,
-                        )
-                    };
-                    brains.push(Arc::new(adapter));
+                    let adapter: Arc<dyn sparrow::provider::Brain> = if pconfig.adapter == "ollama" { Arc::new(sparrow::provider::ollama::OllamaAdapter::new(model, &base_url)) } else { Arc::new(sparrow::provider::openai_compat::OpenAICompatAdapter::new(model, api_key.clone(), &base_url)) };
+                    brains.push(adapter);
                 }
             }
             _ => {}
@@ -902,7 +882,7 @@ async fn handle_replay(
                 use sparrow::provider::Brain;
                 use sparrow::router::BasicRouter;
                 let auth = sparrow::auth::store::ChainedAuthStore::new(config.config_dir.clone());
-                let mut providers: std::collections::HashMap<String, Vec<Arc<dyn Brain>>> = std::collections::HashMap::new();
+                let mut providers: std::collections::HashMap<String, Vec<Arc<dyn sparrow::provider::Brain>>> = std::collections::HashMap::new();
                 for (name, pconfig) in &config.providers {
                     let cred = auth.get(name);
                     let api_key = cred.and_then(|c| c.expose_key().map(String::from)).unwrap_or_default();
@@ -955,12 +935,12 @@ async fn handle_chat(
     use sparrow::router::BasicRouter;
 
     let auth = sparrow::auth::store::ChainedAuthStore::new(config.config_dir.clone());
-    let mut providers: std::collections::HashMap<String, Vec<Arc<dyn Brain>>> = std::collections::HashMap::new();
+    let mut providers: std::collections::HashMap<String, Vec<Arc<dyn sparrow::provider::Brain>>> = std::collections::HashMap::new();
     for (name, pconfig) in &config.providers {
         let cred = auth.get(name);
         let api_key = cred.and_then(|c| c.expose_key().map(String::from)).unwrap_or_default();
         if api_key.is_empty() && pconfig.adapter != "ollama" { continue; }
-        let mut brains: Vec<Arc<dyn Brain>> = Vec::new();
+        let mut brains: Vec<Arc<dyn sparrow::provider::Brain>> = Vec::new();
         match pconfig.adapter.as_str() {
             "anthropic-messages" => {
                 for model in &pconfig.models {
@@ -971,7 +951,7 @@ async fn handle_chat(
                 let base_url = pconfig.base_url.clone().unwrap_or_else(|| "https://api.openai.com/v1".into());
                 for model in &pconfig.models {
                     if pconfig.adapter == "ollama" {
-                        brains.push(Arc::new(sparrow::provider::openai_compat::OpenAICompatAdapter::ollama(model, &base_url)));
+                        brains.push(Arc::new(sparrow::provider::ollama::OllamaAdapter::new(model, &base_url)));
                     } else {
                         brains.push(Arc::new(sparrow::provider::openai_compat::OpenAICompatAdapter::new(model, api_key.clone(), &base_url)));
                     }
@@ -1053,7 +1033,7 @@ async fn handle_gateway(
 
             // Build providers
             let auth = sparrow::auth::store::ChainedAuthStore::new(config.config_dir.clone());
-            let mut providers: HashMap<String, Vec<Arc<dyn Brain>>> = HashMap::new();
+            let mut providers: HashMap<String, Vec<Arc<dyn sparrow::provider::Brain>>> = HashMap::new();
 
             for (name, pconfig) in &config.providers {
                 let cred = auth.get(name);
@@ -1063,7 +1043,7 @@ async fn handle_gateway(
                 if api_key.is_empty() && pconfig.adapter != "ollama" {
                     continue;
                 }
-                let mut brains: Vec<Arc<dyn Brain>> = Vec::new();
+                let mut brains: Vec<Arc<dyn sparrow::provider::Brain>> = Vec::new();
                 match pconfig.adapter.as_str() {
                     "anthropic-messages" => {
                         for model in &pconfig.models {
@@ -1081,18 +1061,8 @@ async fn handle_gateway(
                             "https://api.openai.com/v1".into()
                         });
                         for model in &pconfig.models {
-                            let adapter = if pconfig.adapter == "ollama" {
-                                sparrow::provider::openai_compat::OpenAICompatAdapter::ollama(
-                                    model, &base_url,
-                                )
-                            } else {
-                                sparrow::provider::openai_compat::OpenAICompatAdapter::new(
-                                    model,
-                                    api_key.clone(),
-                                    &base_url,
-                                )
-                            };
-                            brains.push(Arc::new(adapter));
+                            let adapter: Arc<dyn sparrow::provider::Brain> = if pconfig.adapter == "ollama" { Arc::new(sparrow::provider::ollama::OllamaAdapter::new(model, &base_url)) } else { Arc::new(sparrow::provider::openai_compat::OpenAICompatAdapter::new(model, api_key.clone(), &base_url)) };
+                            brains.push(adapter);
                         }
                     }
                     _ => {}

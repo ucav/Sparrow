@@ -8,6 +8,7 @@ use crate::event::{StopReason, TokenUsage};
 pub mod anthropic;
 pub mod openai_compat;
 pub mod responses;
+pub mod ollama;
 
 // ─── Model capabilities ─────────────────────────────────────────────────────────
 
