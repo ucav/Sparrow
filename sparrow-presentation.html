@@ -52,14 +52,12 @@
     background:linear-gradient(90deg,#f2a93c,#f0674a,#f2a93c);background-size:220% 100%;
     -webkit-background-clip:text;background-clip:text;color:transparent;
     animation:wordin .6s ease 1.0s both,shimmer 3.2s linear 1.6s infinite}
-  .bird path.stroke{stroke-dasharray:520;stroke-dashoffset:520;animation:draw 1.15s cubic-bezier(.5,0,.2,1) .15s forwards}
-  @keyframes draw{to{stroke-dashoffset:0}}
-  .bird path.fill{opacity:0;animation:fillin .7s ease 1.05s forwards}
-  @keyframes fillin{to{opacity:1}}
-  .bird g.wings{transform-origin:50px 48px;animation:flap 2.6s ease-in-out 1.4s infinite}
-  @keyframes flap{0%,100%{transform:scaleX(1) scaleY(1)}50%{transform:scaleX(.9) scaleY(1.04)}}
   @keyframes shimmer{to{background-position:220% 0}}
   @keyframes wordin{from{opacity:0;letter-spacing:24px;filter:blur(6px)}to{opacity:1;letter-spacing:11px;filter:none}}
+  .logo-eye-open{transform-box:fill-box;transform-origin:center;animation:logo-blink 4.4s infinite}
+  @keyframes logo-blink{0%,93%,100%{transform:scaleY(1)}96.5%{transform:scaleY(.08)}}
+  .logo-tool{transform-box:fill-box;transform-origin:bottom center;animation:logo-tap 2.6s ease-in-out infinite}
+  @keyframes logo-tap{0%,100%{rotate:26deg}50%{rotate:34deg}}
   .stat{display:flex;align-items:center;gap:7px;padding:0 15px;border-right:1px solid var(--line);color:var(--dim)}
   .stat:last-child{border-right:none}
   .stat .k{color:var(--dimmer);font-size:10px;letter-spacing:.7px;text-transform:uppercase}
@@ -150,58 +148,74 @@
 <body>
   <!-- CANONICAL SPARROW SVG SYMBOLS (source: sparrow-logo.html) -->
   <svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
-    <defs>
-      <linearGradient id="sp-body" x1="0" y1="0" x2="1" y2="1">
+  <defs>
+      <linearGradient id="sp-body" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="#f8bf57"/><stop offset="1" stop-color="#ef9b2f"/>
+      </linearGradient>
+      <linearGradient id="sp-wing" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#e8901f"/><stop offset="1" stop-color="#d2761d"/>
       </linearGradient>
       <linearGradient id="sp-belly" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="#fde6bd"/><stop offset="1" stop-color="#f7d089"/>
       </linearGradient>
-      <linearGradient id="sp-key" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0" stop-color="#b9b0a3"/><stop offset="1" stop-color="#f2c94c"/>
+      <linearGradient id="sp-steel" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="#cdc6ba"/><stop offset="1" stop-color="#8f877a"/>
       </linearGradient>
-      <symbol id="sparrow" viewBox="0 0 240 240">
-        <path d="M138 198 L138 208 M134 208 L142 208 M138 203 L142 208 M138 203 L134 208" fill="none" stroke="#5a4326" stroke-width="2.2" stroke-linecap="round"/>
-        <path d="M102 198 L102 208 M98 208 L106 208 M102 203 L106 208 M102 203 L98 208" fill="none" stroke="#5a4326" stroke-width="2.2" stroke-linecap="round"/>
-        <path d="M40 120 L22 106 L32 134 L14 120 L26 142 L10 134 L24 150" fill="none" stroke="#5a4326" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-        <ellipse cx="100" cy="140" rx="62" ry="54" fill="url(#sp-body)"/>
-        <ellipse cx="108" cy="158" rx="34" ry="28" fill="url(#sp-belly)"/>
-        <path d="M40 120 C34 108, 48 98, 64 100 C56 112, 50 120, 40 120 Z" fill="#d4892a"/>
-        <path d="M150 118 C162 104, 178 98, 190 104 C188 118, 174 128, 150 118 Z" fill="#e8962b" stroke="#5a4326" stroke-width="1.8" stroke-linejoin="round"/>
-        <g transform="translate(172,96) rotate(-15)">
-          <rect x="0" y="0" width="26" height="5" rx="2" fill="url(#sp-key)"/>
-          <circle cx="24" cy="2.5" r="6" fill="none" stroke="url(#sp-key)" stroke-width="2.5"/>
-          <rect x="12" y="5" width="3" height="7" rx="1" fill="url(#sp-key)"/>
-          <rect x="6" y="5" width="3" height="5" rx="1" fill="url(#sp-key)"/>
-        </g>
-        <path d="M72 82 L115 80 L138 88" fill="none" stroke="#1a1008" stroke-width="3"/>
-        <ellipse cx="96" cy="92" rx="34" ry="32" fill="url(#sp-body)"/>
-        <path d="M88 64 L86 44 M86 44 L80 34 M86 44 L92 32" fill="none" stroke="#5a4326" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M96 62 L98 42 M98 42 L92 30 M98 42 L104 28" fill="none" stroke="#5a4326" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M72 82 L88 78" stroke="#5a4326" stroke-width="4" stroke-linecap="round"/>
-        <circle cx="80" cy="88" r="5" fill="#fff"/>
-        <circle cx="80" cy="88" r="2.8" fill="#0e0b08"/>
-        <path d="M106 78 L122 82" stroke="#5a4326" stroke-width="4" stroke-linecap="round"/>
-        <ellipse cx="114" cy="89" rx="9" ry="10" fill="#1a1008"/>
-        <ellipse cx="114" cy="89" rx="7" ry="8" fill="#221910"/>
-        <path d="M92 96 L100 108 L98 106 L112 108 L98 100 Z" fill="#f0674a" stroke="#d05540" stroke-width="1.2" stroke-linejoin="round"/>
-        <circle cx="74" cy="102" r="7" fill="#f0674a" opacity="0.35"/>
-      </symbol>
-      <symbol id="sparrow-cockpit" viewBox="0 0 64 64">
-        <ellipse cx="28" cy="30" rx="20" ry="19" fill="url(#sp-body)"/>
-        <path d="M24 14 L22 8 M22 8 L18 2 M22 8 L26 1" fill="none" stroke="#5a4326" stroke-width="2" stroke-linecap="round"/>
-        <path d="M30 13 L31 7 M31 7 L27 1 M31 7 L34 0" fill="none" stroke="#5a4326" stroke-width="1.8" stroke-linecap="round"/>
-        <path d="M14 24 L26 21" stroke="#5a4326" stroke-width="3.5" stroke-linecap="round"/>
-        <circle cx="20" cy="28" r="4" fill="#fff"/><circle cx="20" cy="28" r="2.2" fill="#0e0b08"/>
-        <path d="M36 22 L46 24" stroke="#5a4326" stroke-width="3.5" stroke-linecap="round"/>
-        <ellipse cx="42" cy="28" rx="7" ry="8" fill="#1a1008"/><ellipse cx="42" cy="28" rx="5.5" ry="6.5" fill="#221910"/>
-        <path d="M26 34 L30 40 L30 38 L37 40 L30 37 Z" fill="#f0674a" stroke="#d05540" stroke-width="1" stroke-linejoin="round"/>
-        <circle cx="16" cy="38" r="5" fill="#f0674a" opacity="0.35"/>
-      </symbol>
-    </defs>
-  </svg>
 
-  <div class="win">
+      <symbol id="sparrow" viewBox="0 0 240 240">
+        <!-- tail -->
+        <path d="M150 150 q58 6 60 52 q-46 -2 -64 -28 z" fill="url(#sp-wing)"/>
+        <!-- body -->
+        <path d="M120 50 C168 50 182 92 182 132 C182 184 154 204 120 204
+                 C86 204 58 184 58 132 C58 92 72 50 120 50 Z"
+              fill="url(#sp-body)" stroke="#7a4f1c" stroke-width="3.5"/>
+        <!-- crest tufts -->
+        <path d="M112 52 q-4 -22 8 -28 q3 12 0 27 z" fill="url(#sp-wing)" stroke="#7a4f1c" stroke-width="2.4"/>
+        <path d="M122 50 q6 -20 18 -20 q-2 12 -12 24 z" fill="url(#sp-wing)" stroke="#7a4f1c" stroke-width="2.4"/>
+        <!-- belly -->
+        <ellipse cx="118" cy="150" rx="40" ry="46" fill="url(#sp-belly)"/>
+        <!-- tucked back wing -->
+        <path d="M70 110 C58 132 60 168 86 182 C92 156 88 128 84 112 Z"
+              fill="url(#sp-wing)" stroke="#7a4f1c" stroke-width="3"/>
+        <!-- beak -->
+        <path d="M104 124 L130 121 L113 142 Z" fill="#f1862a" stroke="#7a4f1c" stroke-width="2.4" stroke-linejoin="round"/>
+        <!-- cheek blush -->
+        <ellipse cx="92" cy="138" rx="9" ry="6" fill="#f0674a" opacity=".45"/>
+        <!-- open eye -->
+        <g class="logo-eye-open">
+          <circle cx="100" cy="106" r="17" fill="#fff" stroke="#7a4f1c" stroke-width="2.6"/>
+          <circle cx="103" cy="108" r="8.5" fill="#2a1c0e"/>
+          <circle cx="99" cy="103" r="3.4" fill="#fff"/>
+        </g>
+        <!-- pirate eye patch + strap -->
+        <path d="M86 86 C110 74 150 80 168 100" fill="none" stroke="#221910" stroke-width="6" stroke-linecap="round"/>
+        <ellipse cx="146" cy="108" rx="20" ry="17" fill="#221910"/>
+        <ellipse cx="146" cy="106" rx="20" ry="15" fill="#2c2114"/>
+        <!-- gold hoop earring -->
+        <circle cx="150" cy="138" r="7" fill="none" stroke="#f2c94c" stroke-width="3.4"/>
+        <!-- front wing (the "hand") -->
+        <path d="M138 150 C166 150 178 168 168 192 C150 188 138 172 134 156 Z"
+              fill="url(#sp-wing)" stroke="#7a4f1c" stroke-width="3"/>
+        <!-- wrench held by the wing -->
+        <g transform="translate(156,176)">
+          <g class="logo-tool" transform="rotate(28)">
+            <rect x="-5" y="-44" width="10" height="46" rx="5" fill="url(#sp-steel)" stroke="#5f584d" stroke-width="2"/>
+            <path d="M-11 -44 L11 -44 L11 -58 L4.5 -58 L4.5 -50 L-4.5 -50 L-4.5 -58 L-11 -58 Z"
+                  fill="url(#sp-steel)" stroke="#5f584d" stroke-width="2" stroke-linejoin="round"/>
+            <rect x="-2" y="-40" width="2.6" height="34" rx="1.3" fill="#fff" opacity=".35"/>
+          </g>
+        </g>
+        <!-- feet -->
+        <g stroke="#e07e26" stroke-width="5" stroke-linecap="round" fill="none">
+          <path d="M108 200 L108 214 M101 218 L108 214 L115 218 M108 214 L108 220"/>
+          <path d="M132 200 L132 214 M125 218 L132 214 L139 218 M132 214 L132 220"/>
+        </g>
+      </symbol>
+
+  </defs>
+</svg>
+
+<div class="win">
     <div class="chrome">
       <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
       <span class="nm"><b>sparrow</b> — live demo · ~/projects/orbit-api</span>
@@ -209,7 +223,7 @@
     </div>
 
     <div class="cockpit">
-      <div class="cmark"><svg width="32" height="32" aria-label="Sparrow cockpit mark" style="filter:drop-shadow(0 0 8px rgba(242,169,60,.52))"><use href="#sparrow-cockpit"/></svg><span class="w word">SPARROW</span></div>
+      <div class="cmark"><svg width="32" height="32" aria-label="Sparrow canonical logo" style="filter:drop-shadow(0 0 8px rgba(242,169,60,.52))"><use href="#sparrow"/></svg><span class="w word">SPARROW</span></div>
       <div class="stat"><span class="k">route</span><span class="route" id="route">idle</span></div>
       <div class="stat"><span class="k">cost</span><span class="cost" id="cost">$0.000</span></div>
       <div class="stat"><span class="k">tokens</span><span class="tok" id="tok">0</span></div>
@@ -370,7 +384,7 @@ async function run(){
   line('<span class="sec">— one task, the whole swarm —</span>');
   await typeCmd('run "add token revocation to the auth service"',tok);if(T())return;
   await sleep(700);
-  setRoute('opus → nemotron'); 
+  setRoute('opus → nemotron');
   line('<span class="muted">↳ router: feature/medium → plan on <span class="acc">opus</span>, code on <span class="acc">nemotron (free)</span></span>');
   await sleep(900);if(T())return;
   setSwarm('planner','thinking','analyzing repository and constraints');

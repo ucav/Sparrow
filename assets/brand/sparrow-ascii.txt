@@ -1,13 +1,13 @@
-        ^^
-      .-~~~-.
-     /__     \
-    | o   ██  |
-    |    v    |
-    | .       |
-     \ \__/  /
-      '-..-'
-      /|  |\  ╤━o
-     '_|  |_'
+        /\  /)
+      .-`--'-.
+    .'  o  ██ `.
+   /   .  v    \
+  |     \___/   |
+  |      \_/  ╭─┤
+   \   /|    ╰─┘
+    '-/ |__.-'
+      /_    _\
+     _/      \_
 
-Sparrow mascot — pirate & builder
+Sparrow mascot — pirate-builder with wrench
 "one cli · grows with you"
