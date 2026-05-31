@@ -53,7 +53,7 @@ impl Tool for Git {
             let msg = args["message"].as_str().unwrap_or("auto-commit");
             let msg_file = ctx.workspace_root.join(".git").join("SPARROW_COMMIT_MSG");
             std::fs::write(&msg_file, msg)?;
-            git_args.push("--file".into());
+            git_args.push("-F".into());
             git_args.push(msg_file.to_string_lossy().to_string());
             message_file = Some(msg_file);
         }
