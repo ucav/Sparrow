@@ -51,6 +51,12 @@
     background:linear-gradient(90deg,#f2a93c,#f0674a,#f2a93c);background-size:220% 100%;
     -webkit-background-clip:text;background-clip:text;color:transparent;
     animation:wordin .6s ease 1.0s both,shimmer 3.2s linear 1.6s infinite}
+  .bird path.stroke{stroke-dasharray:520;stroke-dashoffset:520;animation:draw 1.15s cubic-bezier(.5,0,.2,1) .15s forwards}
+  @keyframes draw{to{stroke-dashoffset:0}}
+  .bird path.fill{opacity:0;animation:fillin .7s ease 1.05s forwards}
+  @keyframes fillin{to{opacity:1}}
+  .bird g.wings{transform-origin:50px 48px;animation:flap 2.6s ease-in-out 1.4s infinite}
+  @keyframes flap{0%,100%{transform:scaleX(1) scaleY(1)}50%{transform:scaleX(.9) scaleY(1.04)}}
   @keyframes shimmer{to{background-position:220% 0}}
   @keyframes wordin{from{opacity:0;letter-spacing:24px;filter:blur(6px)}to{opacity:1;letter-spacing:11px;filter:none}}
   .stat{display:flex;align-items:center;gap:7px;padding:0 15px;border-right:1px solid var(--line);color:var(--dim)}
@@ -78,11 +84,16 @@
   .caret{display:inline-block;width:7px;height:13px;background:var(--agent);margin-left:2px;vertical-align:-2px;animation:bl 1.05s steps(1) infinite}
   @keyframes bl{50%{opacity:0}}
   .sp{display:inline-block;color:var(--brand)}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .spin-star{display:inline-block;animation:spin 1s steps(8) infinite;color:var(--brand)}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}
+  .led-pulse{display:inline-block;width:7px;height:7px;border-radius:50%;animation:pulse 1.3s ease-in-out infinite;background:var(--agent)}
   .verb{display:inline-block;color:var(--brand);min-width:68px;margin-left:4px}
 
   /* ascii bird */
   .bird{line-height:1.18;font-size:14px;margin:4px auto 6px;width:max-content;max-width:100%;position:relative}
-  .bird-ghost{color:var(--brand);opacity:0;filter:blur(1px);transform:translateX(-6px);animation:ghostin 1s ease 1.25s forwards}
+  .bird-ghost{color:var(--brand);opacity:0;filter:blur(8px);transform:translateX(-11px);pointer-events:none}
+  .bird-ghost.go{animation:ghostin 1s ease 1.25s forwards}
   @keyframes ghostin{0%{opacity:0}40%{opacity:.22}100%{opacity:0}}
   .bird .fr{color:var(--brand)} .bird .eye{color:#fff} .bird .patch{color:#1c150c;background:#1c150c;border-radius:2px}
   .bird .beak{color:var(--coral)} .bird .tool{color:var(--steel)} .bird .gold{color:var(--gold)} .bird .belly{color:#f7d089}
@@ -109,6 +120,10 @@
   .cap .c{color:var(--add)} .cap b{color:var(--fg);font-weight:600}
   .sec{color:var(--dimmer);font-size:10.5px;letter-spacing:2px;text-transform:uppercase;margin:14px 0 4px}
   .tg-bubble{border-left:2px solid var(--planner);padding-left:10px;margin:2px 0;color:var(--dim)}
+  .learn-toast{animation:learnpop 4.2s ease}
+  @keyframes learnpop{0%{opacity:0;transform:translateY(5px)}10%{opacity:1;transform:none}82%{opacity:1}100%{opacity:0;transform:translateY(-5px)}}
+  .boot-line{opacity:0;animation:fin .35s ease forwards}
+  @keyframes fin{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 </style>
 </head>
 <body>
@@ -188,9 +203,34 @@ const term=document.getElementById('term');
 const $=id=>document.getElementById(id);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 let RUN=0; // run token to allow restart
-const verbs=['Soaring','Gliding','Diving','Scouting','Perching','Foraging','Wheeling'];
-let vi=0;
-setInterval(()=>{document.querySelectorAll('.verb').forEach(v=>{v.textContent=verbs[vi++%verbs.length]})},2200);
+const FLIGHT_VERBS=['Soaring','Gliding','Diving','Scouting','Perching','Foraging','Wheeling'];
+let _vi=0;
+function startVerbCycle(elId){
+  const el=document.getElementById(elId);
+  if(!el)return;
+  setInterval(()=>{el.textContent=FLIGHT_VERBS[_vi++%FLIGHT_VERBS.length]},2200);
+}
+setInterval(()=>{document.querySelectorAll('.verb').forEach(v=>{v.textContent=FLIGHT_VERBS[_vi++%FLIGHT_VERBS.length]})},2200);
+const LEARNED_SKILLS=['fix_revoked_token','run_auth_suite','patch_session','audit_emit','write-and-fix-tests','refactor-safely','debug-systematically'];
+let _si=0;
+function pulseLearnToast(elId){
+  const el=document.getElementById(elId);
+  if(!el)return;
+  function pulse(){
+    el.querySelector('b').textContent=LEARNED_SKILLS[_si++%LEARNED_SKILLS.length];
+    el.classList.remove('learn-toast');void el.offsetWidth;el.classList.add('learn-toast');
+  }
+  setTimeout(()=>{pulse();setInterval(pulse,9000)},5500);
+}
+function addBootLine(parent,html,index){
+  const d=document.createElement('div');
+  d.className='ln boot-line';
+  d.innerHTML=html;
+  d.style.animationDelay=(index*250)+'ms';
+  parent.appendChild(d);
+  term.scrollTop=term.scrollHeight;
+  return d;
+}
 
 function line(html,cls=''){const d=document.createElement('div');d.className='ln '+cls;d.innerHTML=html;term.appendChild(d);term.scrollTop=term.scrollHeight;return d;}
 function gap(){line('&nbsp;');}
@@ -202,10 +242,8 @@ async function typeCmd(text,tok){
   cur.remove();return d;
 }
 async function spin(label,ms,doneHtml,tok){
-  const d=line('<span class="sp">⠋</span> <span class="verb">Soaring</span> <span class="muted">'+label+'</span>');
-  const sp=d.querySelector('.sp');const fr=['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];let i=0;
-  const iv=setInterval(()=>sp.textContent=fr[i++%fr.length],80);
-  await sleep(ms);clearInterval(iv);if(tok!==RUN)return d;
+  const d=line('<span class="spin-star">✦</span> <span class="verb">Soaring</span> <span class="muted">'+label+'</span>');
+  await sleep(ms);if(tok!==RUN)return d;
   if(doneHtml){d.className='ln';d.innerHTML=doneHtml;}return d;
 }
 
@@ -256,6 +294,10 @@ async function run(){
   line(BIRD,'bird bird-ghost');
   line(BIRD,'bird');
   line('<span class="tagline"><b class="word">SPARROW</b>  v0.1.0 — one cli · grows with you · pirate &amp; builder</span>');
+  addBootLine(term,'<span id="learn-toast">✦ skill learned · <b>write-and-fix-tests</b></span>',0);
+  setTimeout(()=>{const ghost=document.querySelector('.bird-ghost');if(ghost)ghost.classList.add('go')},1300);
+  pulseLearnToast('learn-toast');
+  startVerbCycle('verb');
   await sleep(1100);if(T())return;
   const boot=[
     ['router  ','5 providers online','planner'],
@@ -265,7 +307,7 @@ async function run(){
     ['memory  ','4 tiers · knows you across 7 sessions','ok'],
     ['autonomy','dial: supervised → trusted → autonomous','acc'],
   ];
-  for(const b of boot){line('<span class="dimd">'+b[0]+'</span>  <span class="'+b[2]+'">'+b[1]+'</span>');await sleep(420);if(T())return;}
+  for(const [i,b] of boot.entries()){addBootLine(term,'<span class="dimd">'+b[0]+'</span>  <span class="'+b[2]+'">'+b[1]+'</span>',i+1);await sleep(420);if(T())return;}
   line('<span class="ok">✓ ready</span>  <span class="muted">one binary. no dependencies. no other CLI to install.</span>');
   await sleep(1100);if(T())return;gap();
 
@@ -285,7 +327,7 @@ async function run(){
   await spin('coder · persisting revocation to store…',1700,'<span class="coder">◆ coder</span>    <span class="muted">patched · re-running…</span><span class="caret"></span>',tok);addTok(1900);addCost(0.003);if(T())return;
   await spin('verifier · re-review…',1500,'<span class="verifier">◆ verifier</span> <span class="ok">✓ PASS · 13 passed · no regressions</span>',tok);if(T())return;
   line('<span class="acc">● checkpoint</span>  <span class="muted">snapshot #4 saved — rewind anytime with <span class="b">←</span></span>');await sleep(800);if(T())return;
-  line('<span class="acc">✦ skill learned</span>  <span class="muted">"persist_revocation" → added to library (now 53)</span>');await sleep(800);if(T())return;
+  line('<span class="acc learn-toast">✦ skill learned</span>  <span class="muted"><b>write-and-fix-tests</b> → added to library (now 53)</span>');await sleep(800);if(T())return;
   line('<span class="ok">✓ done</span>  <span class="muted">11.4s · cost <span class="cost">$0.013</span> · <span class="ok">96% served free / local</span></span>');
   await sleep(1300);if(T())return;gap();
 
