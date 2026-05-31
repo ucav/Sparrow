@@ -979,4 +979,109 @@ mod tests {
             assert_eq!(approvals.len(), 1);
         });
     }
+
+    // ─── WS8 Onboarding Tests ───────────────────────────────────────────
+
+    #[test]
+    fn test_user_mode_default_beginner() {
+        use sparrow::onboarding::UserMode;
+        assert_eq!(UserMode::default(), UserMode::Beginner);
+    }
+
+    #[test]
+    fn test_lessons_count() {
+        use sparrow::onboarding::Onboarding;
+        let ob = Onboarding::default();
+        assert_eq!(ob.lessons.len(), 5);
+        assert_eq!(ob.lessons[0].id, "run");
+        assert_eq!(ob.lessons[4].id, "gateway");
+    }
+
+    #[test]
+    fn test_friendly_error_no_provider() {
+        let msg = sparrow::onboarding::Onboarding::friendly_error("no_provider", "nvidia");
+        assert!(msg.contains("sparrow auth add"));
+        assert!(msg.contains("NVIDIA_API_KEY"));
+    }
+
+    #[test]
+    fn test_examples_gallery() {
+        let examples = sparrow::onboarding::Onboarding::examples_gallery();
+        assert!(!examples.is_empty());
+        assert!(examples.iter().any(|(cmd, _)| cmd.contains("run")));
+    }
+
+    // ─── WS10 Migration Tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_migration_detect_installed_does_not_panic() {
+        let found = sparrow::onboarding::migration::Migration::detect_installed();
+        // May be empty on CI — just verify it doesn't panic
+        assert!(found.len() <= 5);
+    }
+
+    #[test]
+    fn test_migration_openclaw_result_fields() {
+        // Test that MigrationResult struct is well-formed
+        let result = sparrow::onboarding::migration::MigrationResult {
+            tool: "openclaw".into(),
+            agents: 3, skills: 5, cron_jobs: 2, config_entries: 10, surfaces: 1,
+        };
+        assert_eq!(result.agents, 3);
+        assert_eq!(result.skills, 5);
+    }
+
+    // ─── WS12 Enterprise Tests ─────────────────────────────────────────
+
+    #[test]
+    fn test_org_policy_enforces_autonomy_ceiling() {
+        use sparrow::onboarding::enterprise::OrgPolicy;
+        let policy = OrgPolicy::default();
+        let result = policy.enforce(
+            &sparrow::event::AutonomyLevel::Autonomous,
+            1.0,
+            "src/main.rs",
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("limits autonomy"));
+    }
+
+    #[test]
+    fn test_org_policy_blocks_protected_paths() {
+        use sparrow::onboarding::enterprise::OrgPolicy;
+        let policy = OrgPolicy::default();
+        let result = policy.enforce(
+            &sparrow::event::AutonomyLevel::Supervised,
+            0.0,
+            ".env",
+        );
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("protected"));
+    }
+
+    #[test]
+    fn test_org_policy_allows_safe_paths() {
+        use sparrow::onboarding::enterprise::OrgPolicy;
+        let policy = OrgPolicy::default();
+        let result = policy.enforce(
+            &sparrow::event::AutonomyLevel::Supervised,
+            0.0,
+            "src/lib.rs",
+        );
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_audit_export_json() {
+        use sparrow::onboarding::enterprise::{AuditEntry, export_audit_log};
+        let entries = vec![AuditEntry {
+            timestamp: "2026-01-01".into(), user: "alice".into(),
+            action: "run".into(), run_id: "r1".into(),
+            cost_usd: 0.01, tokens: 500, autonomy: "supervised".into(),
+            status: "completed".into(),
+        }];
+        let json = export_audit_log(&entries, "json");
+        assert!(json.contains("alice"));
+        assert!(json.contains("r1"));
+    }
 }
