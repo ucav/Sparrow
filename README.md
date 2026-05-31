@@ -21,7 +21,7 @@ Sparrow is inspired by tools like Claude Code, Codex, OpenCode, OpenClaw, and He
 - **WebView console:** local cockpit at `http://127.0.0.1:9339/` with live route, token, cost, and config events.
 - **Terminal-native:** TUI, `sparrow run`, `sparrow chat`, `sparrow --json run ...`, replay, memory, setup, and gateway commands.
 - **Rollback safety:** Git-based checkpoints and `sparrow rewind`.
-- **Persistent context:** SQLite memory, SOUL-style agent files, skill registry, transcripts, and replay.
+- **Persistent context:** SQLite memory, SOUL-style agent files, guarded skill registry, transcripts, and replay.
 - **Gateway path:** Telegram, Discord, Slack, and WebSocket API are wired; extra transports are explicit adapters, not silently fake-successing.
 
 ## Status
@@ -43,6 +43,17 @@ Sparrow is **alpha software**. The kernel builds and has a real integration suit
 | Cross-platform release | Planned | workflows exist; no public release artifact yet |
 
 See [docs/AUDIT.md](docs/AUDIT.md) for module-by-module proof.
+
+## Console Experience
+
+The WebView console mirrors Sparrow's brand demo instead of exposing raw runtime noise:
+
+- local model failures are presented as `modèle local indisponible -> routage modèle cloud`;
+- token and cost counters update live from the event stream;
+- boot lines, route changes, tool activity, skill learning, and the Sparrow mascot use the same motion language as the presentation HTML;
+- learned skills are pattern-based names such as `write-and-fix-tests`, not copied user prompts.
+
+Skill learning is intentionally conservative. Sparrow only proposes reusable workflow patterns after concrete evidence such as tests, fixes, diffs, refactors, or code changes, and it skips repository-specific prompts, URLs, file names, dates, versions, and duplicate skill names.
 
 ## Quick Start From Source
 
