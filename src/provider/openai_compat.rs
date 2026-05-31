@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use futures::stream::{self, StreamExt};
 use reqwest::Client;
 use serde_json::json;
+use std::collections::HashMap;
 
 use super::{
     Brain, BrainEvent, BrainRequest, BrainStream, ContentBlock, LatencyClass, ModelCaps,
@@ -92,6 +93,7 @@ impl Brain for OpenAICompatAdapter {
 
             let mut content: Vec<serde_json::Value> = Vec::new();
             let mut tool_calls: Vec<serde_json::Value> = Vec::new();
+            let mut emitted_tool_result = false;
 
             for block in &msg.content {
                 match block {
@@ -126,10 +128,15 @@ impl Brain for OpenAICompatAdapter {
                             "tool_call_id": tool_use_id,
                             "content": text,
                         }));
+                        emitted_tool_result = true;
                         continue; // tool results are separate messages
                     }
                     _ => {}
                 }
+            }
+
+            if emitted_tool_result && content.is_empty() && tool_calls.is_empty() {
+                continue;
             }
 
             let mut msg_json = json!({ "role": msg.role });
@@ -168,6 +175,9 @@ impl Brain for OpenAICompatAdapter {
             "model": self.model,
             "messages": messages,
             "stream": true,
+            "stream_options": {
+                "include_usage": true
+            },
             "temperature": req.temperature,
         });
 
@@ -201,10 +211,16 @@ impl Brain for OpenAICompatAdapter {
             ));
         }
 
+        #[derive(Default)]
+        struct ToolCallState {
+            id: String,
+            started: bool,
+        }
+
         let stream = response.bytes_stream();
 
         let event_stream = stream
-            .flat_map(|chunk| {
+            .scan(HashMap::<u64, ToolCallState>::new(), |tool_state, chunk| {
                 let events: Vec<BrainEvent> = match chunk {
                     Ok(bytes) => {
                         let text = String::from_utf8_lossy(&bytes);
@@ -236,15 +252,31 @@ impl Brain for OpenAICompatAdapter {
                                         }
                                         if let Some(tool_calls) = delta.get("tool_calls").and_then(|v| v.as_array()) {
                                             for tc in tool_calls {
-                                                let idx = tc.get("index").and_then(|v| v.as_u64()).map(|i| i.to_string());
+                                                let idx = tc.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
                                                 let id = tc.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
-                                                if let (Some(idx), Some(id)) = (idx.clone(), id) {
-                                                    if let Some(func) = tc.get("function").and_then(|v| v.as_object()) {
-                                                        if let Some(name) = func.get("name").and_then(|v| v.as_str()) {
-                                                            parsed.push(BrainEvent::ToolUseStart { id: id.clone(), name: name.to_string() });
+                                                let state = tool_state.entry(idx).or_default();
+                                                if let Some(id) = id {
+                                                    state.id = id;
+                                                }
+                                                if let Some(func) = tc.get("function").and_then(|v| v.as_object()) {
+                                                    if let Some(name) = func.get("name").and_then(|v| v.as_str()) {
+                                                        if !state.started {
+                                                            if state.id.is_empty() {
+                                                                state.id = format!("tool-call-{}", idx);
+                                                            }
+                                                            state.started = true;
+                                                            parsed.push(BrainEvent::ToolUseStart {
+                                                                id: state.id.clone(),
+                                                                name: name.to_string(),
+                                                            });
                                                         }
-                                                        if let Some(args) = func.get("arguments").and_then(|v| v.as_str()) {
-                                                            parsed.push(BrainEvent::ToolUseDelta { id: idx, json: args.to_string() });
+                                                    }
+                                                    if let Some(args) = func.get("arguments").and_then(|v| v.as_str()) {
+                                                        if !state.id.is_empty() && !args.is_empty() {
+                                                            parsed.push(BrainEvent::ToolUseDelta {
+                                                                id: state.id.clone(),
+                                                                json: args.to_string(),
+                                                            });
                                                         }
                                                     }
                                                 }
@@ -257,7 +289,14 @@ impl Brain for OpenAICompatAdapter {
                                             let stop = match reason {
                                                 "stop" => crate::event::StopReason::EndTurn,
                                                 "length" => crate::event::StopReason::MaxTokens,
-                                                "tool_calls" => crate::event::StopReason::ToolUse,
+                                                "tool_calls" => {
+                                                    for (_, state) in tool_state.drain() {
+                                                        if !state.id.is_empty() {
+                                                            parsed.push(BrainEvent::ToolUseEnd { id: state.id });
+                                                        }
+                                                    }
+                                                    crate::event::StopReason::ToolUse
+                                                }
                                                 s => crate::event::StopReason::StopSequence(s.to_string()),
                                             };
                                             parsed.push(BrainEvent::Done(stop));
@@ -277,8 +316,9 @@ impl Brain for OpenAICompatAdapter {
                     }
                     Err(e) => vec![BrainEvent::Error(format!("stream error: {}", e))],
                 };
-                futures::stream::iter(events)
-            });
+                futures::future::ready(Some(stream::iter(events)))
+            })
+            .flatten();
 
         Ok(Box::pin(event_stream))
     }

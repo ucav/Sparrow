@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::collections::HashMap;
+use std::path::PathBuf;
 
 use crate::event::Event;
 
@@ -63,7 +64,7 @@ pub trait Replayer: Send + Sync {
 
 pub struct FsRecorder {
     transcripts_dir: PathBuf,
-    active: std::sync::Mutex<Option<Transcript>>,
+    active: std::sync::Mutex<HashMap<String, Transcript>>,
 }
 
 impl FsRecorder {
@@ -71,13 +72,16 @@ impl FsRecorder {
         std::fs::create_dir_all(&transcripts_dir).ok();
         Self {
             transcripts_dir,
-            active: std::sync::Mutex::new(None),
+            active: std::sync::Mutex::new(HashMap::new()),
         }
     }
 
     pub fn start_run(&self, run_id: String, inputs: RunInputs) {
         let transcript = Transcript::new(run_id, inputs);
-        *self.active.lock().unwrap() = Some(transcript);
+        self.active
+            .lock()
+            .unwrap()
+            .insert(transcript.run_id.clone(), transcript);
     }
 
     fn run_dir(&self, run_id: &str) -> PathBuf {
@@ -87,7 +91,8 @@ impl FsRecorder {
 
 impl Recorder for FsRecorder {
     fn record(&self, event: &Event) {
-        if let Some(ref mut transcript) = *self.active.lock().unwrap() {
+        let run_id = event_run_id(event);
+        if let Some(transcript) = self.active.lock().unwrap().get_mut(run_id) {
             transcript.push_event(event);
         }
     }
@@ -97,7 +102,7 @@ impl Recorder for FsRecorder {
             .active
             .lock()
             .unwrap()
-            .take()
+            .remove(run_id)
             .ok_or_else(|| anyhow::anyhow!("No active transcript for {}", run_id))?;
 
         let run_dir = self.run_dir(run_id);
@@ -133,6 +138,34 @@ impl Recorder for FsRecorder {
         );
 
         Ok(transcript)
+    }
+}
+
+fn event_run_id(event: &Event) -> &str {
+    match event {
+        Event::RunStarted { run, .. }
+        | Event::RouteSelected { run, .. }
+        | Event::ModelSwitched { run, .. }
+        | Event::ThinkingDelta { run, .. }
+        | Event::Message { run, .. }
+        | Event::ToolUseProposed { run, .. }
+        | Event::ApprovalRequested { run, .. }
+        | Event::ApprovalResolved { run, .. }
+        | Event::ToolUseStarted { run, .. }
+        | Event::ToolOutput { run, .. }
+        | Event::DiffProposed { run, .. }
+        | Event::DiffApplied { run, .. }
+        | Event::TestResult { run, .. }
+        | Event::AgentSpawned { run, .. }
+        | Event::AgentStatus { run, .. }
+        | Event::CheckpointCreated { run, .. }
+        | Event::SkillLearned { run, .. }
+        | Event::CostUpdate { run, .. }
+        | Event::TokenUsage { run, .. }
+        | Event::TokenUsageEstimated { run, .. }
+        | Event::AutonomyChanged { run, .. }
+        | Event::RunFinished { run, .. }
+        | Event::Error { run, .. } => &run.0,
     }
 }
 

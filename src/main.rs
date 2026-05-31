@@ -1,6 +1,6 @@
 use clap::Parser;
 use sparrow::agent::{AgentStore, FsAgentStore, Soul};
-use sparrow::auth::AuthStore;
+use sparrow::auth::{AuthStore, Credential};
 use sparrow::autonomy::{Checkpoints, GitCheckpoints};
 use sparrow::capabilities::{FsSkillLibrary, SkillLibrary};
 use sparrow::capabilities::mcp::{BasicMcpClient, McpClient, Transport};
@@ -20,7 +20,7 @@ use sparrow::gateway::extra_transports::{
     FeishuTransport, WeComTransport, QQBotTransport, TeamsTransport,
 };
 use sparrow::memory::{Fact, Memory, SqliteMemory};
-use sparrow::runtime::recorder::{FsRecorder, Replayer};
+use sparrow::runtime::recorder::{FsRecorder, Recorder, Replayer, RunInputs};
 use sparrow::runtime::scheduler::{Job, MemoryScheduler, Scheduler};
 use sparrow::tui::Tui;
 use std::sync::Arc;
@@ -44,7 +44,7 @@ async fn main() -> anyhow::Result<()> {
         .join("sparrow");
 
     let config_store = FsConfigStore::new(config_dir.clone());
-    let config = config_store.load().unwrap_or_else(|e| {
+    let mut config = config_store.load().unwrap_or_else(|e| {
         eprintln!("Warning: could not load config: {}. Using defaults.", e);
         sparrow::config::Config {
             defaults: Default::default(),
@@ -58,6 +58,7 @@ async fn main() -> anyhow::Result<()> {
             state_dir: state_dir.clone(),
         }
     });
+    migrate_inline_provider_keys(&mut config, &config_store);
 
     // Initialize memory (SQLite)
     let memory = Arc::new(
@@ -110,7 +111,14 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Run { ref task }) => {
             if cli.json {
                 // NDJSON mode: output each event as a JSON line
-                run_task_json(task, &config, memory.clone(), skill_library.clone()).await?;
+                run_task_json(
+                    task,
+                    &config,
+                    memory.clone(),
+                    recorder.clone(),
+                    skill_library.clone(),
+                )
+                .await?;
             } else {
                 run_task(task, &cli, &config, memory.clone(), agent_store.clone(), skill_library.clone()).await?;
             }
@@ -376,6 +384,45 @@ fn handle_agent(
     Ok(())
 }
 
+fn looks_like_inline_secret(value: &str) -> bool {
+    let trimmed = value.trim();
+    trimmed.starts_with("sk-")
+        || trimmed.starts_with("nvapi-")
+        || trimmed.starts_with("gsk_")
+        || trimmed.starts_with("sk-or-")
+}
+
+fn migrate_inline_provider_keys(
+    config: &mut sparrow::config::Config,
+    store: &FsConfigStore,
+) {
+    let auth = sparrow::auth::store::ChainedAuthStore::new(config.config_dir.clone());
+    let mut changed = false;
+
+    for (name, provider) in config.providers.iter_mut() {
+        let Some(inline_key) = provider
+            .api_key_env
+            .as_ref()
+            .map(|value| value.trim().to_string())
+            .filter(|value| looks_like_inline_secret(value))
+        else {
+            continue;
+        };
+
+        if auth.set(name, Credential::api_key(inline_key)).is_err() {
+            continue;
+        }
+
+        provider.api_key_env = sparrow::config::providers::find_provider(name)
+            .and_then(|def| def.api_key_env);
+        changed = true;
+    }
+
+    if changed {
+        let _ = store.save(config);
+    }
+}
+
 fn build_provider_brains(
     config: &sparrow::config::Config,
     warn: bool,
@@ -390,11 +437,7 @@ fn build_provider_brains(
             .as_ref()
             .and_then(|env| {
                 let trimmed = env.trim();
-                if trimmed.starts_with("sk-")
-                    || trimmed.starts_with("nvapi-")
-                    || trimmed.starts_with("gsk_")
-                    || trimmed.starts_with("sk-or-")
-                {
+                if looks_like_inline_secret(trimmed) {
                     Some(trimmed.to_string())
                 } else {
                     std::env::var(trimmed).ok()
@@ -1391,10 +1434,80 @@ async fn handle_setup(config: &sparrow::config::Config) -> anyhow::Result<()> {
 
 // ─── JSON NDJSON run ────────────────────────────────────────────────────────────
 
+fn current_repo_head() -> Option<String> {
+    let output = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let head = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if head.is_empty() {
+        None
+    } else {
+        Some(head)
+    }
+}
+
+fn redacted_config_snapshot(config: &sparrow::config::Config) -> serde_json::Value {
+    fn has_secret_prefix(value: &str) -> bool {
+        let trimmed = value.trim();
+        trimmed.starts_with("sk-")
+            || trimmed.starts_with("nvapi-")
+            || trimmed.starts_with("gsk_")
+            || trimmed.starts_with("sk-or-")
+    }
+
+    fn looks_secret_field_value(value: &str) -> bool {
+        let trimmed = value.trim();
+        has_secret_prefix(trimmed)
+            || trimmed.len() > 40
+                && !trimmed
+                    .chars()
+                    .all(|c| c.is_ascii_uppercase() || c == '_' || c.is_ascii_digit())
+    }
+
+    fn redact(value: &mut serde_json::Value) {
+        match value {
+            serde_json::Value::Object(map) => {
+                for (key, val) in map.iter_mut() {
+                    let key_lc = key.to_lowercase();
+                    if key_lc.contains("key")
+                        || key_lc.contains("token")
+                        || key_lc.contains("secret")
+                        || key_lc.contains("password")
+                    {
+                        if val.as_str().map(looks_secret_field_value).unwrap_or(true) {
+                            *val = serde_json::Value::String("<redacted>".into());
+                            continue;
+                        }
+                    }
+                    redact(val);
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    redact(item);
+                }
+            }
+            serde_json::Value::String(s) if has_secret_prefix(s) => {
+                *value = serde_json::Value::String("<redacted>".into());
+            }
+            _ => {}
+        }
+    }
+
+    let mut snapshot = serde_json::to_value(config).unwrap_or_else(|_| serde_json::json!({}));
+    redact(&mut snapshot);
+    snapshot
+}
+
 async fn run_task_json(
     task: &str,
     config: &sparrow::config::Config,
     memory: Arc<dyn Memory>,
+    recorder: Arc<FsRecorder>,
     skills: Arc<dyn SkillLibrary>,
 ) -> anyhow::Result<()> {
     use sparrow::engine::Engine;
@@ -1407,10 +1520,30 @@ async fn run_task_json(
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
+    let task_for_recording = task.to_string();
+    let config_snapshot = redacted_config_snapshot(config);
+    let repo_head = current_repo_head();
     let print_handle = tokio::spawn(async move {
         let mut stdout = tokio::io::stdout();
         use tokio::io::AsyncWriteExt;
         while let Some(event) = rx.recv().await {
+            if let sparrow::event::Event::RunStarted { run, agent, .. } = &event {
+                recorder.start_run(
+                    run.0.clone(),
+                    RunInputs {
+                        task: task_for_recording.clone(),
+                        config_snapshot: config_snapshot.clone(),
+                        model_id: "router-selected".into(),
+                        repo_head: repo_head.clone(),
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        agent: agent.clone(),
+                    },
+                );
+            }
+            recorder.record(&event);
+            if let sparrow::event::Event::RunFinished { run, .. } = &event {
+                let _ = recorder.finalize(&run.0);
+            }
             let line = sparrow::tools::extras::ndjson_output(&event);
             let _ = stdout.write_all(line.as_bytes()).await;
         }
@@ -1433,7 +1566,7 @@ async fn handle_webview(
     config: &sparrow::config::Config,
     memory: Arc<dyn Memory>,
     _scheduler: Arc<MemoryScheduler>,
-    _recorder: Arc<FsRecorder>,
+    recorder: Arc<FsRecorder>,
     skills: Arc<dyn SkillLibrary>,
 ) -> anyhow::Result<()> {
     use sparrow::engine::Engine;
@@ -1444,30 +1577,55 @@ async fn handle_webview(
     let (event_tx, _) = tokio::sync::broadcast::channel::<sparrow::event::Event>(256);
     let (command_tx, mut command_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     let shared_config = Arc::new(RwLock::new(config.clone()));
+    let approvals = Arc::new(sparrow::console::WebApprovalBroker::new());
 
     let config_for_runs = shared_config.clone();
     let memory_for_runs = memory.clone();
     let skills_for_runs = skills.clone();
     let events_for_runs = event_tx.clone();
+    let approvals_for_runs = approvals.clone();
+    let recorder_for_runs = recorder.clone();
     tokio::spawn(async move {
         while let Some(task) = command_rx.recv().await {
             let current_config = config_for_runs
                 .read()
                 .expect("config lock poisoned")
                 .clone();
+            let task_for_recording = task.clone();
+            let config_snapshot = redacted_config_snapshot(&current_config);
+            let repo_head = current_repo_head();
             let providers = build_provider_brains(&current_config, false);
             let router = Arc::new(BasicRouter::new(&current_config, providers));
             let engine = Engine::new(router, current_config)
                 .with_memory(memory_for_runs.clone())
-                .with_skills(skills_for_runs.clone());
+                .with_skills(skills_for_runs.clone())
+                .with_approval_handler(approvals_for_runs.clone());
             let task_obj = sparrow::engine::Task {
                 description: task,
                 context: vec![],
             };
             let (run_tx, mut run_rx) = tokio::sync::mpsc::unbounded_channel();
             let forward_tx = events_for_runs.clone();
+            let recorder = recorder_for_runs.clone();
             let forward = tokio::spawn(async move {
                 while let Some(event) = run_rx.recv().await {
+                    if let sparrow::event::Event::RunStarted { run, agent, .. } = &event {
+                        recorder.start_run(
+                            run.0.clone(),
+                            RunInputs {
+                                task: task_for_recording.clone(),
+                                config_snapshot: config_snapshot.clone(),
+                                model_id: "router-selected".into(),
+                                repo_head: repo_head.clone(),
+                                timestamp: chrono::Utc::now().to_rfc3339(),
+                                agent: agent.clone(),
+                            },
+                        );
+                    }
+                    recorder.record(&event);
+                    if let sparrow::event::Event::RunFinished { run, .. } = &event {
+                        let _ = recorder.finalize(&run.0);
+                    }
                     let _ = forward_tx.send(event);
                 }
             });
@@ -1487,7 +1645,13 @@ async fn handle_webview(
     println!("Open this URL in your browser.");
     println!("Press Ctrl+C to stop.\n");
 
-    let server = WebViewServer::new(addr, event_tx, Some(command_tx), Some(shared_config));
+    let server = WebViewServer::new(
+        addr,
+        event_tx,
+        Some(command_tx),
+        Some(shared_config),
+        Some(approvals),
+    );
     server.serve().await?;
 
     Ok(())

@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use futures::StreamExt;
 use serde_json::json;
 use std::path::PathBuf;
@@ -202,6 +203,22 @@ pub struct Engine {
     memory: Option<Arc<dyn Memory>>,
     skills: Option<Arc<dyn SkillLibrary>>,
     redaction: RedactionFilter,
+    approval_handler: Option<Arc<dyn ApprovalHandler>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ApprovalRequest {
+    pub run: RunId,
+    pub id: String,
+    pub tool_name: String,
+    pub risk: RiskLevel,
+    pub args: serde_json::Value,
+    pub summary: String,
+}
+
+#[async_trait]
+pub trait ApprovalHandler: Send + Sync {
+    async fn request_approval(&self, request: ApprovalRequest) -> Decision;
 }
 
 impl Engine {
@@ -212,6 +229,7 @@ impl Engine {
             memory: None,
             skills: None,
             redaction: RedactionFilter::new(),
+            approval_handler: None,
         }
     }
 
@@ -230,6 +248,11 @@ impl Engine {
 
     pub fn with_skills(mut self, skills: Arc<dyn SkillLibrary>) -> Self {
         self.skills = Some(skills);
+        self
+    }
+
+    pub fn with_approval_handler(mut self, approval_handler: Arc<dyn ApprovalHandler>) -> Self {
+        self.approval_handler = Some(approval_handler);
         self
     }
 
@@ -295,6 +318,22 @@ impl Engine {
             || lower.contains("selectionne tu le model")
     }
 
+    fn requires_tools(&self, task: &str, tier: &TaskTier) -> bool {
+        let lower = task.to_lowercase();
+        let tool_keywords = [
+            "outil", "tools", "fichier", "file", "readme", ".rs", ".ts", ".js", ".html", ".md",
+            "repo", "dossier", "workspace", "git", "test", "build", "cargo", "npm", "pnpm",
+            "corrige", "fix", "debug", "bug", "répare", "repare", "modifie", "édite", "edite",
+            "ajoute", "supprime", "écris", "ecris", "write", "create", "crée", "cree", "audit",
+        ];
+
+        if tool_keywords.iter().any(|kw| lower.contains(kw)) {
+            return true;
+        }
+
+        matches!(tier, TaskTier::Medium | TaskTier::Hard | TaskTier::Vision)
+    }
+
     fn routing_explanation(
         &self,
         tier: &TaskTier,
@@ -317,7 +356,16 @@ impl Engine {
         task: Task,
         event_tx: mpsc::UnboundedSender<Event>,
     ) -> anyhow::Result<OutcomeSummary> {
-        let run_id = RunId::new();
+        self.drive_with_run_id(task, event_tx, RunId::new()).await
+    }
+
+    /// Drive one AgentRun with a caller-provided run id.
+    pub async fn drive_with_run_id(
+        &self,
+        task: Task,
+        event_tx: mpsc::UnboundedSender<Event>,
+        run_id: RunId,
+    ) -> anyhow::Result<OutcomeSummary> {
         let mut messages: Vec<Msg> = task.context.clone();
 
         // Classify task
@@ -332,9 +380,10 @@ impl Engine {
             session_spent_usd: 0.0,
         };
 
+        let required_tools = self.requires_tools(&task.description, &tier);
         let need = crate::router::RoutingNeed {
             tier: tier.clone(),
-            required_tools: true,
+            required_tools,
             required_vision: false,
             prefer_local: false,
         };
@@ -461,6 +510,10 @@ impl Engine {
             AutonomyLevel::Autonomous => AutonomyContract::autonomous(),
         };
         autonomy.budget.max_usd = self.config.budget.session_usd;
+        let _ = event_tx.send(Event::AutonomyChanged {
+            run: run_id.clone(),
+            level: autonomy.level.clone(),
+        });
 
         // Load relevant skills
         let relevant_skills: Vec<crate::capabilities::Skill> = self
@@ -508,12 +561,15 @@ impl Engine {
         let mut cost_usd: f64 = 0.0;
         let diffs: Vec<crate::event::FileDiff> = Vec::new();
         let mut current_chain_idx = 0usize;
-        let mut tool_results_pending: Vec<(String, String, bool)> = Vec::new();
+        let mut tool_results_pending: Vec<(String, String, serde_json::Value, String, bool)> =
+            Vec::new();
         let budget_session = self.config.budget.session_usd;
         let budget_daily = self.config.budget.daily_usd;
         let redaction = &self.redaction;
         let mut had_error = false;
         let mut last_error: Option<String> = None;
+        let mut waiting_for_approval = false;
+        let mut denied_by_approval = false;
 
         // Helper to send redacted events
         let send = |event: Event| {
@@ -545,7 +601,11 @@ impl Engine {
             let req = BrainRequest {
                 system: Some(system.clone()),
                 messages: messages.clone(),
-                tools: tool_specs.clone(),
+                tools: if need.required_tools {
+                    tool_specs.clone()
+                } else {
+                    vec![]
+                },
                 max_tokens: caps.max_output as u32,
                 temperature: 0.0,
                 stop: vec![],
@@ -579,6 +639,8 @@ impl Engine {
                     let mut current_tool_json = String::new();
                     let mut output_chars_seen: u64 = 0;
                     let mut output_tokens_emitted: u64 = 0;
+                    let mut continue_agent_loop = false;
+                    let mut stop_after_tool_result = false;
 
                     while let Some(event) = stream.next().await {
                         match event {
@@ -651,7 +713,30 @@ impl Engine {
                                     args: args.clone(),
                                 };
 
-                                let decision = autonomy.decide(&proposed);
+                                let mut decision = autonomy.decide(&proposed);
+                                if matches!(decision, Decision::AskUser) {
+                                    let summary = format!(
+                                        "Approve {} with args: {}",
+                                        proposed.tool_name, args
+                                    );
+                                    let _ = event_tx.send(Event::ApprovalRequested {
+                                        run: run_id.clone(),
+                                        id: id.clone(),
+                                        summary: summary.clone(),
+                                    });
+                                    if let Some(handler) = &self.approval_handler {
+                                        decision = handler
+                                            .request_approval(ApprovalRequest {
+                                                run: run_id.clone(),
+                                                id: id.clone(),
+                                                tool_name: proposed.tool_name.clone(),
+                                                risk: proposed.risk.clone(),
+                                                args: args.clone(),
+                                                summary,
+                                            })
+                                            .await;
+                                    }
+                                }
 
                                 let _ = event_tx.send(Event::ApprovalResolved {
                                     run: run_id.clone(),
@@ -729,19 +814,20 @@ impl Engine {
                                             id: id.clone(),
                                             blocks,
                                         });
-                                        tool_results_pending.push((id.clone(), text, is_error));
+                                        tool_results_pending.push((
+                                            id.clone(),
+                                            proposed.tool_name.clone(),
+                                            args.clone(),
+                                            text,
+                                            is_error,
+                                        ));
                                     }
                                     Decision::AskUser => {
-                                        let _ = event_tx.send(Event::ApprovalRequested {
-                                            run: run_id.clone(),
-                                            id: id.clone(),
-                                            summary: format!(
-                                                "Approve {} with args: {}",
-                                                proposed.tool_name, args
-                                            ),
-                                        });
+                                        waiting_for_approval = true;
                                     }
                                     Decision::Deny => {
+                                        denied_by_approval = true;
+                                        stop_after_tool_result = true;
                                         let _ = event_tx.send(Event::ToolOutput {
                                             run: run_id.clone(),
                                             id: id.clone(),
@@ -749,6 +835,13 @@ impl Engine {
                                                 "Denied by autonomy policy".into(),
                                             )],
                                         });
+                                        tool_results_pending.push((
+                                            id.clone(),
+                                            proposed.tool_name.clone(),
+                                            args.clone(),
+                                            "Denied by autonomy policy".into(),
+                                            true,
+                                        ));
                                     }
                                 }
 
@@ -790,9 +883,17 @@ impl Engine {
                                     }
                                     crate::event::StopReason::ToolUse => {
                                         // Feed tool results back
-                                        for (tool_id, text, is_error) in
+                                        for (tool_id, tool_name, args, text, is_error) in
                                             tool_results_pending.drain(..)
                                         {
+                                            messages.push(Msg {
+                                                role: "assistant".into(),
+                                                content: vec![ContentBlock::ToolUse {
+                                                    id: tool_id.clone(),
+                                                    name: tool_name,
+                                                    input: args,
+                                                }],
+                                            });
                                             messages.push(Msg {
                                                 role: "user".into(),
                                                 content: vec![ContentBlock::ToolResult {
@@ -804,49 +905,53 @@ impl Engine {
                                                 }],
                                             });
                                         }
-                                        continue; // Continue loop with updated messages
+                                        continue_agent_loop =
+                                            !waiting_for_approval && !stop_after_tool_result;
+                                        break;
                                     }
                                     _ => {}
                                 }
                                 break; // Done
                             }
                             BrainEvent::Error(msg) => {
-                                had_error = true;
-                                last_error = Some(msg.clone());
                                 let _ = event_tx.send(Event::Error {
                                     run: run_id.clone(),
                                     message: msg.clone(),
                                 });
-                                // Try next in chain
-                                current_chain_idx += 1;
-                                let _ = event_tx.send(Event::ModelSwitched {
-                                    run: run_id.clone(),
-                                    from: brain.id().to_string(),
-                                    to: brain_policy
-                                        .chain
-                                        .get(current_chain_idx)
-                                        .map(|b| b.id().to_string())
-                                        .unwrap_or_default(),
-                                    reason: msg,
-                                });
+                                let next_idx = current_chain_idx + 1;
+                                if next_idx < brain_policy.chain.len() {
+                                    current_chain_idx = next_idx;
+                                    let _ = event_tx.send(Event::ModelSwitched {
+                                        run: run_id.clone(),
+                                        from: brain.id().to_string(),
+                                        to: brain_policy.chain[current_chain_idx].id().to_string(),
+                                        reason: msg,
+                                    });
+                                    continue_agent_loop = true;
+                                } else {
+                                    had_error = true;
+                                    last_error = Some(msg);
+                                }
                                 break;
                             }
                         }
+                    }
+                    if continue_agent_loop {
+                        continue;
                     }
                     break; // Task complete
                 }
                 Err(e) => {
                     let err_msg = format!("{}", e);
-                    had_error = true;
-                    last_error = Some(err_msg.clone());
                     let _ = event_tx.send(Event::Error {
                         run: run_id.clone(),
                         message: err_msg.clone(),
                     });
 
                     // Try next in chain
-                    current_chain_idx += 1;
-                    if current_chain_idx < brain_policy.chain.len() {
+                    let next_idx = current_chain_idx + 1;
+                    if next_idx < brain_policy.chain.len() {
+                        current_chain_idx = next_idx;
                         let _ = event_tx.send(Event::ModelSwitched {
                             run: run_id.clone(),
                             from: brain.id().to_string(),
@@ -854,6 +959,8 @@ impl Engine {
                             reason: err_msg,
                         });
                     } else {
+                        had_error = true;
+                        last_error = Some(err_msg);
                         break;
                     }
                 }
@@ -866,6 +973,10 @@ impl Engine {
                     "error: {}",
                     last_error.unwrap_or_else(|| "run failed".into())
                 )
+            } else if waiting_for_approval {
+                "waiting_for_approval".into()
+            } else if denied_by_approval {
+                "denied".into()
             } else {
                 "completed".into()
             },

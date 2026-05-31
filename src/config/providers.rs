@@ -403,6 +403,30 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             tags: vec!["fast".into(),"code".into()],
             notes: "Fireworks AI — fast open-source model inference.".into(),
         },
+        // ─── Perplexity ────────────────────────────────────────────────
+        ProviderDef {
+            id: "perplexity".into(), label: "Perplexity".into(),
+            adapter: "openai-compatible".into(), base_url: "https://api.perplexity.ai".into(),
+            api_key_env: Some("PERPLEXITY_API_KEY".into()),
+            models: vec![
+                ModelDef { name: "sonar-pro".into(), label: "Sonar Pro".into(), tags: vec!["search".into(),"web".into(),"tool_support".into()], cost_input_per_mtok:3.0,cost_output_per_mtok:15.0,context_window:200000,recommended:true },
+                ModelDef { name: "sonar".into(), label: "Sonar".into(), tags: vec!["search".into(),"fast".into(),"web".into()], cost_input_per_mtok:1.0,cost_output_per_mtok:1.0,context_window:127000,recommended:false },
+            ],
+            tags: vec!["search".into(),"web".into()],
+            notes: "Perplexity Sonar — live web/search-focused model routing.".into(),
+        },
+        // ─── Cohere ────────────────────────────────────────────────────
+        ProviderDef {
+            id: "cohere".into(), label: "Cohere".into(),
+            adapter: "openai-compatible".into(), base_url: "https://api.cohere.com/compatibility/v1".into(),
+            api_key_env: Some("COHERE_API_KEY".into()),
+            models: vec![
+                ModelDef { name: "command-a-03-2025".into(), label: "Command A".into(), tags: vec!["strong".into(),"tool_support".into(),"enterprise".into()], cost_input_per_mtok:2.5,cost_output_per_mtok:10.0,context_window:256000,recommended:true },
+                ModelDef { name: "command-r7b-12-2024".into(), label: "Command R7B".into(), tags: vec!["fast".into(),"cheap".into(),"tool_support".into()], cost_input_per_mtok:0.15,cost_output_per_mtok:0.6,context_window:128000,recommended:false },
+            ],
+            tags: vec!["enterprise".into(),"tool_support".into()],
+            notes: "Cohere Command models through the OpenAI-compatible endpoint.".into(),
+        },
     ]
 }
 
@@ -415,7 +439,5 @@ pub fn find_model(provider_id: &str, model_name: &str) -> Option<ModelDef> {
 }
 
 pub fn onboarding_providers() -> Vec<ProviderDef> {
-    // Hermes providers + merged additions
-    let ids = ["ollama","ollama-cloud","nvidia","anthropic","openai-codex","openrouter","deepseek","gemini","nous","novita","groq","mistral","cerebras"];
-    ids.iter().filter_map(|id| provider_registry().into_iter().find(|p| p.id == *id)).collect()
+    provider_registry()
 }
