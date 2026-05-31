@@ -823,7 +823,67 @@ impl Engine {
                                         ));
                                     }
                                     Decision::AskUser => {
+                                        // Supervised mode: prompt user on stdin
                                         waiting_for_approval = true;
+                                        let approval_id = id.clone();
+                                        let approval_name = proposed.tool_name.clone();
+                                        let approval_args = args.clone();
+                                        let approval_risk = proposed.risk;
+
+                                        // Emit approval requested
+                                        let _ = event_tx.send(Event::ApprovalRequested {
+                                            run: run_id.clone(),
+                                            id: approval_id.clone(),
+                                            summary: format!(
+                                                "{} tool '{}' with args: {}",
+                                                format!("{:?}", approval_risk),
+                                                approval_name,
+                                                approval_args
+                                            ),
+                                        });
+
+                                        // Wait for user input on stdin
+                                        use std::io::{self, Write};
+                                        print!("\n\x1b[1;33mApprove {}? [y/N]\x1b[0m ", approval_name);
+                                        io::stdout().flush().ok();
+                                        let mut input = String::new();
+                                        io::stdin().read_line(&mut input).ok();
+                                        let approved = input.trim().to_lowercase() == "y";
+
+                                        if approved {
+                                            waiting_for_approval = false;
+                                            // Auto-checkpoint before mutating/exec/destructive
+                                            if matches!(approval_risk, RiskLevel::Mutating | RiskLevel::Exec | RiskLevel::Destructive) {
+                                                let checkpoints = GitCheckpoints::new(workspace.root.clone());
+                                                if let Ok(cp_id) = checkpoints.snapshot(&format!("pre-{}", approval_name)) {
+                                                    let _ = event_tx.send(Event::CheckpointCreated {
+                                                        run: run_id.clone(), id: cp_id,
+                                                        label: format!("pre-{}", approval_name),
+                                                    });
+                                                }
+                                            }
+                                            let _ = event_tx.send(Event::ToolUseStarted { run: run_id.clone(), id: approval_id.clone() });
+                                            let result = if let Some(tool) = tool {
+                                                let ctx = ToolCtx { workspace_root: workspace.root.clone(), run_id: run_id.clone() };
+                                                match tool.call(approval_args.clone(), &ctx).await {
+                                                    Ok(r) => r,
+                                                    Err(e) => crate::tools::ToolResult::error(format!("Tool {} failed: {}", approval_name, e)),
+                                                }
+                                            } else {
+                                                crate::tools::ToolResult::error(format!("Unknown tool: {}", approval_name))
+                                            };
+                                            let blocks = result.content.clone();
+                                            let text = tool_result_text(&blocks);
+                                            let is_error = result.is_error;
+                                            let _ = event_tx.send(Event::ToolOutput { run: run_id.clone(), id: approval_id.clone(), blocks });
+                                            tool_results_pending.push((approval_id, approval_name, approval_args, text, is_error));
+                                        } else {
+                                            let _ = event_tx.send(Event::ToolOutput {
+                                                run: run_id.clone(), id: approval_id.clone(),
+                                                blocks: vec![Block::Text("Denied by user".into())],
+                                            });
+                                            tool_results_pending.push((approval_id, approval_name, approval_args, "Denied by user".into(), true));
+                                        }
                                     }
                                     Decision::Deny => {
                                         denied_by_approval = true;
