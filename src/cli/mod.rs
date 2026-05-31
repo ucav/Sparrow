@@ -1,0 +1,236 @@
+use clap::{Parser, Subcommand};
+use std::path::PathBuf;
+
+#[derive(Parser)]
+#[command(name = "sparrow", about = "one cli · grows with you", version)]
+pub struct Cli {
+    #[command(subcommand)]
+    pub command: Option<Commands>,
+
+    /// Launch terminal TUI (native)
+    #[arg(long)]
+    pub tui: bool,
+
+    /// Launch webview console (HTTP + WebSocket)
+    #[arg(long)]
+    pub web: bool,
+
+    /// JSON output (NDJSON event stream)
+    #[arg(long)]
+    pub json: bool,
+
+    /// Override autonomy level
+    #[arg(long)]
+    pub autonomy: Option<String>,
+
+    /// Force a specific model
+    #[arg(long)]
+    pub model: Option<String>,
+
+    /// Prefer local/offline models
+    #[arg(long)]
+    pub local: bool,
+
+    /// Session budget cap (USD)
+    #[arg(long)]
+    pub budget: Option<f64>,
+
+    /// Sandbox backend
+    #[arg(long)]
+    pub sandbox: Option<String>,
+
+    /// Profile name
+    #[arg(long)]
+    pub profile: Option<String>,
+
+    /// Disable checkpointing
+    #[arg(long)]
+    pub no_checkpoint: bool,
+
+    /// Run as a named agent
+    #[arg(long)]
+    pub agent: Option<String>,
+}
+
+#[derive(Subcommand)]
+pub enum Commands {
+    /// Run a single agentic task
+    Run {
+        /// Task description
+        task: String,
+    },
+
+    /// Interactive multi-turn chat
+    Chat,
+
+    /// Launch TUI
+    Tui,
+
+    /// Launch webview console (HTTP + WebSocket)
+    Console,
+
+    /// Manage persistent agents
+    Agent {
+        #[command(subcommand)]
+        action: AgentAction,
+    },
+
+    /// Run swarm: planner → coder → verifier
+    Swarm {
+        /// Task or plan file
+        task: String,
+    },
+
+    /// Schedule periodic jobs
+    Schedule {
+        /// Task description
+        task: String,
+
+        /// Cron expression
+        #[arg(long)]
+        cron: String,
+
+        /// Autonomy level for scheduled jobs
+        #[arg(long)]
+        autonomy: Option<String>,
+
+        /// Report to surfaces
+        #[arg(long)]
+        report: Vec<String>,
+    },
+
+    /// Manage model routing
+    Model {
+        /// Set active route
+        #[arg(long)]
+        set: Option<String>,
+
+        /// List available models
+        #[arg(long)]
+        list: bool,
+    },
+
+    /// Manage provider credentials
+    Auth {
+        #[command(subcommand)]
+        action: AuthAction,
+    },
+
+    /// Manage skill library
+    Skills {
+        #[command(subcommand)]
+        action: SkillsAction,
+    },
+
+    /// Manage MCP connectors
+    Mcp {
+        #[command(subcommand)]
+        action: McpAction,
+    },
+
+    /// List checkpoints
+    Checkpoint {
+        #[command(subcommand)]
+        action: CheckpointAction,
+    },
+
+    /// Rewind to a checkpoint
+    Rewind {
+        /// Checkpoint ID or number
+        id: String,
+    },
+
+    /// Replay a transcript
+    Replay {
+        /// Run ID to replay
+        run_id: String,
+    },
+
+    /// Start/stop gateway daemon
+    Gateway {
+        #[command(subcommand)]
+        action: GatewayAction,
+    },
+
+    /// Profile management
+    Profile {
+        #[command(subcommand)]
+        action: ProfileAction,
+    },
+
+    /// Migrate from OpenClaw
+    Import {
+        #[command(subcommand)]
+        source: ImportSource,
+    },
+
+    /// Edit configuration
+    Config {
+        /// Open config.toml in editor
+        #[arg(short)]
+        edit: bool,
+    },
+
+    /// Self-update
+    Update,
+
+    /// Run diagnostics
+    Doctor,
+
+    /// (Re)run conversational setup
+    Setup,
+}
+
+#[derive(Subcommand)]
+pub enum AgentAction {
+    Create { name: String },
+    List,
+    Edit { name: String },
+    Rm { name: String },
+    Run { name: String, task: String },
+}
+
+#[derive(Subcommand)]
+pub enum AuthAction {
+    Add { provider: String },
+    List,
+    Rm { provider: String },
+}
+
+#[derive(Subcommand)]
+pub enum SkillsAction {
+    List,
+    Create { name: String },
+    Prune,
+}
+
+#[derive(Subcommand)]
+pub enum McpAction {
+    Add { server: String },
+    List,
+    Rm { server: String },
+}
+
+#[derive(Subcommand)]
+pub enum CheckpointAction {
+    List,
+}
+
+#[derive(Subcommand)]
+pub enum GatewayAction {
+    Start,
+    Status,
+    Stop,
+}
+
+#[derive(Subcommand)]
+pub enum ProfileAction {
+    Create { name: String },
+    List,
+    Use { name: String },
+}
+
+#[derive(Subcommand)]
+pub enum ImportSource {
+    Openclaw { path: Option<PathBuf> },
+}

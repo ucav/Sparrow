@@ -1,0 +1,30 @@
+# Rust
+target/
+*.rs.bk
+*.pdb
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Sparrow — sensitive / local config
+*.secret
+*.key
+auth.enc
+config.toml
+!config.example.toml
+state/
+*.db
+*.db-journal
+*.db-wal
+transcripts/
+
+# Env files
+.env
+.env.local
