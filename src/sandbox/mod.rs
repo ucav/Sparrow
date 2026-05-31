@@ -10,8 +10,8 @@ mod linux_hardened {
     // §3.5: "Linux namespaces + seccomp (landlock/seccompiler),
     //        filesystem allow-list scoped to workspace, network deny by default"
 
-    use std::path::PathBuf;
     use super::{Command, ExecResult, FsNetPolicy, Limits, Sandbox};
+    use std::path::PathBuf;
 
     pub struct HardenedSandbox {
         root: PathBuf,
@@ -32,11 +32,7 @@ mod linux_hardened {
 
     #[async_trait::async_trait]
     impl Sandbox for HardenedSandbox {
-        async fn exec(
-            &self,
-            cmd: &Command,
-            limits: &Limits,
-        ) -> anyhow::Result<ExecResult> {
+        async fn exec(&self, cmd: &Command, limits: &Limits) -> anyhow::Result<ExecResult> {
             use std::process::Command as StdCommand;
 
             // Build a firejail/bwrap command if available, else fall back to local
@@ -251,10 +247,19 @@ impl Sandbox for LocalSandbox {
         use std::process::Command as StdCommand;
         use std::time::Instant;
 
-        let root = self.root.canonicalize().unwrap_or_else(|_| self.root.clone());
-        let workdir = cmd.workdir.canonicalize().unwrap_or_else(|_| cmd.workdir.clone());
+        let root = self
+            .root
+            .canonicalize()
+            .unwrap_or_else(|_| self.root.clone());
+        let workdir = cmd
+            .workdir
+            .canonicalize()
+            .unwrap_or_else(|_| cmd.workdir.clone());
         if !workdir.starts_with(&root) {
-            anyhow::bail!("Command workdir escapes sandbox root: {}", cmd.workdir.display());
+            anyhow::bail!(
+                "Command workdir escapes sandbox root: {}",
+                cmd.workdir.display()
+            );
         }
 
         let mut child = StdCommand::new(&cmd.program)

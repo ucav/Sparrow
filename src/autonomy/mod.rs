@@ -253,11 +253,7 @@ impl Checkpoints for GitCheckpoints {
             for line in text.lines() {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if let Some(name) = parts.first() {
-                    let id = name
-                        .rsplit('/')
-                        .next()
-                        .unwrap_or(name)
-                        .to_string();
+                    let id = name.rsplit('/').next().unwrap_or(name).to_string();
                     checkpoints.push(Checkpoint {
                         id: CheckpointId(id.clone()),
                         label: format!("checkpoint {}", id),

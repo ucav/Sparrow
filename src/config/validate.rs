@@ -6,13 +6,19 @@ pub fn validate_config(config: &Config) -> Vec<ConfigIssue> {
 
     // Budget sanity
     if config.budget.daily_usd <= 0.0 {
-        issues.push(ConfigIssue::warn("budget.daily_usd is 0 — no cloud providers will be used"));
+        issues.push(ConfigIssue::warn(
+            "budget.daily_usd is 0 — no cloud providers will be used",
+        ));
     }
     if config.budget.session_usd <= 0.0 {
-        issues.push(ConfigIssue::warn("budget.session_usd is 0 — runs will stop immediately"));
+        issues.push(ConfigIssue::warn(
+            "budget.session_usd is 0 — runs will stop immediately",
+        ));
     }
     if config.budget.daily_usd > 100.0 {
-        issues.push(ConfigIssue::warn("budget.daily_usd is very high ($100+). Consider setting a reasonable cap"));
+        issues.push(ConfigIssue::warn(
+            "budget.daily_usd is very high ($100+). Consider setting a reasonable cap",
+        ));
     }
 
     // Provider check
@@ -21,26 +27,39 @@ pub fn validate_config(config: &Config) -> Vec<ConfigIssue> {
     }
     for (name, pconfig) in &config.providers {
         if pconfig.models.is_empty() {
-            issues.push(ConfigIssue::warn(&format!("Provider '{}' has no models configured", name)));
+            issues.push(ConfigIssue::warn(&format!(
+                "Provider '{}' has no models configured",
+                name
+            )));
         }
         if pconfig.adapter.is_empty() {
-            issues.push(ConfigIssue::error(&format!("Provider '{}' has no adapter set", name)));
+            issues.push(ConfigIssue::error(&format!(
+                "Provider '{}' has no adapter set",
+                name
+            )));
         }
     }
 
     // Autonomy sanity
     if config.routing.free_first && config.providers.is_empty() {
-        issues.push(ConfigIssue::info("routing.free_first is enabled but no free providers configured. Ollama will be tried."));
+        issues.push(ConfigIssue::info(
+            "routing.free_first is enabled but no free providers configured. Ollama will be tried.",
+        ));
     }
 
     // Sandbox
     if config.defaults.sandbox == "local-hardened" && !cfg!(target_os = "linux") {
-        issues.push(ConfigIssue::warn("sandbox 'local-hardened' requires Linux. Falling back to 'local'."));
+        issues.push(ConfigIssue::warn(
+            "sandbox 'local-hardened' requires Linux. Falling back to 'local'.",
+        ));
     }
 
     // Skills dir
     if !config.skills.dir.exists() {
-        issues.push(ConfigIssue::info(&format!("Skills directory does not exist: {}. It will be created automatically.", config.skills.dir.display())));
+        issues.push(ConfigIssue::info(&format!(
+            "Skills directory does not exist: {}. It will be created automatically.",
+            config.skills.dir.display()
+        )));
     }
 
     issues
@@ -60,9 +79,24 @@ pub struct ConfigIssue {
 }
 
 impl ConfigIssue {
-    pub fn info(msg: &str) -> Self { Self { level: IssueLevel::Info, message: msg.into() } }
-    pub fn warn(msg: &str) -> Self { Self { level: IssueLevel::Warning, message: msg.into() } }
-    pub fn error(msg: &str) -> Self { Self { level: IssueLevel::Error, message: msg.into() } }
+    pub fn info(msg: &str) -> Self {
+        Self {
+            level: IssueLevel::Info,
+            message: msg.into(),
+        }
+    }
+    pub fn warn(msg: &str) -> Self {
+        Self {
+            level: IssueLevel::Warning,
+            message: msg.into(),
+        }
+    }
+    pub fn error(msg: &str) -> Self {
+        Self {
+            level: IssueLevel::Error,
+            message: msg.into(),
+        }
+    }
 
     pub fn icon(&self) -> &str {
         match self.level {
@@ -74,7 +108,12 @@ impl ConfigIssue {
 }
 
 /// Ping a provider to check if it's reachable and the API key works
-pub async fn ping_provider(name: &str, base_url: &str, api_key: &str, adapter: &str) -> ProviderHealth {
+pub async fn ping_provider(
+    name: &str,
+    base_url: &str,
+    api_key: &str,
+    adapter: &str,
+) -> ProviderHealth {
     let url = match adapter {
         "ollama" => format!("{}/api/tags", base_url.trim_end_matches('/')),
         "openai-compatible" => format!("{}/models", base_url.trim_end_matches('/')),
@@ -100,7 +139,11 @@ pub async fn ping_provider(name: &str, base_url: &str, api_key: &str, adapter: &
                 reachable: status < 500,
                 status_code: status,
                 latency_ms: 0,
-                message: if status == 200 { "OK".into() } else { format!("HTTP {}", status) },
+                message: if status == 200 {
+                    "OK".into()
+                } else {
+                    format!("HTTP {}", status)
+                },
             }
         }
         Err(e) => ProviderHealth {

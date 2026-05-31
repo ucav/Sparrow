@@ -69,10 +69,10 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrgPolicy {
-    pub max_autonomy: String,          // "supervised" | "trusted" | "autonomous"
+    pub max_autonomy: String, // "supervised" | "trusted" | "autonomous"
     pub allowed_providers: Vec<String>,
     pub budget_per_seat_daily: f64,
-    pub blocked_paths: Vec<String>,     // e.g., [".env", "*.pem", "secrets/"]
+    pub blocked_paths: Vec<String>, // e.g., [".env", "*.pem", "secrets/"]
     pub require_approval_for: Vec<String>, // risk levels requiring approval
     pub audit_enabled: bool,
     pub sso_provider: Option<String>,
@@ -95,7 +95,12 @@ impl Default for OrgPolicy {
 }
 
 impl OrgPolicy {
-    pub fn enforce(&self, autonomy: &crate::event::AutonomyLevel, cost: f64, path: &str) -> Result<(), String> {
+    pub fn enforce(
+        &self,
+        autonomy: &crate::event::AutonomyLevel,
+        cost: f64,
+        path: &str,
+    ) -> Result<(), String> {
         // Check autonomy ceiling
         let max = match self.max_autonomy.as_str() {
             "supervised" => crate::event::AutonomyLevel::Supervised,
@@ -103,12 +108,18 @@ impl OrgPolicy {
             _ => crate::event::AutonomyLevel::Autonomous,
         };
         if autonomy.as_float() > max.as_float() {
-            return Err(format!("Org policy limits autonomy to {}", self.max_autonomy));
+            return Err(format!(
+                "Org policy limits autonomy to {}",
+                self.max_autonomy
+            ));
         }
 
         // Check budget
         if cost > self.budget_per_seat_daily {
-            return Err(format!("Budget exceeded: ${:.2} > ${:.2}/day", cost, self.budget_per_seat_daily));
+            return Err(format!(
+                "Budget exceeded: ${:.2} > ${:.2}/day",
+                cost, self.budget_per_seat_daily
+            ));
         }
 
         // Check blocked paths
@@ -116,7 +127,9 @@ impl OrgPolicy {
             if blocked.ends_with('/') && path.starts_with(blocked) {
                 return Err(format!("Path '{}' is blocked by org policy", path));
             }
-            if path == *blocked || (blocked.contains('*') && path.contains(&blocked.replace('*', ""))) {
+            if path == *blocked
+                || (blocked.contains('*') && path.contains(&blocked.replace('*', "")))
+            {
                 return Err(format!("File '{}' is protected by org policy", path));
             }
         }
@@ -143,11 +156,19 @@ pub fn export_audit_log(entries: &[AuditEntry], format: &str) -> String {
     match format {
         "json" => serde_json::to_string_pretty(entries).unwrap_or_default(),
         "csv" => {
-            let mut csv = String::from("timestamp,user,action,run_id,cost,tokens,autonomy,status\n");
+            let mut csv =
+                String::from("timestamp,user,action,run_id,cost,tokens,autonomy,status\n");
             for e in entries {
                 csv.push_str(&format!(
                     "{},{},{},{},{:.4},{},{},{}\n",
-                    e.timestamp, e.user, e.action, e.run_id, e.cost_usd, e.tokens, e.autonomy, e.status
+                    e.timestamp,
+                    e.user,
+                    e.action,
+                    e.run_id,
+                    e.cost_usd,
+                    e.tokens,
+                    e.autonomy,
+                    e.status
                 ));
             }
             csv

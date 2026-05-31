@@ -4,9 +4,7 @@ use reqwest::Client;
 use serde_json::json;
 use std::collections::HashMap;
 
-use super::{
-    Brain, BrainEvent, BrainRequest, BrainStream, ContentBlock, LatencyClass, ModelCaps,
-};
+use super::{Brain, BrainEvent, BrainRequest, BrainStream, ContentBlock, LatencyClass, ModelCaps};
 
 pub struct AnthropicAdapter {
     model: String,
@@ -17,19 +15,13 @@ pub struct AnthropicAdapter {
 }
 
 impl AnthropicAdapter {
-    pub fn new(
-        model: &str,
-        api_key: impl Into<String>,
-        base_url: Option<&str>,
-    ) -> Self {
+    pub fn new(model: &str, api_key: impl Into<String>, base_url: Option<&str>) -> Self {
         let model = model.to_string();
         let caps = Self::model_caps(&model);
         Self {
             model,
             api_key: api_key.into(),
-            base_url: base_url
-                .unwrap_or("https://api.anthropic.com")
-                .to_string(),
+            base_url: base_url.unwrap_or("https://api.anthropic.com").to_string(),
             client: Client::new(),
             caps,
         }
@@ -94,29 +86,27 @@ impl Brain for AnthropicAdapter {
                     ContentBlock::Text { text } => {
                         content.push(json!({"type": "text", "text": text}));
                     }
-                    ContentBlock::Image { source } => {
-                        match source {
-                            super::ImageSource::Base64 { media_type, data } => {
-                                content.push(json!({
-                                    "type": "image",
-                                    "source": {
-                                        "type": "base64",
-                                        "media_type": media_type,
-                                        "data": data,
-                                    }
-                                }));
-                            }
-                            super::ImageSource::Url { url } => {
-                                content.push(json!({
-                                    "type": "image",
-                                    "source": {
-                                        "type": "url",
-                                        "url": url,
-                                    }
-                                }));
-                            }
+                    ContentBlock::Image { source } => match source {
+                        super::ImageSource::Base64 { media_type, data } => {
+                            content.push(json!({
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": media_type,
+                                    "data": data,
+                                }
+                            }));
                         }
-                    }
+                        super::ImageSource::Url { url } => {
+                            content.push(json!({
+                                "type": "image",
+                                "source": {
+                                    "type": "url",
+                                    "url": url,
+                                }
+                            }));
+                        }
+                    },
                     ContentBlock::ToolResult {
                         tool_use_id,
                         content: tool_content,
@@ -216,11 +206,10 @@ impl Brain for AnthropicAdapter {
                                 continue;
                             }
                             let data = &line[6..]; // Strip "data: "
-                            let event: serde_json::Value =
-                                match serde_json::from_str(data) {
-                                    Ok(v) => v,
-                                    Err(_) => continue,
-                                };
+                            let event: serde_json::Value = match serde_json::from_str(data) {
+                                Ok(v) => v,
+                                Err(_) => continue,
+                            };
 
                             let event_type = event["type"].as_str().unwrap_or("");
                             match event_type {
@@ -244,9 +233,7 @@ impl Brain for AnthropicAdapter {
                                     }
                                 }
                                 "content_block_delta" => {
-                                    let delta_type = event["delta"]["type"]
-                                        .as_str()
-                                        .unwrap_or("");
+                                    let delta_type = event["delta"]["type"].as_str().unwrap_or("");
                                     if delta_type == "text_delta" {
                                         let text = event["delta"]["text"]
                                             .as_str()
@@ -263,8 +250,7 @@ impl Brain for AnthropicAdapter {
                                             .get(&index)
                                             .cloned()
                                             .unwrap_or_else(|| index.to_string());
-                                        events
-                                            .push(BrainEvent::ToolUseDelta { id, json: partial });
+                                        events.push(BrainEvent::ToolUseDelta { id, json: partial });
                                     }
                                 }
                                 "content_block_stop" => {
@@ -276,16 +262,10 @@ impl Brain for AnthropicAdapter {
                                 }
                                 "message_delta" => {
                                     if let Some(usage) = event["usage"].as_object() {
-                                        events.push(BrainEvent::Usage(
-                                            crate::event::TokenUsage {
-                                                input: usage["input_tokens"]
-                                                    .as_u64()
-                                                    .unwrap_or(0),
-                                                output: usage["output_tokens"]
-                                                    .as_u64()
-                                                    .unwrap_or(0),
-                                            },
-                                        ));
+                                        events.push(BrainEvent::Usage(crate::event::TokenUsage {
+                                            input: usage["input_tokens"].as_u64().unwrap_or(0),
+                                            output: usage["output_tokens"].as_u64().unwrap_or(0),
+                                        }));
                                     }
                                     let stop_reason = event["delta"]["stop_reason"]
                                         .as_str()
@@ -298,8 +278,8 @@ impl Brain for AnthropicAdapter {
                                     };
                                     events.push(BrainEvent::Done(reason));
                                 }
-                                "message_stop" => {},
-                                _ => {},
+                                "message_stop" => {}
+                                _ => {}
                             }
                         }
                         events

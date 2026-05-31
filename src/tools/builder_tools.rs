@@ -11,8 +11,12 @@ pub struct TestRunner;
 
 #[async_trait]
 impl Tool for TestRunner {
-    fn name(&self) -> &str { "test" }
-    fn description(&self) -> &str { "Detect and run the project test suite. Parses results." }
+    fn name(&self) -> &str {
+        "test"
+    }
+    fn description(&self) -> &str {
+        "Detect and run the project test suite. Parses results."
+    }
     fn schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -23,7 +27,9 @@ impl Tool for TestRunner {
             "required": []
         })
     }
-    fn risk(&self) -> RiskLevel { RiskLevel::Exec }
+    fn risk(&self) -> RiskLevel {
+        RiskLevel::Exec
+    }
     async fn call(&self, args: serde_json::Value, ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
         let framework = args["framework"].as_str();
         let detected = detect_framework(&ctx.workspace_root);
@@ -46,24 +52,39 @@ impl Tool for TestRunner {
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
         let exit_code = output.status.code().unwrap_or(-1);
 
-        let passed = stdout.lines().filter(|l| l.contains("pass") || l.contains("PASS") || l.contains("ok")).count() as u32;
-        let failed = stdout.lines().filter(|l| l.contains("fail") || l.contains("FAIL") || l.contains("FAILED")).count() as u32;
+        let passed = stdout
+            .lines()
+            .filter(|l| l.contains("pass") || l.contains("PASS") || l.contains("ok"))
+            .count() as u32;
+        let failed = stdout
+            .lines()
+            .filter(|l| l.contains("fail") || l.contains("FAIL") || l.contains("FAILED"))
+            .count() as u32;
 
-        Ok(ToolResult::ok(vec![
-            Block::Text(format!(
-                "Framework: {}\nPassed: {}\nFailed: {}\nExit: {}\n\n{}",
-                fw, passed, failed, exit_code,
-                if stderr.is_empty() { &stdout } else { &stderr }
-            )),
-        ]))
+        Ok(ToolResult::ok(vec![Block::Text(format!(
+            "Framework: {}\nPassed: {}\nFailed: {}\nExit: {}\n\n{}",
+            fw,
+            passed,
+            failed,
+            exit_code,
+            if stderr.is_empty() { &stdout } else { &stderr }
+        ))]))
     }
 }
 
 fn detect_framework(root: &std::path::Path) -> String {
-    if root.join("Cargo.toml").exists() { return "cargo".into(); }
-    if root.join("pyproject.toml").exists() || root.join("pytest.ini").exists() { return "pytest".into(); }
-    if root.join("package.json").exists() { return "jest".into(); }
-    if root.join("go.mod").exists() { return "go".into(); }
+    if root.join("Cargo.toml").exists() {
+        return "cargo".into();
+    }
+    if root.join("pyproject.toml").exists() || root.join("pytest.ini").exists() {
+        return "pytest".into();
+    }
+    if root.join("package.json").exists() {
+        return "jest".into();
+    }
+    if root.join("go.mod").exists() {
+        return "go".into();
+    }
     "cargo".into()
 }
 
@@ -73,8 +94,12 @@ pub struct ApplyPatch;
 
 #[async_trait]
 impl Tool for ApplyPatch {
-    fn name(&self) -> &str { "apply_patch" }
-    fn description(&self) -> &str { "Apply a structured multi-file patch atomically with rollback" }
+    fn name(&self) -> &str {
+        "apply_patch"
+    }
+    fn description(&self) -> &str {
+        "Apply a structured multi-file patch atomically with rollback"
+    }
     fn schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -92,9 +117,12 @@ impl Tool for ApplyPatch {
             "required": ["patches"]
         })
     }
-    fn risk(&self) -> RiskLevel { RiskLevel::Mutating }
+    fn risk(&self) -> RiskLevel {
+        RiskLevel::Mutating
+    }
     async fn call(&self, args: serde_json::Value, ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
-        let patches = args["patches"].as_array()
+        let patches = args["patches"]
+            .as_array()
             .ok_or_else(|| anyhow::anyhow!("patches must be an array"))?;
 
         // Read all current contents first (for rollback)
@@ -119,7 +147,8 @@ impl Tool for ApplyPatch {
                     std::fs::write(ctx.workspace_root.join(f), content)?;
                 }
                 return Ok(ToolResult::error(format!(
-                    "Patch failed on '{}': old string not found. All changes rolled back.", file
+                    "Patch failed on '{}': old string not found. All changes rolled back.",
+                    file
                 )));
             }
 
@@ -128,9 +157,11 @@ impl Tool for ApplyPatch {
             results.push(format!("✓ {} : applied", file));
         }
 
-        Ok(ToolResult::ok(vec![
-            Block::Text(format!("Patched {} file(s) atomically:\n{}", results.len(), results.join("\n"))),
-        ]))
+        Ok(ToolResult::ok(vec![Block::Text(format!(
+            "Patched {} file(s) atomically:\n{}",
+            results.len(),
+            results.join("\n")
+        ))]))
     }
 }
 
@@ -140,8 +171,12 @@ pub struct GitPrCreate;
 
 #[async_trait]
 impl Tool for GitPrCreate {
-    fn name(&self) -> &str { "git_pr_create" }
-    fn description(&self) -> &str { "Create a pull request on GitHub" }
+    fn name(&self) -> &str {
+        "git_pr_create"
+    }
+    fn description(&self) -> &str {
+        "Create a pull request on GitHub"
+    }
     fn schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -153,7 +188,9 @@ impl Tool for GitPrCreate {
             "required": ["title"]
         })
     }
-    fn risk(&self) -> RiskLevel { RiskLevel::Network }
+    fn risk(&self) -> RiskLevel {
+        RiskLevel::Network
+    }
     async fn call(&self, args: serde_json::Value, ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
         let title = args["title"].as_str().unwrap_or("Sparrow PR");
         let body = args["body"].as_str().unwrap_or("");
@@ -161,7 +198,9 @@ impl Tool for GitPrCreate {
 
         // Try gh CLI first
         let output = StdCommand::new("gh")
-            .args(["pr", "create", "--title", title, "--body", body, "--base", base])
+            .args([
+                "pr", "create", "--title", title, "--body", body, "--base", base,
+            ])
             .current_dir(&ctx.workspace_root)
             .output();
 
@@ -184,8 +223,12 @@ pub struct FetchDocs;
 
 #[async_trait]
 impl Tool for FetchDocs {
-    fn name(&self) -> &str { "fetch_docs" }
-    fn description(&self) -> &str { "Fetch up-to-date library documentation to avoid API hallucinations" }
+    fn name(&self) -> &str {
+        "fetch_docs"
+    }
+    fn description(&self) -> &str {
+        "Fetch up-to-date library documentation to avoid API hallucinations"
+    }
     fn schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -196,7 +239,9 @@ impl Tool for FetchDocs {
             "required": ["package"]
         })
     }
-    fn risk(&self) -> RiskLevel { RiskLevel::Network }
+    fn risk(&self) -> RiskLevel {
+        RiskLevel::Network
+    }
     async fn call(&self, args: serde_json::Value, _ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
         let package = args["package"].as_str().unwrap_or("");
         let lang = args["language"].as_str().unwrap_or("rust");
@@ -219,7 +264,11 @@ impl Tool for FetchDocs {
                 let status = resp.status();
                 let text = resp.text().await.unwrap_or_default();
                 // Extract first 2000 chars of meaningful content
-                let preview: String = text.chars().filter(|c| !c.is_whitespace() || *c == ' ').take(2000).collect();
+                let preview: String = text
+                    .chars()
+                    .filter(|c| !c.is_whitespace() || *c == ' ')
+                    .take(2000)
+                    .collect();
                 Ok(ToolResult::text(format!(
                     "Docs for {}: {}\nStatus: {}\n\n{}",
                     package, url, status, preview
@@ -239,8 +288,12 @@ pub struct LspClient;
 
 #[async_trait]
 impl Tool for LspClient {
-    fn name(&self) -> &str { "lsp" }
-    fn description(&self) -> &str { "Language Server Protocol: diagnostics, goto definition, references, hover" }
+    fn name(&self) -> &str {
+        "lsp"
+    }
+    fn description(&self) -> &str {
+        "Language Server Protocol: diagnostics, goto definition, references, hover"
+    }
     fn schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -254,7 +307,9 @@ impl Tool for LspClient {
             "required": ["action", "file"]
         })
     }
-    fn risk(&self) -> RiskLevel { RiskLevel::ReadOnly }
+    fn risk(&self) -> RiskLevel {
+        RiskLevel::ReadOnly
+    }
     async fn call(&self, args: serde_json::Value, _ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
         let action = args["action"].as_str().unwrap_or("diagnostics");
         let file = args["file"].as_str().unwrap_or("");
@@ -274,8 +329,12 @@ pub struct Repl;
 
 #[async_trait]
 impl Tool for Repl {
-    fn name(&self) -> &str { "repl" }
-    fn description(&self) -> &str { "Execute code interactively in a sandboxed REPL (Python/Node)" }
+    fn name(&self) -> &str {
+        "repl"
+    }
+    fn description(&self) -> &str {
+        "Execute code interactively in a sandboxed REPL (Python/Node)"
+    }
     fn schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -287,22 +346,32 @@ impl Tool for Repl {
             "required": ["language", "code"]
         })
     }
-    fn risk(&self) -> RiskLevel { RiskLevel::Exec }
+    fn risk(&self) -> RiskLevel {
+        RiskLevel::Exec
+    }
     async fn call(&self, args: serde_json::Value, _ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
         let lang = args["language"].as_str().unwrap_or("python");
         let code = args["code"].as_str().unwrap_or("");
         let _timeout_ms = args["timeout_ms"].as_u64().unwrap_or(30_000);
 
-        let program = match lang { "node" => "node", _ => "python3" };
-        let flag = match lang { "node" => "-e", _ => "-c" };
+        let program = match lang {
+            "node" => "node",
+            _ => "python3",
+        };
+        let flag = match lang {
+            "node" => "-e",
+            _ => "-c",
+        };
 
-        let output = StdCommand::new(program)
-            .args([flag, code])
-            .output()?;
+        let output = StdCommand::new(program).args([flag, code]).output()?;
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-        let result = if stderr.is_empty() { stdout } else { format!("{}\n{}", stdout, stderr) };
+        let result = if stderr.is_empty() {
+            stdout
+        } else {
+            format!("{}\n{}", stdout, stderr)
+        };
 
         Ok(ToolResult::text(result))
     }

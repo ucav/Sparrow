@@ -3,7 +3,7 @@ name: Security Audit
 on:
   schedule: [{cron: '0 8 * * 1'}]  # Every Monday
   push:
-    branches: [main]
+    branches: [master, main]
     paths: ['Cargo.toml', 'Cargo.lock']
 
 jobs:

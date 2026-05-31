@@ -1,4 +1,4 @@
-use criterion::{black_box, Criterion};
+use criterion::{Criterion, black_box};
 
 // ─── Benchmarks ────────────────────────────────────────────────────────────────
 
@@ -47,10 +47,15 @@ pub fn bench_event_serialization(c: &mut Criterion) {
 
 pub fn bench_skill_relevance(c: &mut Criterion) {
     let skill = sparrow::capabilities::Skill {
-        name: "test".into(), description: "desc".into(),
+        name: "test".into(),
+        description: "desc".into(),
         trigger: vec!["rust".into(), "error".into(), "handling".into()],
-        body: "body".into(), source_file: "".into(),
-        usage_count: 0, created_at: "".into(), score: 0.5, auto_generated: false,
+        body: "body".into(),
+        source_file: "".into(),
+        usage_count: 0,
+        created_at: "".into(),
+        score: 0.5,
+        auto_generated: false,
     };
     let ctx = "I need help with Rust error handling in async code with anyhow";
     c.bench_function("skill_relevance", |b| {

@@ -1,11 +1,9 @@
 use async_trait::async_trait;
+use futures::StreamExt;
 use reqwest::Client;
 use serde_json::json;
-use futures::StreamExt;
 
-use super::{
-    Brain, BrainEvent, BrainRequest, BrainStream, LatencyClass, ModelCaps,
-};
+use super::{Brain, BrainEvent, BrainRequest, BrainStream, LatencyClass, ModelCaps};
 
 // ─── OpenAI Responses API adapter ───────────────────────────────────────────────
 
@@ -20,18 +18,12 @@ pub struct OpenAIResponsesAdapter {
 }
 
 impl OpenAIResponsesAdapter {
-    pub fn new(
-        model: &str,
-        api_key: impl Into<String>,
-        base_url: Option<&str>,
-    ) -> Self {
+    pub fn new(model: &str, api_key: impl Into<String>, base_url: Option<&str>) -> Self {
         let model = model.to_string();
         Self {
             model,
             api_key: api_key.into(),
-            base_url: base_url
-                .unwrap_or("https://api.openai.com/v1")
-                .to_string(),
+            base_url: base_url.unwrap_or("https://api.openai.com/v1").to_string(),
             client: Client::new(),
             caps: ModelCaps {
                 context_window: 128_000,
@@ -111,9 +103,8 @@ impl Brain for OpenAIResponsesAdapter {
         }
 
         let stream = response.bytes_stream();
-        let event_stream = futures::stream::unfold(
-            (stream, false),
-            |(mut stream, done)| async move {
+        let event_stream =
+            futures::stream::unfold((stream, false), |(mut stream, done)| async move {
                 if done {
                     return None;
                 }
@@ -128,9 +119,7 @@ impl Brain for OpenAIResponsesAdapter {
                             }
                             let data = &line[6..];
                             if data == "[DONE]" {
-                                events.push(BrainEvent::Done(
-                                    crate::event::StopReason::EndTurn,
-                                ));
+                                events.push(BrainEvent::Done(crate::event::StopReason::EndTurn));
                                 continue;
                             }
                             if let Ok(val) = serde_json::from_str::<serde_json::Value>(data) {
@@ -138,9 +127,8 @@ impl Brain for OpenAIResponsesAdapter {
                                     events.push(BrainEvent::TextDelta(delta.to_string()));
                                 }
                                 if val["type"].as_str() == Some("response.completed") {
-                                    events.push(BrainEvent::Done(
-                                        crate::event::StopReason::EndTurn,
-                                    ));
+                                    events
+                                        .push(BrainEvent::Done(crate::event::StopReason::EndTurn));
                                 }
                             }
                         }
@@ -155,9 +143,8 @@ impl Brain for OpenAIResponsesAdapter {
                     )),
                     None => None,
                 }
-            },
-        )
-        .flatten();
+            })
+            .flatten();
 
         Ok(Box::pin(event_stream))
     }
@@ -250,17 +237,12 @@ impl Brain for BedrockAdapter {
         let status = response.status().as_u16();
         if !response.status().is_success() {
             let body = response.text().await.unwrap_or_default();
-            return Err(anyhow::anyhow!(
-                "Bedrock API error {}: {}",
-                status,
-                body
-            ));
+            return Err(anyhow::anyhow!("Bedrock API error {}: {}", status, body));
         }
 
         let stream = response.bytes_stream();
-        let event_stream = futures::stream::unfold(
-            (stream, false),
-            |(mut stream, done)| async move {
+        let event_stream =
+            futures::stream::unfold((stream, false), |(mut stream, done)| async move {
                 if done {
                     return None;
                 }
@@ -279,9 +261,8 @@ impl Brain for BedrockAdapter {
                     )),
                     None => None,
                 }
-            },
-        )
-        .flatten();
+            })
+            .flatten();
 
         Ok(Box::pin(event_stream))
     }

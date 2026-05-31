@@ -4,9 +4,7 @@ use reqwest::Client;
 use serde_json::json;
 use std::collections::HashMap;
 
-use super::{
-    Brain, BrainEvent, BrainRequest, BrainStream, ContentBlock, LatencyClass, ModelCaps,
-};
+use super::{Brain, BrainEvent, BrainRequest, BrainStream, ContentBlock, LatencyClass, ModelCaps};
 
 /// OpenAI-compatible adapter. Covers OpenAI, Groq, NVIDIA NIM, Together, Cerebras,
 /// OpenRouter, NovitaAI, Nous Portal, HuggingFace, Ollama, and custom endpoints.
@@ -19,11 +17,7 @@ pub struct OpenAICompatAdapter {
 }
 
 impl OpenAICompatAdapter {
-    pub fn new(
-        model: &str,
-        api_key: impl Into<String>,
-        base_url: &str,
-    ) -> Self {
+    pub fn new(model: &str, api_key: impl Into<String>, base_url: &str) -> Self {
         let model = model.to_string();
         Self {
             model,
@@ -237,7 +231,11 @@ impl Brain for OpenAICompatAdapter {
                             let event: serde_json::Value = match serde_json::from_str(data) {
                                 Ok(v) => v,
                                 Err(e) => {
-                                    tracing::debug!("JSON parse error: {} — data: {}", e, &data[..data.len().min(200)]);
+                                    tracing::debug!(
+                                        "JSON parse error: {} — data: {}",
+                                        e,
+                                        &data[..data.len().min(200)]
+                                    );
                                     continue;
                                 }
                             };
@@ -245,24 +243,40 @@ impl Brain for OpenAICompatAdapter {
                             if let Some(choices) = event["choices"].as_array() {
                                 for choice in choices {
                                     if let Some(delta) = choice["delta"].as_object() {
-                                        if let Some(text) = delta.get("content").and_then(|v| v.as_str()) {
+                                        if let Some(text) =
+                                            delta.get("content").and_then(|v| v.as_str())
+                                        {
                                             if !text.is_empty() {
-                                                parsed.push(BrainEvent::TextDelta(text.to_string()));
+                                                parsed
+                                                    .push(BrainEvent::TextDelta(text.to_string()));
                                             }
                                         }
-                                        if let Some(tool_calls) = delta.get("tool_calls").and_then(|v| v.as_array()) {
+                                        if let Some(tool_calls) =
+                                            delta.get("tool_calls").and_then(|v| v.as_array())
+                                        {
                                             for tc in tool_calls {
-                                                let idx = tc.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
-                                                let id = tc.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                                                let idx = tc
+                                                    .get("index")
+                                                    .and_then(|v| v.as_u64())
+                                                    .unwrap_or(0);
+                                                let id = tc
+                                                    .get("id")
+                                                    .and_then(|v| v.as_str())
+                                                    .map(|s| s.to_string());
                                                 let state = tool_state.entry(idx).or_default();
                                                 if let Some(id) = id {
                                                     state.id = id;
                                                 }
-                                                if let Some(func) = tc.get("function").and_then(|v| v.as_object()) {
-                                                    if let Some(name) = func.get("name").and_then(|v| v.as_str()) {
+                                                if let Some(func) =
+                                                    tc.get("function").and_then(|v| v.as_object())
+                                                {
+                                                    if let Some(name) =
+                                                        func.get("name").and_then(|v| v.as_str())
+                                                    {
                                                         if !state.started {
                                                             if state.id.is_empty() {
-                                                                state.id = format!("tool-call-{}", idx);
+                                                                state.id =
+                                                                    format!("tool-call-{}", idx);
                                                             }
                                                             state.started = true;
                                                             parsed.push(BrainEvent::ToolUseStart {
@@ -271,8 +285,12 @@ impl Brain for OpenAICompatAdapter {
                                                             });
                                                         }
                                                     }
-                                                    if let Some(args) = func.get("arguments").and_then(|v| v.as_str()) {
-                                                        if !state.id.is_empty() && !args.is_empty() {
+                                                    if let Some(args) = func
+                                                        .get("arguments")
+                                                        .and_then(|v| v.as_str())
+                                                    {
+                                                        if !state.id.is_empty() && !args.is_empty()
+                                                        {
                                                             parsed.push(BrainEvent::ToolUseDelta {
                                                                 id: state.id.clone(),
                                                                 json: args.to_string(),
@@ -284,7 +302,9 @@ impl Brain for OpenAICompatAdapter {
                                         }
                                     }
 
-                                    if let Some(reason) = choice.get("finish_reason").and_then(|v| v.as_str()) {
+                                    if let Some(reason) =
+                                        choice.get("finish_reason").and_then(|v| v.as_str())
+                                    {
                                         if !reason.is_empty() && reason != "null" {
                                             let stop = match reason {
                                                 "stop" => crate::event::StopReason::EndTurn,
@@ -292,12 +312,16 @@ impl Brain for OpenAICompatAdapter {
                                                 "tool_calls" => {
                                                     for (_, state) in tool_state.drain() {
                                                         if !state.id.is_empty() {
-                                                            parsed.push(BrainEvent::ToolUseEnd { id: state.id });
+                                                            parsed.push(BrainEvent::ToolUseEnd {
+                                                                id: state.id,
+                                                            });
                                                         }
                                                     }
                                                     crate::event::StopReason::ToolUse
                                                 }
-                                                s => crate::event::StopReason::StopSequence(s.to_string()),
+                                                s => crate::event::StopReason::StopSequence(
+                                                    s.to_string(),
+                                                ),
                                             };
                                             parsed.push(BrainEvent::Done(stop));
                                         }

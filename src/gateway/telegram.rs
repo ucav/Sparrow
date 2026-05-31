@@ -79,10 +79,7 @@ impl GatewayTransport for TelegramTransport {
         "telegram"
     }
 
-    async fn start(
-        &self,
-        tx: mpsc::UnboundedSender<GatewayMessage>,
-    ) -> anyhow::Result<()> {
+    async fn start(&self, tx: mpsc::UnboundedSender<GatewayMessage>) -> anyhow::Result<()> {
         let token = self.bot_token.clone();
         let api_url = self.api_url.clone();
         let client = self.client.clone();
@@ -127,13 +124,9 @@ impl GatewayTransport for TelegramTransport {
                                         if !allowed.is_empty() && !allowed.contains(&user_id) {
                                             continue;
                                         }
-                                        let text = msg["text"]
-                                            .as_str()
-                                            .unwrap_or("")
-                                            .to_string();
-                                        let message_id = msg["message_id"]
-                                            .as_i64()
-                                            .map(|i| i.to_string());
+                                        let text = msg["text"].as_str().unwrap_or("").to_string();
+                                        let message_id =
+                                            msg["message_id"].as_i64().map(|i| i.to_string());
 
                                         if !text.is_empty() {
                                             let _ = tx.send(GatewayMessage {
@@ -164,12 +157,8 @@ impl GatewayTransport for TelegramTransport {
         if response.buttons.is_empty() {
             self.send_message(&response.chat_id, &response.text).await
         } else {
-            self.send_message_with_buttons(
-                &response.chat_id,
-                &response.text,
-                &response.buttons,
-            )
-            .await
+            self.send_message_with_buttons(&response.chat_id, &response.text, &response.buttons)
+                .await
         }
     }
 

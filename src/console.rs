@@ -1,7 +1,7 @@
-use std::net::SocketAddr;
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
-use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
+use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 
 use crate::auth::{AuthStore, Credential};
 use crate::config::{Config, ConfigStore, FsConfigStore, ProviderConfig};
@@ -39,18 +39,21 @@ impl WebViewServer {
         config: Option<Arc<RwLock<Config>>>,
         approvals: Option<Arc<WebApprovalBroker>>,
     ) -> Self {
-        Self { addr, event_tx, command_tx, config, approvals }
+        Self {
+            addr,
+            event_tx,
+            command_tx,
+            config,
+            approvals,
+        }
     }
 
     pub async fn serve(&self) -> anyhow::Result<()> {
         use axum::{
-            extract::{
-                ws::WebSocketUpgrade,
-                State,
-            },
+            Router,
+            extract::{State, ws::WebSocketUpgrade},
             response::Html,
             routing::{get, post},
-            Router,
         };
 
         let event_tx = self.event_tx.clone();
@@ -66,10 +69,15 @@ impl WebViewServer {
             .route("/run", post(run_task))
             .route("/approval", post(resolve_approval))
             .route("/config", get(get_config).post(save_provider))
-            .route("/ws", get(move |ws: WebSocketUpgrade, State(state): State<Arc<AppState>>| async move {
-                let rx = state.event_tx.subscribe();
-                ws.on_upgrade(move |socket| handle_ws(socket, rx))
-            }))
+            .route(
+                "/ws",
+                get(
+                    move |ws: WebSocketUpgrade, State(state): State<Arc<AppState>>| async move {
+                        let rx = state.event_tx.subscribe();
+                        ws.on_upgrade(move |socket| handle_ws(socket, rx))
+                    },
+                ),
+            )
             .with_state(state);
 
         let listener = tokio::net::TcpListener::bind(self.addr).await?;
@@ -280,17 +288,17 @@ async fn get_config(
             ProviderView {
                 name: def.id,
                 label: def.label,
-                adapter: configured
-                    .map(|p| p.adapter.clone())
-                    .unwrap_or(def.adapter),
+                adapter: configured.map(|p| p.adapter.clone()).unwrap_or(def.adapter),
                 base_url: configured
                     .and_then(|p| p.base_url.clone())
                     .or(Some(def.base_url)),
                 models: configured
-                    .map(|p| if p.models.is_empty() {
-                        def.models.iter().map(|m| m.name.clone()).collect()
-                    } else {
-                        p.models.clone()
+                    .map(|p| {
+                        if p.models.is_empty() {
+                            def.models.iter().map(|m| m.name.clone()).collect()
+                        } else {
+                            p.models.clone()
+                        }
                     })
                     .unwrap_or_else(|| def.models.iter().map(|m| m.name.clone()).collect()),
                 tags: def.tags,
@@ -456,7 +464,10 @@ fn parse_autonomy(value: Option<&str>) -> Option<crate::event::AutonomyLevel> {
     }
 }
 
-async fn handle_ws(mut socket: axum::extract::ws::WebSocket, mut event_rx: tokio::sync::broadcast::Receiver<Event>) {
+async fn handle_ws(
+    mut socket: axum::extract::ws::WebSocket,
+    mut event_rx: tokio::sync::broadcast::Receiver<Event>,
+) {
     loop {
         tokio::select! {
             result = event_rx.recv() => {

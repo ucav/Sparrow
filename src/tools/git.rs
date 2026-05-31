@@ -36,7 +36,11 @@ impl Tool for Git {
         let action = args["action"].as_str().unwrap_or("status");
         let extra_args: Vec<String> = args["args"]
             .as_array()
-            .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|v| v.as_str().map(String::from))
+                    .collect()
+            })
             .unwrap_or_default();
 
         // Update risk based on action

@@ -8,8 +8,8 @@ use crate::event::Event;
 use crate::memory::Memory;
 
 pub mod event_bus;
-pub mod scheduler;
 pub mod recorder;
+pub mod scheduler;
 
 use event_bus::EventBus;
 use recorder::{FsRecorder, Recorder, RunInputs};
@@ -48,9 +48,7 @@ pub struct SparrowRuntime {
     _config: Config,
     running: std::sync::atomic::AtomicBool,
     // Running tasks
-    active_runs: tokio::sync::Mutex<
-        std::collections::HashMap<String, tokio::task::JoinHandle<()>>,
-    >,
+    active_runs: tokio::sync::Mutex<std::collections::HashMap<String, tokio::task::JoinHandle<()>>>,
 }
 
 impl SparrowRuntime {
@@ -117,11 +115,7 @@ impl SparrowRuntime {
                         let engine_run_id = run_id_clone.clone();
                         let engine_handle = tokio::spawn(async move {
                             engine_clone
-                                .drive_with_run_id(
-                                    task,
-                                    tx,
-                                    crate::event::RunId(engine_run_id),
-                                )
+                                .drive_with_run_id(task, tx, crate::event::RunId(engine_run_id))
                                 .await
                         });
 
@@ -160,9 +154,7 @@ impl SparrowRuntime {
                             loop {
                                 match rx.recv().await {
                                     Ok(event) => {
-                                        if let Ok(json) =
-                                            serde_json::to_string(&event)
-                                        {
+                                        if let Ok(json) = serde_json::to_string(&event) {
                                             let line = json + "\n";
                                             if stream.write_all(line.as_bytes()).await.is_err() {
                                                 break;

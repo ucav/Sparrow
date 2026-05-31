@@ -1,4 +1,4 @@
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -45,12 +45,7 @@ impl RepoMap {
     }
 }
 
-fn scan_dir(
-    base: &Path,
-    dir: &Path,
-    files: &mut Vec<FileEntry>,
-    symbols: &mut Vec<SymbolEntry>,
-) {
+fn scan_dir(base: &Path, dir: &Path, files: &mut Vec<FileEntry>, symbols: &mut Vec<SymbolEntry>) {
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
@@ -129,7 +124,8 @@ fn scan_dir(
                                     kind: "struct".into(),
                                     line: (i + 1) as u32,
                                 });
-                            } else if trimmed.starts_with("pub enum ") || trimmed.starts_with("enum ")
+                            } else if trimmed.starts_with("pub enum ")
+                                || trimmed.starts_with("enum ")
                             {
                                 let name = trimmed
                                     .trim_start_matches("pub enum ")
@@ -350,8 +346,7 @@ impl Memory for SqliteMemory {
             params![run.0],
             |row| {
                 let messages_json: String = row.get(1)?;
-                let messages: Vec<Msg> =
-                    serde_json::from_str(&messages_json).unwrap_or_default();
+                let messages: Vec<Msg> = serde_json::from_str(&messages_json).unwrap_or_default();
                 Ok(TaskMem {
                     run_id: row.get(0)?,
                     messages,
@@ -396,7 +391,9 @@ impl Memory for SqliteMemory {
     fn shared_docs(&self) -> Vec<WorkingDoc> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
-            .prepare("SELECT id, title, content, updated_at FROM working_docs ORDER BY updated_at DESC")
+            .prepare(
+                "SELECT id, title, content, updated_at FROM working_docs ORDER BY updated_at DESC",
+            )
             .unwrap();
         let docs = stmt
             .query_map([], |row| {
@@ -449,20 +446,32 @@ impl Memory for SqliteMemory {
     fn recall(&self, q: &str, k: usize) -> Vec<Fact> {
         let conn = self.conn.lock().unwrap();
         // FTS5 full-text search with LIKE fallback
-        let pattern = q.split_whitespace().map(|w| format!("{}*", w)).collect::<Vec<_>>().join(" ");
+        let pattern = q
+            .split_whitespace()
+            .map(|w| format!("{}*", w))
+            .collect::<Vec<_>>()
+            .join(" ");
 
         let result = conn.prepare(
             "SELECT f.id, f.key, f.value, f.created_at, f.updated_at FROM facts f
              INNER JOIN facts_fts ft ON f.rowid = ft.rowid
-             WHERE facts_fts MATCH ?1 ORDER BY rank LIMIT ?2"
+             WHERE facts_fts MATCH ?1 ORDER BY rank LIMIT ?2",
         );
 
         match result {
-            Ok(mut stmt) => {
-                stmt.query_map(params![pattern, k as i64], |row| {
-                    Ok(Fact { id: row.get(0)?, key: row.get(1)?, value: row.get(2)?, created_at: row.get(3)?, updated_at: row.get(4)? })
-                }).unwrap().filter_map(|r| r.ok()).collect()
-            }
+            Ok(mut stmt) => stmt
+                .query_map(params![pattern, k as i64], |row| {
+                    Ok(Fact {
+                        id: row.get(0)?,
+                        key: row.get(1)?,
+                        value: row.get(2)?,
+                        created_at: row.get(3)?,
+                        updated_at: row.get(4)?,
+                    })
+                })
+                .unwrap()
+                .filter_map(|r| r.ok())
+                .collect(),
             Err(_) => {
                 // Fallback to LIKE
                 let like_pattern = format!("%{}%", q);
@@ -470,8 +479,17 @@ impl Memory for SqliteMemory {
                     "SELECT id, key, value, created_at, updated_at FROM facts WHERE key LIKE ?1 OR value LIKE ?1 LIMIT ?2"
                 ).unwrap();
                 stmt.query_map(params![like_pattern, k as i64], |row| {
-                    Ok(Fact { id: row.get(0)?, key: row.get(1)?, value: row.get(2)?, created_at: row.get(3)?, updated_at: row.get(4)? })
-                }).unwrap().filter_map(|r| r.ok()).collect()
+                    Ok(Fact {
+                        id: row.get(0)?,
+                        key: row.get(1)?,
+                        value: row.get(2)?,
+                        created_at: row.get(3)?,
+                        updated_at: row.get(4)?,
+                    })
+                })
+                .unwrap()
+                .filter_map(|r| r.ok())
+                .collect()
             }
         }
     }
@@ -479,7 +497,9 @@ impl Memory for SqliteMemory {
     fn all_facts(&self) -> Vec<Fact> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
-            .prepare("SELECT id, key, value, created_at, updated_at FROM facts ORDER BY updated_at DESC")
+            .prepare(
+                "SELECT id, key, value, created_at, updated_at FROM facts ORDER BY updated_at DESC",
+            )
             .unwrap();
         stmt.query_map([], |row| {
             Ok(Fact {

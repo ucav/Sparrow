@@ -5,9 +5,7 @@ use tokio::sync::{Mutex, mpsc};
 
 use crate::config::Config;
 use crate::engine::{Identity, Workspace};
-use crate::event::{
-    AgentStatus, Event, OutcomeSummary, RunId, TokenUsage,
-};
+use crate::event::{AgentStatus, Event, OutcomeSummary, RunId, TokenUsage};
 use crate::memory::Memory;
 use crate::provider::{Brain, BrainRequest, ContentBlock, Msg};
 use crate::router::{BudgetState, Router, TaskTier};
@@ -295,7 +293,9 @@ Output format:
         let coder_identity = Identity {
             name: "coder".into(),
             role: "implementation engineer".into(),
-            personality: "precise, produces clean working code, uses exact file edits with the edit tool.".into(),
+            personality:
+                "precise, produces clean working code, uses exact file edits with the edit tool."
+                    .into(),
         };
 
         let rework_section = if let Some(notes) = rework_notes {
@@ -304,7 +304,12 @@ Output format:
             } else {
                 format!(
                     "\n## REWORK NOTES (from verifier)\nThe previous implementation had issues. Fix these:\n{}",
-                    notes.iter().enumerate().map(|(i, n)| format!("{}. {}", i + 1, n)).collect::<Vec<_>>().join("\n")
+                    notes
+                        .iter()
+                        .enumerate()
+                        .map(|(i, n)| format!("{}. {}", i + 1, n))
+                        .collect::<Vec<_>>()
+                        .join("\n")
                 )
             }
         } else {
@@ -323,8 +328,7 @@ Your job: implement the SPEC exactly. Use tools to read existing files and write
 - Produce working, compilable code.
 {}
 "#,
-            coder_identity.personality,
-            rework_section,
+            coder_identity.personality, rework_section,
         );
 
         // Build repo map context
@@ -397,7 +401,10 @@ Your job: implement the SPEC exactly. Use tools to read existing files and write
                 if let Some(start) = line.find('"') {
                     if let Some(end) = line[start + 1..].find('"') {
                         let path = &line[start + 1..start + 1 + end];
-                        if !diffs.iter().any(|d: &crate::event::FileDiff| d.file == path) {
+                        if !diffs
+                            .iter()
+                            .any(|d: &crate::event::FileDiff| d.file == path)
+                        {
                             diffs.push(crate::event::FileDiff {
                                 file: path.to_string(),
                                 plus: 1,
@@ -663,8 +670,7 @@ impl Orchestrator for DefaultOrchestrator {
 
             // Release any locks from previous attempt
             if attempt > 0 {
-                let prev_files: Vec<String> =
-                    all_diffs.iter().map(|d| d.file.clone()).collect();
+                let prev_files: Vec<String> = all_diffs.iter().map(|d| d.file.clone()).collect();
                 self.file_locks.release(&prev_files).await;
             }
 
@@ -708,9 +714,7 @@ impl Orchestrator for DefaultOrchestrator {
                         from_agent: "verifier".into(),
                         to_agent: "coder".into(),
                         content: "PASS — all checks satisfied".into(),
-                        timestamp: chrono::Utc::now()
-                            .format("%Y-%m-%d %H:%M:%S")
-                            .to_string(),
+                        timestamp: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
                     });
 
                     let _ = event_tx.send(Event::TestResult {
@@ -731,9 +735,7 @@ impl Orchestrator for DefaultOrchestrator {
                         from_agent: "verifier".into(),
                         to_agent: "coder".into(),
                         content: format!("REWORK: {}", findings.join("; ")),
-                        timestamp: chrono::Utc::now()
-                            .format("%Y-%m-%d %H:%M:%S")
-                            .to_string(),
+                        timestamp: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
                     });
 
                     let _ = event_tx.send(Event::TestResult {

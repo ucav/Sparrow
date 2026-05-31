@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master, main]
   pull_request:
-    branches: [main]
+    branches: [master, main]
 
 env:
   CARGO_TERM_COLOR: always
@@ -39,8 +39,9 @@ jobs:
         run: cargo test --release
 
       - name: Security audit
-        run: cargo audit || true
-        continue-on-error: true
+        uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
   release:
     name: Release build + sign

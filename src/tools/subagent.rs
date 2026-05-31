@@ -4,8 +4,8 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use super::{Tool, ToolCtx, ToolResult};
-use crate::event::{Block, Event, RiskLevel};
 use crate::engine::{Engine, Task};
+use crate::event::{Block, Event, RiskLevel};
 
 // ─── Subagent spawn ─────────────────────────────────────────────────────────────
 
@@ -43,11 +43,7 @@ impl Tool for SubagentSpawn {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Exec
     }
-    async fn call(
-        &self,
-        args: serde_json::Value,
-        _ctx: &ToolCtx,
-    ) -> anyhow::Result<ToolResult> {
+    async fn call(&self, args: serde_json::Value, _ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
         let task_desc = args["task"].as_str().unwrap_or("");
         let role = args["role"].as_str().unwrap_or("helper");
 
@@ -67,7 +63,10 @@ impl Tool for SubagentSpawn {
                     status: format!("error: {}", e),
                     diffs: vec![],
                     cost_usd: 0.0,
-                    tokens: crate::event::TokenUsage { input: 0, output: 0 },
+                    tokens: crate::event::TokenUsage {
+                        input: 0,
+                        output: 0,
+                    },
                 },
             }
         });
@@ -95,19 +94,22 @@ impl Tool for SubagentSpawn {
             }
         }
 
-        let outcome = handle.await.unwrap_or_else(|e| crate::event::OutcomeSummary {
-            status: format!("subagent panicked: {}", e),
-            diffs: vec![],
-            cost_usd: 0.0,
-            tokens: crate::event::TokenUsage { input: 0, output: 0 },
-        });
+        let outcome = handle
+            .await
+            .unwrap_or_else(|e| crate::event::OutcomeSummary {
+                status: format!("subagent panicked: {}", e),
+                diffs: vec![],
+                cost_usd: 0.0,
+                tokens: crate::event::TokenUsage {
+                    input: 0,
+                    output: 0,
+                },
+            });
 
-        Ok(ToolResult::ok(vec![
-            Block::Text(format!(
-                "Subagent '{}' completed.\nStatus: {}\nOutput:\n{}",
-                role, outcome.status, output
-            )),
-        ]))
+        Ok(ToolResult::ok(vec![Block::Text(format!(
+            "Subagent '{}' completed.\nStatus: {}\nOutput:\n{}",
+            role, outcome.status, output
+        ))]))
     }
 }
 
@@ -136,11 +138,7 @@ impl Tool for PythonRpc {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Exec
     }
-    async fn call(
-        &self,
-        args: serde_json::Value,
-        _ctx: &ToolCtx,
-    ) -> anyhow::Result<ToolResult> {
+    async fn call(&self, args: serde_json::Value, _ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
         let code = args["code"].as_str().unwrap_or("");
         let timeout_ms = args["timeout_ms"].as_u64().unwrap_or(30_000);
 

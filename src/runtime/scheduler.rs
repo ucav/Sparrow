@@ -172,7 +172,12 @@ impl Scheduler for MemoryScheduler {
     }
 
     fn get(&self, id: &str) -> Option<Job> {
-        self.jobs.lock().unwrap().iter().find(|j| j.id == id).cloned()
+        self.jobs
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|j| j.id == id)
+            .cloned()
     }
 
     async fn tick(&self) -> Vec<Job> {
@@ -181,7 +186,9 @@ impl Scheduler for MemoryScheduler {
         let mut jobs = self.jobs.lock().unwrap();
 
         for job in jobs.iter_mut() {
-            if !job.enabled { continue; }
+            if !job.enabled {
+                continue;
+            }
             if let Some(next) = &job.next_run {
                 if let Ok(next_dt) = DateTime::parse_from_rfc3339(next) {
                     if next_dt <= now {

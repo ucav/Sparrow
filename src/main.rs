@@ -1,20 +1,29 @@
+#![allow(
+    clippy::collapsible_if,
+    clippy::format_in_format_args,
+    clippy::manual_clamp,
+    clippy::needless_borrow,
+    clippy::new_without_default,
+    clippy::ptr_arg,
+    clippy::type_complexity,
+    clippy::useless_format
+)]
+
 use clap::Parser;
 use sparrow::agent::{AgentStore, FsAgentStore, Soul};
 use sparrow::auth::{AuthStore, Credential};
 use sparrow::autonomy::{Checkpoints, GitCheckpoints};
-use sparrow::capabilities::{FsSkillLibrary, SkillLibrary};
 use sparrow::capabilities::mcp::{BasicMcpClient, McpClient, Transport};
+use sparrow::capabilities::{FsSkillLibrary, SkillLibrary};
 use sparrow::cli::{Cli, Commands};
 use sparrow::config::{ConfigStore, FsConfigStore, ProviderConfig};
-use sparrow::extras::{ChatSession, ReExecuter};
 use sparrow::console::WebViewServer;
-use sparrow::gateway::{
-    GatewayMessage, GatewayResponse, GatewayTransport, MessageRouter,
-};
-use sparrow::gateway::telegram::TelegramTransport;
+use sparrow::extras::{ChatSession, ReExecuter};
 use sparrow::gateway::discord::DiscordTransport;
 use sparrow::gateway::slack::SlackTransport;
+use sparrow::gateway::telegram::TelegramTransport;
 use sparrow::gateway::ws::WebSocketApi;
+use sparrow::gateway::{GatewayMessage, GatewayResponse, GatewayTransport, MessageRouter};
 use sparrow::memory::{Memory, SqliteMemory};
 use sparrow::runtime::recorder::{FsRecorder, Recorder, Replayer, RunInputs};
 use sparrow::runtime::scheduler::{Job, MemoryScheduler, Scheduler};
@@ -59,32 +68,30 @@ async fn main() -> anyhow::Result<()> {
 
     // Initialize memory (SQLite)
     let memory = Arc::new(
-        SqliteMemory::open(&state_dir.join("sparrow.db"))
-            .unwrap_or_else(|e| {
-                eprintln!("Warning: could not open database: {}. Using in-memory fallback.", e);
-                // In-memory fallback
-                SqliteMemory::open(&std::path::PathBuf::from(":memory:")).unwrap()
-            }),
+        SqliteMemory::open(&state_dir.join("sparrow.db")).unwrap_or_else(|e| {
+            eprintln!(
+                "Warning: could not open database: {}. Using in-memory fallback.",
+                e
+            );
+            // In-memory fallback
+            SqliteMemory::open(&std::path::PathBuf::from(":memory:")).unwrap()
+        }),
     );
 
     // Initialize agent store
-    let agent_store: Arc<dyn AgentStore> = Arc::new(
-        FsAgentStore::new(config_dir.join("agents")).with_memory(memory.clone()),
-    );
+    let agent_store: Arc<dyn AgentStore> =
+        Arc::new(FsAgentStore::new(config_dir.join("agents")).with_memory(memory.clone()));
 
     // Initialize skill library
     let skills_dir = config_dir.join("skills");
-    let skill_library: Arc<dyn SkillLibrary> = Arc::new(
-        FsSkillLibrary::new(skills_dir).with_memory(memory.clone()),
-    );
+    let skill_library: Arc<dyn SkillLibrary> =
+        Arc::new(FsSkillLibrary::new(skills_dir).with_memory(memory.clone()));
 
     // Initialize recorder (transcripts)
     let recorder = Arc::new(FsRecorder::new(state_dir.join("transcripts")));
 
     // Initialize scheduler
-    let scheduler = Arc::new(
-        MemoryScheduler::new().with_memory(memory.clone()),
-    );
+    let scheduler = Arc::new(MemoryScheduler::new().with_memory(memory.clone()));
 
     match cli.command {
         None => {
@@ -92,7 +99,14 @@ async fn main() -> anyhow::Result<()> {
                 let mut tui = Tui::new();
                 tui.run()?;
             } else if cli.web {
-                handle_webview(&config, memory.clone(), scheduler.clone(), recorder.clone(), skill_library.clone()).await?;
+                handle_webview(
+                    &config,
+                    memory.clone(),
+                    scheduler.clone(),
+                    recorder.clone(),
+                    skill_library.clone(),
+                )
+                .await?;
             } else {
                 let mut tui = Tui::new();
                 tui.run()?;
@@ -103,7 +117,14 @@ async fn main() -> anyhow::Result<()> {
             tui.run()?;
         }
         Some(Commands::Console) => {
-            handle_webview(&config, memory.clone(), scheduler.clone(), recorder.clone(), skill_library.clone()).await?;
+            handle_webview(
+                &config,
+                memory.clone(),
+                scheduler.clone(),
+                recorder.clone(),
+                skill_library.clone(),
+            )
+            .await?;
         }
         Some(Commands::Run { ref task }) => {
             if cli.json {
@@ -117,7 +138,15 @@ async fn main() -> anyhow::Result<()> {
                 )
                 .await?;
             } else {
-                run_task(task, &cli, &config, memory.clone(), agent_store.clone(), skill_library.clone()).await?;
+                run_task(
+                    task,
+                    &cli,
+                    &config,
+                    memory.clone(),
+                    agent_store.clone(),
+                    skill_library.clone(),
+                )
+                .await?;
             }
         }
         Some(Commands::Chat) => {
@@ -135,14 +164,27 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Mcp { action }) => {
             handle_mcp(action, &config_dir).await?;
         }
-        Some(Commands::Schedule { task, cron, autonomy, report }) => {
+        Some(Commands::Schedule {
+            task,
+            cron,
+            autonomy,
+            report,
+        }) => {
             handle_schedule(&task, &cron, autonomy, &report, &scheduler).await?;
         }
         Some(Commands::Replay { run_id }) => {
             handle_replay(&run_id, &recorder, &config, memory.clone()).await?;
         }
         Some(Commands::Gateway { action }) => {
-            handle_gateway(action, &state_dir, &config, memory.clone(), scheduler.clone(), recorder.clone()).await?;
+            handle_gateway(
+                action,
+                &state_dir,
+                &config,
+                memory.clone(),
+                scheduler.clone(),
+                recorder.clone(),
+            )
+            .await?;
         }
         Some(Commands::Model { set, list }) => {
             if list {
@@ -170,9 +212,7 @@ async fn main() -> anyhow::Result<()> {
                     let providers = auth.list();
                     if providers.is_empty() {
                         println!("No credentials stored.");
-                        println!(
-                            "Set env vars like ANTHROPIC_API_KEY, OPENAI_API_KEY, etc."
-                        );
+                        println!("Set env vars like ANTHROPIC_API_KEY, OPENAI_API_KEY, etc.");
                     } else {
                         println!("Stored credentials for:");
                         for p in providers {
@@ -311,7 +351,9 @@ async fn main() -> anyhow::Result<()> {
                 println!("Config file: {}", config_path.display());
                 #[cfg(windows)]
                 {
-                    let _ = std::process::Command::new("notepad").arg(&config_path).spawn();
+                    let _ = std::process::Command::new("notepad")
+                        .arg(&config_path)
+                        .spawn();
                 }
                 #[cfg(not(windows))]
                 {
@@ -412,45 +454,86 @@ fn apply_cli_overrides(config: &mut sparrow::config::Config, cli: &Cli) {
             config.budget.session_usd = budget;
         }
     }
-    if let Some(sandbox) = cli.sandbox.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+    if let Some(sandbox) = cli
+        .sandbox
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+    {
         config.defaults.sandbox = sandbox.to_string();
     }
     if cli.local {
         config.routing.free_first = true;
-        config.routing.policy.insert("trivial".into(), "ollama".into());
-        config.routing.policy.insert("small".into(), "ollama".into());
-        config.routing.policy.insert("medium".into(), "ollama".into());
+        config
+            .routing
+            .policy
+            .insert("trivial".into(), "ollama".into());
+        config
+            .routing
+            .policy
+            .insert("small".into(), "ollama".into());
+        config
+            .routing
+            .policy
+            .insert("medium".into(), "ollama".into());
         config.routing.policy.insert("hard".into(), "ollama".into());
-        config.routing.policy.insert("vision".into(), "ollama".into());
+        config
+            .routing
+            .policy
+            .insert("vision".into(), "ollama".into());
     }
-    if let Some(model_ref) = cli.model.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty()) {
+    if let Some(model_ref) = cli
+        .model
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+    {
         let (provider, model) = model_ref
             .split_once(':')
             .map(|(p, m)| (p.trim().to_lowercase(), m.trim().to_string()))
             .unwrap_or_else(|| ("custom".into(), model_ref.to_string()));
         if !model.is_empty() {
-            config.routing.policy.insert("trivial".into(), provider.clone());
-            config.routing.policy.insert("small".into(), provider.clone());
-            config.routing.policy.insert("medium".into(), provider.clone());
-            config.routing.policy.insert("hard".into(), provider.clone());
-            config.routing.policy.insert("vision".into(), provider.clone());
-            config.providers.entry(provider.clone()).or_insert_with(|| {
-                let def = sparrow::config::providers::find_provider(&provider);
-                ProviderConfig {
-                    adapter: def.as_ref().map(|d| d.adapter.clone()).unwrap_or_else(|| "openai-compatible".into()),
-                    base_url: def.as_ref().map(|d| d.base_url.clone()),
-                    models: vec![],
-                    api_key_env: def.and_then(|d| d.api_key_env),
-                }
-            }).models = vec![model];
+            config
+                .routing
+                .policy
+                .insert("trivial".into(), provider.clone());
+            config
+                .routing
+                .policy
+                .insert("small".into(), provider.clone());
+            config
+                .routing
+                .policy
+                .insert("medium".into(), provider.clone());
+            config
+                .routing
+                .policy
+                .insert("hard".into(), provider.clone());
+            config
+                .routing
+                .policy
+                .insert("vision".into(), provider.clone());
+            config
+                .providers
+                .entry(provider.clone())
+                .or_insert_with(|| {
+                    let def = sparrow::config::providers::find_provider(&provider);
+                    ProviderConfig {
+                        adapter: def
+                            .as_ref()
+                            .map(|d| d.adapter.clone())
+                            .unwrap_or_else(|| "openai-compatible".into()),
+                        base_url: def.as_ref().map(|d| d.base_url.clone()),
+                        models: vec![],
+                        api_key_env: def.and_then(|d| d.api_key_env),
+                    }
+                })
+                .models = vec![model];
         }
     }
 }
 
-fn migrate_inline_provider_keys(
-    config: &mut sparrow::config::Config,
-    store: &FsConfigStore,
-) {
+fn migrate_inline_provider_keys(config: &mut sparrow::config::Config, store: &FsConfigStore) {
     let auth = sparrow::auth::store::ChainedAuthStore::new(config.config_dir.clone());
     let mut changed = false;
 
@@ -468,8 +551,8 @@ fn migrate_inline_provider_keys(
             continue;
         }
 
-        provider.api_key_env = sparrow::config::providers::find_provider(name)
-            .and_then(|def| def.api_key_env);
+        provider.api_key_env =
+            sparrow::config::providers::find_provider(name).and_then(|def| def.api_key_env);
         changed = true;
     }
 
@@ -513,7 +596,9 @@ fn effective_provider_configs(
         }
 
         let base_url = if def.adapter == "ollama" {
-            std::env::var("OLLAMA_HOST").ok().or(Some(def.base_url.clone()))
+            std::env::var("OLLAMA_HOST")
+                .ok()
+                .or(Some(def.base_url.clone()))
         } else {
             Some(def.base_url.clone())
         };
@@ -553,7 +638,10 @@ fn build_provider_brains(
                 }
             })
             .filter(|key| !key.is_empty())
-            .or_else(|| auth.get(&name).and_then(|c| c.expose_key().map(String::from)))
+            .or_else(|| {
+                auth.get(&name)
+                    .and_then(|c| c.expose_key().map(String::from))
+            })
             .unwrap_or_default();
 
         if api_key.is_empty() && pconfig.adapter != "ollama" {
@@ -582,8 +670,11 @@ fn build_provider_brains(
                     .clone()
                     .unwrap_or_else(|| "https://api.openai.com/v1".into());
                 for model in &pconfig.models {
-                    let adapter: Arc<dyn sparrow::provider::Brain> = if pconfig.adapter == "ollama" {
-                        Arc::new(sparrow::provider::ollama::OllamaAdapter::new(model, &base_url))
+                    let adapter: Arc<dyn sparrow::provider::Brain> = if pconfig.adapter == "ollama"
+                    {
+                        Arc::new(sparrow::provider::ollama::OllamaAdapter::new(
+                            model, &base_url,
+                        ))
                     } else {
                         Arc::new(
                             sparrow::provider::openai_compat::OpenAICompatAdapter::new(
@@ -615,8 +706,7 @@ fn build_provider_brains(
                 ollama_url
             );
         }
-        let adapter =
-            sparrow::provider::ollama::OllamaAdapter::new("qwen3.5:32b", &ollama_url);
+        let adapter = sparrow::provider::ollama::OllamaAdapter::new("qwen3.5:32b", &ollama_url);
         providers.insert(
             "ollama".into(),
             vec![Arc::new(adapter) as Arc<dyn sparrow::provider::Brain>],
@@ -726,7 +816,9 @@ async fn run_swarm(
                 sparrow::event::Event::AgentSpawned { role, model, .. } => {
                     println!("\n┌─ {} spawned ({})", role.to_uppercase(), model);
                 }
-                sparrow::event::Event::AgentStatus { role, status, note, .. } => {
+                sparrow::event::Event::AgentStatus {
+                    role, status, note, ..
+                } => {
                     let icon = match status {
                         sparrow::event::AgentStatus::Done => "✓",
                         sparrow::event::AgentStatus::Working => "●",
@@ -736,7 +828,12 @@ async fn run_swarm(
                     };
                     println!("│ {} {} — {}", icon, role, note);
                 }
-                sparrow::event::Event::TestResult { passed: _, failed, detail, .. } => {
+                sparrow::event::Event::TestResult {
+                    passed: _,
+                    failed,
+                    detail,
+                    ..
+                } => {
                     if *failed > 0 {
                         println!("├─ ✗ VERIFY FAILED ({} issues)", failed);
                         for line in detail.lines() {
@@ -767,7 +864,10 @@ async fn run_swarm(
     let outcome = orchestrator.run_swarm(plan, tx).await?;
     print_handle.await?;
 
-    println!("\nPlan  : {} chars", outcome.plan.as_ref().map(|p| p.len()).unwrap_or(0));
+    println!(
+        "\nPlan  : {} chars",
+        outcome.plan.as_ref().map(|p| p.len()).unwrap_or(0)
+    );
     println!("Passes: {}", outcome.passes);
     println!("Reworks: {}", outcome.reworks);
     if let Some(plan) = &outcome.plan {
@@ -820,11 +920,17 @@ fn handle_skills(
                 auto_generated: false,
             };
             library.add(skill)?;
-            println!("Skill '{}' created. Edit: ~/.config/sparrow/skills/{}/SKILL.md", name, name);
+            println!(
+                "Skill '{}' created. Edit: ~/.config/sparrow/skills/{}/SKILL.md",
+                name, name
+            );
         }
         sparrow::cli::SkillsAction::Prune => {
             let removed = library.prune(0.2)?;
-            println!("Curator pruned {} low-score auto-generated skill(s).", removed);
+            println!(
+                "Curator pruned {} low-score auto-generated skill(s).",
+                removed
+            );
             let skills = library.all();
             println!("Library now has {} skills.", skills.len());
         }
@@ -871,7 +977,10 @@ async fn handle_mcp(
             println!("Adding MCP server: {}", server);
             println!("For now, edit ~/.config/sparrow/mcp/mcp_servers.json manually");
             println!("Example:");
-            println!(r#"  {{"name":"{}","transport":"stdio","command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","/path"],"allow_tools":[]}}"#, server);
+            println!(
+                r#"  {{"name":"{}","transport":"stdio","command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","/path"],"allow_tools":[]}}"#,
+                server
+            );
         }
         sparrow::cli::McpAction::Rm { server } => {
             client.remove_server(&server)?;
@@ -943,12 +1052,21 @@ async fn handle_replay(
 
             for event in &transcript.events {
                 match event {
-                    sparrow::event::Event::ThinkingDelta { text, .. } => { print!("{}", text); }
-                    sparrow::event::Event::ToolUseProposed { name, .. } => { println!("\n[Tool: {}]", name); }
-                    sparrow::event::Event::RunFinished { outcome, .. } => {
-                        println!("\n--- Done: {} | Cost: ${:.4} ---", outcome.status, outcome.cost_usd);
+                    sparrow::event::Event::ThinkingDelta { text, .. } => {
+                        print!("{}", text);
                     }
-                    sparrow::event::Event::Error { message, .. } => { eprintln!("\n[Error: {}]", message); }
+                    sparrow::event::Event::ToolUseProposed { name, .. } => {
+                        println!("\n[Tool: {}]", name);
+                    }
+                    sparrow::event::Event::RunFinished { outcome, .. } => {
+                        println!(
+                            "\n--- Done: {} | Cost: ${:.4} ---",
+                            outcome.status, outcome.cost_usd
+                        );
+                    }
+                    sparrow::event::Event::Error { message, .. } => {
+                        eprintln!("\n[Error: {}]", message);
+                    }
                     _ => {}
                 }
             }
@@ -965,7 +1083,10 @@ async fn handle_replay(
                 let re_executer = ReExecuter::new(engine);
                 println!("Re-executing against current model...");
                 match re_executer.re_execute(&transcript).await {
-                    Ok(outcome) => println!("Re-execute done: {} | ${:.4}", outcome.status, outcome.cost_usd),
+                    Ok(outcome) => println!(
+                        "Re-execute done: {} | ${:.4}",
+                        outcome.status, outcome.cost_usd
+                    ),
                     Err(e) => eprintln!("Re-execute failed: {}", e),
                 }
             }
@@ -980,7 +1101,12 @@ async fn handle_replay(
                 println!("\nAvailable:");
                 for t in &transcripts {
                     if let Some(tr) = recorder.load(t) {
-                        println!("  {} | {} events | {}", t, tr.events.len(), tr.inputs.task.chars().take(60).collect::<String>());
+                        println!(
+                            "  {} | {} events | {}",
+                            t,
+                            tr.events.len(),
+                            tr.inputs.task.chars().take(60).collect::<String>()
+                        );
                     }
                 }
             }
@@ -1115,7 +1241,9 @@ async fn handle_gateway(
             let ws_api = WebSocketApi::new("127.0.0.1:9338");
             transports.push(Box::new(ws_api));
 
-            println!("  Extra    : WhatsApp/Signal/Email/Feishu/WeCom/QQ/Teams adapters present, not started without credentials");
+            println!(
+                "  Extra    : WhatsApp/Signal/Email/Feishu/WeCom/QQ/Teams adapters present, not started without credentials"
+            );
 
             if transports.is_empty() {
                 println!("\nNo transports configured. Set up tokens in config.toml or env vars.");
@@ -1185,7 +1313,14 @@ async fn handle_gateway(
                 if let Some(pid) = read_gateway_pid(state_dir) {
                     println!("PID: {}", pid);
                 }
-                println!("WS API: {}", if ws_open { "online on ws://127.0.0.1:9338" } else { "not reachable" });
+                println!(
+                    "WS API: {}",
+                    if ws_open {
+                        "online on ws://127.0.0.1:9338"
+                    } else {
+                        "not reachable"
+                    }
+                );
             } else {
                 println!("Gateway status: not running");
                 println!("Start with: sparrow gateway start");
@@ -1379,12 +1514,13 @@ fn handle_full_import(source: sparrow::cli::ImportSource) -> anyhow::Result<()> 
     use sparrow::onboarding::migration::Migration;
     match source {
         sparrow::cli::ImportSource::Openclaw { path } => {
-            let src = path.unwrap_or_else(|| {
-                dirs::home_dir().unwrap_or_default().join(".openclaw")
-            });
+            let src =
+                path.unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".openclaw"));
             let result = Migration::import_openclaw(&src)?;
-            println!("Imported from OpenClaw: {} agents, {} skills, {} cron jobs",
-                result.agents, result.skills, result.cron_jobs);
+            println!(
+                "Imported from OpenClaw: {} agents, {} skills, {} cron jobs",
+                result.agents, result.skills, result.cron_jobs
+            );
         }
     }
     Ok(())
@@ -1411,7 +1547,10 @@ async fn handle_setup(
     println!("  Config dir : {:?}", config.config_dir);
     println!("  State dir  : {:?}", config.state_dir);
     println!("  Autonomy   : {:?}", config.defaults.autonomy);
-    println!("  Budget     : ${}/day, ${}/session", config.budget.daily_usd, config.budget.session_usd);
+    println!(
+        "  Budget     : ${}/day, ${}/session",
+        config.budget.daily_usd, config.budget.session_usd
+    );
     println!();
 
     let effective = effective_provider_configs(config);
@@ -1449,7 +1588,10 @@ async fn handle_setup(
             .api_key_env
             .as_ref()
             .map(|env| {
-                if std::env::var(env).map(|v| !v.trim().is_empty()).unwrap_or(false) {
+                if std::env::var(env)
+                    .map(|v| !v.trim().is_empty())
+                    .unwrap_or(false)
+                {
                     "env found"
                 } else {
                     "env missing"
@@ -1465,19 +1607,33 @@ async fn handle_setup(
     let mut provider_id = String::new();
     io::stdin().read_line(&mut provider_id)?;
     let provider_id = provider_id.trim();
-    let provider_id = if provider_id.is_empty() { "nvidia" } else { provider_id };
+    let provider_id = if provider_id.is_empty() {
+        "nvidia"
+    } else {
+        provider_id
+    };
     let Some(def) = sparrow::config::providers::find_provider(provider_id) else {
-        anyhow::bail!("Unknown provider '{}'. Use 'sparrow model --list' or the WebView config panel.", provider_id);
+        anyhow::bail!(
+            "Unknown provider '{}'. Use 'sparrow model --list' or the WebView config panel.",
+            provider_id
+        );
     };
 
     let default_models = sparrow::config::providers::default_models(&def.id);
-    let default_model = default_models.first().cloned().unwrap_or_else(|| "model".into());
+    let default_model = default_models
+        .first()
+        .cloned()
+        .unwrap_or_else(|| "model".into());
     print!("Model [{}]: ", default_model);
     io::stdout().flush().ok();
     let mut model = String::new();
     io::stdin().read_line(&mut model)?;
     let model = model.trim();
-    let model = if model.is_empty() { default_model } else { model.to_string() };
+    let model = if model.is_empty() {
+        default_model
+    } else {
+        model.to_string()
+    };
 
     let mut next = config.clone();
     next.providers.insert(
@@ -1490,11 +1646,17 @@ async fn handle_setup(
         },
     );
 
-    print!("Default routing provider for medium tasks [{}]? [Y/n] ", def.id);
+    print!(
+        "Default routing provider for medium tasks [{}]? [Y/n] ",
+        def.id
+    );
     io::stdout().flush().ok();
     let mut route_answer = String::new();
     io::stdin().read_line(&mut route_answer)?;
-    if !matches!(route_answer.trim().to_lowercase().as_str(), "n" | "no" | "non") {
+    if !matches!(
+        route_answer.trim().to_lowercase().as_str(),
+        "n" | "no" | "non"
+    ) {
         next.routing.policy.insert("medium".into(), def.id.clone());
         if def.tags.iter().any(|t| t == "strong" || t == "code") {
             next.routing.policy.insert("small".into(), def.id.clone());
@@ -1502,10 +1664,19 @@ async fn handle_setup(
     }
 
     if let Some(env_name) = &def.api_key_env {
-        if std::env::var(env_name).map(|v| !v.trim().is_empty()).unwrap_or(false) {
-            println!("Credential: {} is already present in environment.", env_name);
+        if std::env::var(env_name)
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false)
+        {
+            println!(
+                "Credential: {} is already present in environment.",
+                env_name
+            );
         } else {
-            print!("Paste API key for {} now, or leave empty to use env later: ", def.label);
+            print!(
+                "Paste API key for {} now, or leave empty to use env later: ",
+                def.label
+            );
             io::stdout().flush().ok();
             let mut key = String::new();
             io::stdin().read_line(&mut key)?;
@@ -1536,11 +1707,7 @@ fn current_repo_head() -> Option<String> {
         return None;
     }
     let head = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if head.is_empty() {
-        None
-    } else {
-        Some(head)
-    }
+    if head.is_empty() { None } else { Some(head) }
 }
 
 fn redacted_config_snapshot(config: &sparrow::config::Config) -> serde_json::Value {
@@ -1609,7 +1776,9 @@ async fn run_task_json(
     let providers = build_provider_brains(config, false);
 
     let router = Arc::new(BasicRouter::new(config, providers));
-    let engine = Engine::new(router, config.clone()).with_memory(memory).with_skills(skills);
+    let engine = Engine::new(router, config.clone())
+        .with_memory(memory)
+        .with_skills(skills);
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
@@ -1642,7 +1811,10 @@ async fn run_task_json(
         }
     });
 
-    let task_obj = sparrow::engine::Task { description: task.to_string(), context: vec![] };
+    let task_obj = sparrow::engine::Task {
+        description: task.to_string(),
+        context: vec![],
+    };
     let outcome = engine.drive(task_obj, tx).await?;
     print_handle.await?;
 
@@ -1764,7 +1936,9 @@ fn handle_init() -> anyhow::Result<()> {
     std::fs::create_dir_all(sparrow_dir.join("skills"))?;
 
     // Write team config template
-    std::fs::write(sparrow_dir.join("team.toml"), r#"# Sparrow team config
+    std::fs::write(
+        sparrow_dir.join("team.toml"),
+        r#"# Sparrow team config
 # This file is shared via version control.
 # Individual API keys go in ~/.config/sparrow/config.toml
 
@@ -1778,7 +1952,8 @@ daily_per_seat_usd = 5.0
 [org]
 max_autonomy = "trusted"
 blocked_paths = [".env", "*.pem", "secrets/"]
-"#)?;
+"#,
+    )?;
 
     println!("Initialized .sparrow/ in {}", cwd.display());
     println!("  .sparrow/team.toml   — shared routing + budget + org policy");

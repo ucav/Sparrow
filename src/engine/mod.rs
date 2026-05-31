@@ -5,21 +5,21 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
+use crate::agent::AgentStore;
 use crate::autonomy::{AutonomyContract, Checkpoints, GitCheckpoints};
 use crate::capabilities::{Curator, SkillLibrary};
 use crate::config::Config;
-use crate::reasoning::ReasoningEngine;
-use crate::hooks::HookRegistry;
-use crate::agent::AgentStore;
 use crate::event::{
     AgentStatus, AutonomyLevel, Block, Decision, Event, OutcomeSummary, RiskLevel, RunId,
     TokenUsage,
 };
+use crate::extras::Distiller;
+use crate::hooks::HookRegistry;
 use crate::memory::{Fact, Memory};
 use crate::provider::{Brain, BrainEvent, BrainRequest, ContentBlock, Msg, ToolSpec};
-use crate::router::{BudgetState, Router, TaskTier};
-use crate::extras::Distiller;
+use crate::reasoning::ReasoningEngine;
 use crate::redaction::RedactionFilter;
+use crate::router::{BudgetState, Router, TaskTier};
 use crate::sandbox::Sandbox;
 use crate::tools::{ToolCtx, ToolRegistry};
 
@@ -165,10 +165,7 @@ exists just because the current brain is a single selected model.
     if !skills.is_empty() {
         parts.push("## Relevant skills for this task:".to_string());
         for skill in skills {
-            parts.push(format!(
-                "### {}\n{}",
-                skill.name, skill.body
-            ));
+            parts.push(format!("### {}\n{}", skill.name, skill.body));
         }
     }
 
@@ -238,7 +235,9 @@ impl Engine {
             redaction: RedactionFilter::new(),
             approval_handler: None,
             reasoning: ReasoningEngine::default(),
-            hooks: HookRegistry::new(Arc::new(crate::sandbox::LocalSandbox::new(std::env::current_dir().unwrap_or_default()))),
+            hooks: HookRegistry::new(Arc::new(crate::sandbox::LocalSandbox::new(
+                std::env::current_dir().unwrap_or_default(),
+            ))),
             agent_store: None,
             org_policy: None,
         }
@@ -347,10 +346,43 @@ impl Engine {
     fn requires_tools(&self, task: &str, tier: &TaskTier) -> bool {
         let lower = task.to_lowercase();
         let tool_keywords = [
-            "outil", "tools", "fichier", "file", "readme", ".rs", ".ts", ".js", ".html", ".md",
-            "repo", "dossier", "workspace", "git", "test", "build", "cargo", "npm", "pnpm",
-            "corrige", "fix", "debug", "bug", "répare", "repare", "modifie", "édite", "edite",
-            "ajoute", "supprime", "écris", "ecris", "write", "create", "crée", "cree", "audit",
+            "outil",
+            "tools",
+            "fichier",
+            "file",
+            "readme",
+            ".rs",
+            ".ts",
+            ".js",
+            ".html",
+            ".md",
+            "repo",
+            "dossier",
+            "workspace",
+            "git",
+            "test",
+            "build",
+            "cargo",
+            "npm",
+            "pnpm",
+            "corrige",
+            "fix",
+            "debug",
+            "bug",
+            "répare",
+            "repare",
+            "modifie",
+            "édite",
+            "edite",
+            "ajoute",
+            "supprime",
+            "écris",
+            "ecris",
+            "write",
+            "create",
+            "crée",
+            "cree",
+            "audit",
         ];
 
         if tool_keywords.iter().any(|kw| lower.contains(kw)) {
@@ -468,7 +500,10 @@ impl Engine {
                 status: "error: no models".into(),
                 diffs: vec![],
                 cost_usd: 0.0,
-                tokens: TokenUsage { input: 0, output: 0 },
+                tokens: TokenUsage {
+                    input: 0,
+                    output: 0,
+                },
             });
         }
 
@@ -512,7 +547,9 @@ impl Engine {
         // Build tools and workspace
         let workspace_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let sandbox: Arc<dyn Sandbox> = if self.config.defaults.sandbox == "local-hardened" {
-            Arc::new(crate::sandbox::LocalSandbox::hardened(workspace_root.clone()))
+            Arc::new(crate::sandbox::LocalSandbox::hardened(
+                workspace_root.clone(),
+            ))
         } else {
             Arc::new(crate::sandbox::LocalSandbox::new(workspace_root.clone()))
         };
@@ -628,7 +665,8 @@ impl Engine {
                     run: run_id.clone(),
                     message: format!(
                         "Budget exceeded: ${:.4} of ${:.2} session cap",
-                        cost_usd + estimated_cost_unconfirmed, budget_session
+                        cost_usd + estimated_cost_unconfirmed,
+                        budget_session
                     ),
                 });
                 had_error = true;
@@ -644,9 +682,8 @@ impl Engine {
 
             // ─── Anti-simulation / hallucination guard ───────────────────
             // Check if the assistant's last turn contains unverified claims
-            let _last_assistant_msgs: Vec<&Msg> = messages.iter()
-                .filter(|m| m.role == "assistant")
-                .collect();
+            let _last_assistant_msgs: Vec<&Msg> =
+                messages.iter().filter(|m| m.role == "assistant").collect();
             let has_tool_output = !tool_results_pending.is_empty();
             if let Some(correction) = self.reasoning.guard_turn(
                 &messages.iter().cloned().collect::<Vec<_>>(),
@@ -664,14 +701,15 @@ impl Engine {
 
             // ─── Org policy enforcement ──────────────────────────────────
             if let Some(ref policy) = self.org_policy {
-                let proposed_file = tool_results_pending.last()
-                    .map(|(_, _, args, _, _)| args.get("path").and_then(|v| v.as_str()).unwrap_or(""))
+                let proposed_file = tool_results_pending
+                    .last()
+                    .map(|(_, _, args, _, _)| {
+                        args.get("path").and_then(|v| v.as_str()).unwrap_or("")
+                    })
                     .unwrap_or("");
-                if let Err(violation) = policy.enforce(
-                    &self.config.defaults.autonomy,
-                    cost_usd,
-                    proposed_file,
-                ) {
+                if let Err(violation) =
+                    policy.enforce(&self.config.defaults.autonomy, cost_usd, proposed_file)
+                {
                     send(Event::Error {
                         run: run_id.clone(),
                         message: format!("Org policy violation: {}", violation),
@@ -782,8 +820,7 @@ impl Engine {
                             BrainEvent::ToolUseEnd { id } => {
                                 // Parse accumulated JSON
                                 let args: serde_json::Value =
-                                    serde_json::from_str(&current_tool_json)
-                                        .unwrap_or(json!({}));
+                                    serde_json::from_str(&current_tool_json).unwrap_or(json!({}));
 
                                 // Check autonomy gate
                                 let tool_name = if current_tool_name.is_empty() {
@@ -844,11 +881,8 @@ impl Engine {
                                         ) {
                                             let checkpoints =
                                                 GitCheckpoints::new(workspace.root.clone());
-                                            if let Ok(cp_id) =
-                                                checkpoints.snapshot(&format!(
-                                                    "pre-{}",
-                                                    proposed.tool_name
-                                                ))
+                                            if let Ok(cp_id) = checkpoints
+                                                .snapshot(&format!("pre-{}", proposed.tool_name))
                                             {
                                                 let _ = event_tx.send(Event::CheckpointCreated {
                                                     run: run_id.clone(),
@@ -870,9 +904,10 @@ impl Engine {
                                             };
                                             match tool.call(args.clone(), &ctx).await {
                                                 Ok(result) => result,
-                                                Err(e) => crate::tools::ToolResult::error(
-                                                    format!("Tool {} failed: {}", proposed.tool_name, e),
-                                                ),
+                                                Err(e) => crate::tools::ToolResult::error(format!(
+                                                    "Tool {} failed: {}",
+                                                    proposed.tool_name, e
+                                                )),
                                             }
                                         } else {
                                             crate::tools::ToolResult::error(format!(
@@ -883,8 +918,20 @@ impl Engine {
 
                                         for block in &result.content {
                                             if let Block::Diff { file, patch } = block {
-                                                let plus = patch.lines().filter(|l| l.starts_with('+') && !l.starts_with("+++")).count() as u32;
-                                                let minus = patch.lines().filter(|l| l.starts_with('-') && !l.starts_with("---")).count() as u32;
+                                                let plus = patch
+                                                    .lines()
+                                                    .filter(|l| {
+                                                        l.starts_with('+') && !l.starts_with("+++")
+                                                    })
+                                                    .count()
+                                                    as u32;
+                                                let minus = patch
+                                                    .lines()
+                                                    .filter(|l| {
+                                                        l.starts_with('-') && !l.starts_with("---")
+                                                    })
+                                                    .count()
+                                                    as u32;
                                                 let _ = event_tx.send(Event::DiffProposed {
                                                     run: run_id.clone(),
                                                     file: file.clone(),
@@ -933,7 +980,10 @@ impl Engine {
 
                                         // Wait for user input on stdin
                                         use std::io::{self, Write};
-                                        print!("\n\x1b[1;33mApprove {}? [y/N]\x1b[0m ", approval_name);
+                                        print!(
+                                            "\n\x1b[1;33mApprove {}? [y/N]\x1b[0m ",
+                                            approval_name
+                                        );
                                         io::stdout().flush().ok();
                                         let mut input = String::new();
                                         io::stdin().read_line(&mut input).ok();
@@ -942,36 +992,77 @@ impl Engine {
                                         if approved {
                                             waiting_for_approval = false;
                                             // Auto-checkpoint before mutating/exec/destructive
-                                            if matches!(approval_risk, RiskLevel::Mutating | RiskLevel::Exec | RiskLevel::Destructive) {
-                                                let checkpoints = GitCheckpoints::new(workspace.root.clone());
-                                                if let Ok(cp_id) = checkpoints.snapshot(&format!("pre-{}", approval_name)) {
-                                                    let _ = event_tx.send(Event::CheckpointCreated {
-                                                        run: run_id.clone(), id: cp_id,
-                                                        label: format!("pre-{}", approval_name),
-                                                    });
+                                            if matches!(
+                                                approval_risk,
+                                                RiskLevel::Mutating
+                                                    | RiskLevel::Exec
+                                                    | RiskLevel::Destructive
+                                            ) {
+                                                let checkpoints =
+                                                    GitCheckpoints::new(workspace.root.clone());
+                                                if let Ok(cp_id) = checkpoints
+                                                    .snapshot(&format!("pre-{}", approval_name))
+                                                {
+                                                    let _ =
+                                                        event_tx.send(Event::CheckpointCreated {
+                                                            run: run_id.clone(),
+                                                            id: cp_id,
+                                                            label: format!("pre-{}", approval_name),
+                                                        });
                                                 }
                                             }
-                                            let _ = event_tx.send(Event::ToolUseStarted { run: run_id.clone(), id: approval_id.clone() });
+                                            let _ = event_tx.send(Event::ToolUseStarted {
+                                                run: run_id.clone(),
+                                                id: approval_id.clone(),
+                                            });
                                             let result = if let Some(tool) = tool {
-                                                let ctx = ToolCtx { workspace_root: workspace.root.clone(), run_id: run_id.clone() };
+                                                let ctx = ToolCtx {
+                                                    workspace_root: workspace.root.clone(),
+                                                    run_id: run_id.clone(),
+                                                };
                                                 match tool.call(approval_args.clone(), &ctx).await {
                                                     Ok(r) => r,
-                                                    Err(e) => crate::tools::ToolResult::error(format!("Tool {} failed: {}", approval_name, e)),
+                                                    Err(e) => {
+                                                        crate::tools::ToolResult::error(format!(
+                                                            "Tool {} failed: {}",
+                                                            approval_name, e
+                                                        ))
+                                                    }
                                                 }
                                             } else {
-                                                crate::tools::ToolResult::error(format!("Unknown tool: {}", approval_name))
+                                                crate::tools::ToolResult::error(format!(
+                                                    "Unknown tool: {}",
+                                                    approval_name
+                                                ))
                                             };
                                             let blocks = result.content.clone();
                                             let text = tool_result_text(&blocks);
                                             let is_error = result.is_error;
-                                            let _ = event_tx.send(Event::ToolOutput { run: run_id.clone(), id: approval_id.clone(), blocks });
-                                            tool_results_pending.push((approval_id, approval_name, approval_args, text, is_error));
+                                            let _ = event_tx.send(Event::ToolOutput {
+                                                run: run_id.clone(),
+                                                id: approval_id.clone(),
+                                                blocks,
+                                            });
+                                            tool_results_pending.push((
+                                                approval_id,
+                                                approval_name,
+                                                approval_args,
+                                                text,
+                                                is_error,
+                                            ));
                                         } else {
                                             let _ = event_tx.send(Event::ToolOutput {
-                                                run: run_id.clone(), id: approval_id.clone(),
+                                                run: run_id.clone(),
+                                                id: approval_id.clone(),
                                                 blocks: vec![Block::Text("Denied by user".into())],
                                             });
-                                            tool_results_pending.push((approval_id, approval_name, approval_args, "Denied by user".into(), true));
+                                            tool_results_pending.push((
+                                                approval_id,
+                                                approval_name,
+                                                approval_args,
+                                                "Denied by user".into(),
+                                                true,
+                                            ));
                                         }
                                     }
                                     Decision::Deny => {
@@ -1047,9 +1138,7 @@ impl Engine {
                                                 role: "user".into(),
                                                 content: vec![ContentBlock::ToolResult {
                                                     tool_use_id: tool_id,
-                                                    content: vec![ContentBlock::Text {
-                                                        text,
-                                                    }],
+                                                    content: vec![ContentBlock::Text { text }],
                                                     is_error: Some(is_error),
                                                 }],
                                             });
@@ -1148,9 +1237,7 @@ impl Engine {
 
         // Propose skill candidate from successful run
         if outcome.status == "completed" {
-            if let Some(candidate) =
-                Curator::propose_skill(&task.description, &outcome.status)
-            {
+            if let Some(candidate) = Curator::propose_skill(&task.description, &outcome.status) {
                 if let Some(skills) = &self.skills {
                     if skills.get(&candidate.name).is_none() {
                         let _ = event_tx.send(Event::SkillLearned {

@@ -6,15 +6,15 @@ use std::sync::Arc;
 
 use crate::event::{Block, RiskLevel};
 
-pub mod fs;
+pub mod builder_tools;
 pub mod edit;
 pub mod exec;
+pub mod extras;
+pub mod fs;
 pub mod git;
-pub mod todo;
 pub mod search_and_web;
 pub mod subagent;
-pub mod extras;
-pub mod builder_tools;
+pub mod todo;
 
 // ─── Tool context ───────────────────────────────────────────────────────────────
 
@@ -24,7 +24,9 @@ pub struct ToolCtx {
 }
 
 pub fn resolve_workspace_path(workspace_root: &Path, path: &str) -> anyhow::Result<PathBuf> {
-    let root = workspace_root.canonicalize().unwrap_or_else(|_| workspace_root.to_path_buf());
+    let root = workspace_root
+        .canonicalize()
+        .unwrap_or_else(|_| workspace_root.to_path_buf());
     let candidate = if Path::new(path).is_absolute() {
         PathBuf::from(path)
     } else {
@@ -37,7 +39,9 @@ pub fn resolve_workspace_path(workspace_root: &Path, path: &str) -> anyhow::Resu
         let parent = candidate
             .parent()
             .ok_or_else(|| anyhow::anyhow!("Invalid path: {}", path))?;
-        let parent = parent.canonicalize().unwrap_or_else(|_| parent.to_path_buf());
+        let parent = parent
+            .canonicalize()
+            .unwrap_or_else(|_| parent.to_path_buf());
         parent.join(
             candidate
                 .file_name()
@@ -93,11 +97,7 @@ pub trait Tool: Send + Sync {
     fn description(&self) -> &str;
     fn schema(&self) -> serde_json::Value;
     fn risk(&self) -> RiskLevel;
-    async fn call(
-        &self,
-        args: serde_json::Value,
-        ctx: &ToolCtx,
-    ) -> anyhow::Result<ToolResult>;
+    async fn call(&self, args: serde_json::Value, ctx: &ToolCtx) -> anyhow::Result<ToolResult>;
 }
 
 // ─── Tool registry (ToolSet) ────────────────────────────────────────────────────

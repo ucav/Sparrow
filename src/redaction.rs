@@ -200,9 +200,7 @@ impl ContextManager {
 
         // Keep last N messages
         for msg in messages.iter().rev().take(keep_last).rev() {
-            let tokens = self.estimate_tokens(
-                &serde_json::to_string(msg).unwrap_or_default(),
-            );
+            let tokens = self.estimate_tokens(&serde_json::to_string(msg).unwrap_or_default());
             if used + tokens > available {
                 break;
             }

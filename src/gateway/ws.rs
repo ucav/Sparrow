@@ -1,8 +1,8 @@
+use futures::{SinkExt, StreamExt};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use tokio::sync::{mpsc, Mutex};
-use futures::{SinkExt, StreamExt};
+use tokio::sync::{Mutex, mpsc};
 use tokio_tungstenite::accept_async;
 
 use super::{GatewayMessage, GatewayResponse, GatewayTransport};
@@ -29,10 +29,7 @@ impl GatewayTransport for WebSocketApi {
         "ws-api"
     }
 
-    async fn start(
-        &self,
-        tx: mpsc::UnboundedSender<GatewayMessage>,
-    ) -> anyhow::Result<()> {
+    async fn start(&self, tx: mpsc::UnboundedSender<GatewayMessage>) -> anyhow::Result<()> {
         let listener = TcpListener::bind(&self.bind_addr).await?;
         let clients = self.clients.clone();
         tracing::info!("WebSocket API listening on {}", self.bind_addr);

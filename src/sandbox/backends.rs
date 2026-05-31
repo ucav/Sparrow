@@ -1,5 +1,5 @@
-use std::process::Command as StdCommand;
 use std::path::{Path, PathBuf};
+use std::process::Command as StdCommand;
 
 use super::{Command, ExecResult, FsNetPolicy, Limits, Sandbox};
 
@@ -46,9 +46,7 @@ impl Sandbox for DockerSandbox {
         args.push(cmd.program.clone());
         args.extend(cmd.args.clone());
 
-        let output = StdCommand::new("docker")
-            .args(&args)
-            .output()?;
+        let output = StdCommand::new("docker").args(&args).output()?;
 
         Ok(ExecResult {
             stdout: String::from_utf8_lossy(&output.stdout).to_string(),
@@ -140,13 +138,12 @@ macro_rules! stub_sandbox {
 
         #[async_trait::async_trait]
         impl Sandbox for $name {
-            async fn exec(
-                &self,
-                _cmd: &Command,
-                _limits: &Limits,
-            ) -> anyhow::Result<ExecResult> {
+            async fn exec(&self, _cmd: &Command, _limits: &Limits) -> anyhow::Result<ExecResult> {
                 Ok(ExecResult {
-                    stdout: format!("{} sandbox: command execution (requires {} runtime)", $label, $label),
+                    stdout: format!(
+                        "{} sandbox: command execution (requires {} runtime)",
+                        $label, $label
+                    ),
                     stderr: String::new(),
                     exit_code: 0,
                 })

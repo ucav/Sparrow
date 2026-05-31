@@ -1,7 +1,7 @@
 use crate::config::Config;
 
-pub mod migration;
 pub mod enterprise;
+pub mod migration;
 
 // ─── User mode ─────────────────────────────────────────────────────────────────
 
@@ -12,7 +12,9 @@ pub enum UserMode {
 }
 
 impl Default for UserMode {
-    fn default() -> Self { UserMode::Beginner }
+    fn default() -> Self {
+        UserMode::Beginner
+    }
 }
 
 // ─── Onboarding engine ─────────────────────────────────────────────────────────
@@ -89,7 +91,12 @@ impl Onboarding {
         println!("5 interactive lessons to master Sparrow.\n");
 
         for (i, lesson) in self.lessons.iter().enumerate() {
-            println!("── Lesson {}/{} : {} ──", i + 1, self.lessons.len(), lesson.title);
+            println!(
+                "── Lesson {}/{} : {} ──",
+                i + 1,
+                self.lessons.len(),
+                lesson.title
+            );
             println!("{}", lesson.description);
             println!("\n  sparrow {}", lesson.command);
             println!("\nPress Enter to continue...");
@@ -149,7 +156,10 @@ impl Onboarding {
             ("run \"add a /health endpoint to the API\"", "Add a feature"),
             ("run \"explain this codebase\" --local", "Analyze offline"),
             ("swarm \"refactor the rate limiter\"", "Swarm review"),
-            ("schedule \"run tests\" --cron \"0 */6 * * *\"", "Schedule checks"),
+            (
+                "schedule \"run tests\" --cron \"0 */6 * * *\"",
+                "Schedule checks",
+            ),
             ("skills list", "See learned skills"),
             ("checkpoint list", "View safety net"),
             ("replay <id>", "Replay any run"),

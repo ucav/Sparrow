@@ -1,7 +1,7 @@
+use futures::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
-use futures::{SinkExt, StreamExt};
 
 use super::{GatewayMessage, GatewayResponse, GatewayTransport};
 
@@ -14,11 +14,7 @@ pub struct SlackTransport {
 }
 
 impl SlackTransport {
-    pub fn new(
-        app_token: String,
-        bot_token: String,
-        allowed_users: Vec<String>,
-    ) -> Self {
+    pub fn new(app_token: String, bot_token: String, allowed_users: Vec<String>) -> Self {
         Self {
             app_token,
             bot_token,
@@ -31,10 +27,7 @@ impl SlackTransport {
         let client = reqwest::Client::new();
         let resp: serde_json::Value = client
             .post("https://slack.com/api/apps.connections.open")
-            .header(
-                "Authorization",
-                format!("Bearer {}", self.app_token),
-            )
+            .header("Authorization", format!("Bearer {}", self.app_token))
             .send()
             .await?
             .json()
@@ -110,10 +103,7 @@ impl GatewayTransport for SlackTransport {
         "slack"
     }
 
-    async fn start(
-        &self,
-        tx: mpsc::UnboundedSender<GatewayMessage>,
-    ) -> anyhow::Result<()> {
+    async fn start(&self, tx: mpsc::UnboundedSender<GatewayMessage>) -> anyhow::Result<()> {
         let allowed = self.allowed_users.clone();
 
         tracing::info!("Slack gateway starting (Socket Mode)");
@@ -125,35 +115,19 @@ impl GatewayTransport for SlackTransport {
                 Ok((mut ws_stream, _)) => {
                     while let Some(Ok(msg)) = ws_stream.next().await {
                         if let WsMessage::Text(text) = msg {
-                            if let Ok(payload) =
-                                serde_json::from_str::<serde_json::Value>(&text)
-                            {
+                            if let Ok(payload) = serde_json::from_str::<serde_json::Value>(&text) {
                                 let event_type = payload["type"].as_str().unwrap_or("");
 
                                 if event_type == "events_api" {
-                                    let event =
-                                        &payload["payload"]["event"];
-                                    let ev_type =
-                                        event["type"].as_str().unwrap_or("");
+                                    let event = &payload["payload"]["event"];
+                                    let ev_type = event["type"].as_str().unwrap_or("");
 
-                                    if ev_type == "message"
-                                        && event["subtype"].is_null()
-                                    {
-                                        let user = event["user"]
-                                            .as_str()
-                                            .unwrap_or("")
-                                            .to_string();
-                                        let channel = event["channel"]
-                                            .as_str()
-                                            .unwrap_or("")
-                                            .to_string();
-                                        let text = event["text"]
-                                            .as_str()
-                                            .unwrap_or("")
-                                            .to_string();
-                                        let ts = event["ts"]
-                                            .as_str()
-                                            .map(|s| s.to_string());
+                                    if ev_type == "message" && event["subtype"].is_null() {
+                                        let user = event["user"].as_str().unwrap_or("").to_string();
+                                        let channel =
+                                            event["channel"].as_str().unwrap_or("").to_string();
+                                        let text = event["text"].as_str().unwrap_or("").to_string();
+                                        let ts = event["ts"].as_str().map(|s| s.to_string());
 
                                         if !allowed.is_empty() && !allowed.contains(&user) {
                                             continue;
@@ -172,16 +146,12 @@ impl GatewayTransport for SlackTransport {
                                 }
 
                                 // Send envelope ACK if needed
-                                if let Some(envelope_id) =
-                                    payload["envelope_id"].as_str()
-                                {
+                                if let Some(envelope_id) = payload["envelope_id"].as_str() {
                                     let ack = serde_json::json!({
                                         "envelope_id": envelope_id,
                                     });
                                     let _ = ws_stream
-                                        .send(WsMessage::Text(
-                                            ack.to_string().into(),
-                                        ))
+                                        .send(WsMessage::Text(ack.to_string().into()))
                                         .await;
                                 }
                             }
@@ -189,10 +159,7 @@ impl GatewayTransport for SlackTransport {
                     }
                 }
                 Err(e) => {
-                    tracing::error!(
-                        "Slack WebSocket connection failed: {}",
-                        e
-                    );
+                    tracing::error!("Slack WebSocket connection failed: {}", e);
                 }
             }
         });

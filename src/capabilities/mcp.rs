@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::process::Command as TokioCommand;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::process::Command as TokioCommand;
 
 use crate::event::RiskLevel;
 use crate::tools::{Tool, ToolCtx, ToolResult};
@@ -128,10 +128,7 @@ impl Tool for McpToolWrapper {
 
 #[async_trait]
 pub trait McpClient: Send + Sync {
-    async fn connect(
-        &self,
-        server: &McpServer,
-    ) -> anyhow::Result<Vec<Arc<dyn Tool>>>;
+    async fn connect(&self, server: &McpServer) -> anyhow::Result<Vec<Arc<dyn Tool>>>;
     async fn disconnect(&self, server_name: &str) -> anyhow::Result<()>;
     async fn list_servers(&self) -> Vec<McpServer>;
 }
@@ -189,10 +186,7 @@ impl BasicMcpClient {
 
 #[async_trait]
 impl McpClient for BasicMcpClient {
-    async fn connect(
-        &self,
-        server: &McpServer,
-    ) -> anyhow::Result<Vec<Arc<dyn Tool>>> {
+    async fn connect(&self, server: &McpServer) -> anyhow::Result<Vec<Arc<dyn Tool>>> {
         match server.transport {
             Transport::Stdio => self.connect_stdio(server).await,
             Transport::Url | Transport::Sse => self.connect_http(server).await,
@@ -212,10 +206,7 @@ impl McpClient for BasicMcpClient {
 
 impl BasicMcpClient {
     /// Connect via stdio (spawn process, JSON-RPC over stdin/stdout)
-    async fn connect_stdio(
-        &self,
-        server: &McpServer,
-    ) -> anyhow::Result<Vec<Arc<dyn Tool>>> {
+    async fn connect_stdio(&self, server: &McpServer) -> anyhow::Result<Vec<Arc<dyn Tool>>> {
         let command = server
             .command
             .as_ref()
@@ -233,10 +224,7 @@ impl BasicMcpClient {
         let stdin = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
 
-        let (mut writer, mut reader) = (
-            tokio::io::BufWriter::new(stdin),
-            BufReader::new(stdout),
-        );
+        let (mut writer, mut reader) = (tokio::io::BufWriter::new(stdin), BufReader::new(stdout));
 
         // Send initialize request
         let init_req = JsonRpcRequest {
@@ -292,53 +280,45 @@ impl BasicMcpClient {
         let server_name = server.name.clone();
         let allow_list = server.allow_tools.clone();
 
-        let tools: Vec<Arc<dyn Tool>> = if let Ok(resp) =
-            serde_json::from_str::<JsonRpcResponse>(&tools_resp)
-        {
-            if let Some(result) = resp.result {
-                if let Ok(list) = serde_json::from_value::<ToolsListResult>(result) {
-                    list.tools
-                        .into_iter()
-                        .filter(|t| {
-                            allow_list.is_empty() || allow_list.contains(&t.name)
-                        })
-                        .map(|t| {
-                            let srv = server_name.clone();
-                            let tool_name = t.name.clone();
-                            Arc::new(McpToolWrapper {
-                                server_name: srv.clone(),
-                                tool_def: t,
-                                call_fn: Arc::new(
-                                    move |_, _args| {
+        let tools: Vec<Arc<dyn Tool>> =
+            if let Ok(resp) = serde_json::from_str::<JsonRpcResponse>(&tools_resp) {
+                if let Some(result) = resp.result {
+                    if let Ok(list) = serde_json::from_value::<ToolsListResult>(result) {
+                        list.tools
+                            .into_iter()
+                            .filter(|t| allow_list.is_empty() || allow_list.contains(&t.name))
+                            .map(|t| {
+                                let srv = server_name.clone();
+                                let tool_name = t.name.clone();
+                                Arc::new(McpToolWrapper {
+                                    server_name: srv.clone(),
+                                    tool_def: t,
+                                    call_fn: Arc::new(move |_, _args| {
                                         // Stub: real call would use the process
                                         Ok(ToolResult::text(format!(
                                             "MCP tool '{}' from server '{}' — call via stdio",
                                             tool_name, srv
                                         )))
-                                    },
-                                ),
-                            }) as Arc<dyn Tool>
-                        })
-                        .collect()
+                                    }),
+                                }) as Arc<dyn Tool>
+                            })
+                            .collect()
+                    } else {
+                        vec![]
+                    }
                 } else {
                     vec![]
                 }
             } else {
+                tracing::warn!("Failed to parse MCP response from {}", server.name);
                 vec![]
-            }
-        } else {
-            tracing::warn!("Failed to parse MCP response from {}", server.name);
-            vec![]
-        };
+            };
 
         Ok(tools)
     }
 
     /// Connect via HTTP/SSE
-    async fn connect_http(
-        &self,
-        server: &McpServer,
-    ) -> anyhow::Result<Vec<Arc<dyn Tool>>> {
+    async fn connect_http(&self, server: &McpServer) -> anyhow::Result<Vec<Arc<dyn Tool>>> {
         let url = server
             .url
             .as_ref()
@@ -400,8 +380,7 @@ impl BasicMcpClient {
                                     tool_name,
                                     srv,
                                     endpoint,
-                                    serde_json::to_string_pretty(&args)
-                                        .unwrap_or_default()
+                                    serde_json::to_string_pretty(&args).unwrap_or_default()
                                 )))
                             }),
                         }) as Arc<dyn Tool>
