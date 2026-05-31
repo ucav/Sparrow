@@ -1,0 +1,25 @@
+[defaults]
+autonomy = "trusted"
+sandbox = "local"
+theme = "captain"
+
+[routing]
+free_first = true
+policy = { trivial = "local", small = "groq", medium = "nvidia", hard = "anthropic", vision = "anthropic" }
+on_budget = "downgrade"
+
+[budget]
+daily_usd = 5.0
+session_usd = 1.0
+
+# Add your providers below. Set API keys via environment variables:
+#   ANTHROPIC_API_KEY, OPENAI_API_KEY, NVIDIA_API_KEY, etc.
+# Example:
+# [providers.anthropic]
+# adapter = "anthropic-messages"
+# models = ["claude-sonnet-4-6"]
+#
+# [providers.nvidia]
+# adapter = "openai-compatible"
+# base_url = "https://integrate.api.nvidia.com/v1"
+# models = ["nvidia/nemotron-3-super-120b-a12b"]

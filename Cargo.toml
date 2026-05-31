@@ -1,0 +1,56 @@
+[package]
+name = "sparrow"
+version = "0.1.0"
+edition = "2024"
+description = "one cli · grows with you"
+license = "MIT"
+repository = "https://github.com/sparrow-dev/sparrow"
+
+[[bin]]
+name = "sparrow"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+ratatui = "0.29"
+crossterm = "0.28"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json", "blocking"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+git2 = "0.19"
+similar = "2"
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+async-trait = "0.1"
+secrecy = { version = "0.10", features = ["serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+futures = "0.3"
+pin-project-lite = "0.2"
+parking_lot = "0.12"
+dirs = "6"
+regex = "1"
+url = "2"
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
+mime_guess = "2"
+axum = { version = "0.7", features = ["ws"] }
+tower = "0.5"
+
+# OS keychain
+keyring = { version = "3", optional = true }
+
+[features]
+default = ["keyring"]
+keyring-dep = ["keyring"]
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true
+codegen-units = 1
