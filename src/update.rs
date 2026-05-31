@@ -64,7 +64,10 @@ pub fn self_update() -> anyhow::Result<String> {
         std::fs::set_permissions(&bin_path, perms)?;
     }
 
-    Ok(format!("Updated from v{} → v{}. Restart sparrow.", current, latest))
+    Ok(format!(
+        "Updated from v{} → v{}. Restart sparrow.",
+        current, latest
+    ))
 }
 
 /// Check if an update is available

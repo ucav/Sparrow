@@ -171,11 +171,7 @@ impl BasicRouter {
 
     /// Classify a task using a tiny model call (only for ambiguous cases).
     /// §3.6: "Classification: heuristic + a tiny model call only if ambiguous."
-    pub async fn classify_with_model(
-        &self,
-        task: &str,
-        brain: &dyn Brain,
-    ) -> TaskTier {
+    pub async fn classify_with_model(&self, task: &str, brain: &dyn Brain) -> TaskTier {
         let prompt = format!(
             "Classify this task into exactly one tier: trivial, small, medium, hard, vision.\n\nTask: {}\n\nTier:",
             task

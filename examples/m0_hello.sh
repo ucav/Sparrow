@@ -21,7 +21,7 @@ echo "Building Sparrow..."
 cargo build --release
 echo ""
 
-echo "Test: sparrow run 'add a hello() function to src/lib.rs'"
+echo "Test: sparrow run 'add a hello() function to lib.rs'"
 echo ""
 
 # Create a test workspace
@@ -33,7 +33,7 @@ git add lib.rs 2>/dev/null
 git commit -m "init" 2>/dev/null
 
 echo "Running Sparrow..."
-echo "y" | $OLDPWD/target/release/sparrow run "add a hello() function to lib.rs that prints 'hello world'" --model ollama 2>&1
+echo "y" | $OLDPWD/target/release/sparrow --model ollama:$MODEL run "add a hello() function to lib.rs that prints 'hello world'" 2>&1
 
 echo ""
 echo "Result:"

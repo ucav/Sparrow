@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use serde_json::json;
 use std::fs;
 
-use super::{resolve_workspace_path, Tool, ToolCtx, ToolResult};
+use super::{Tool, ToolCtx, ToolResult, resolve_workspace_path};
 use crate::event::{Block, RiskLevel};
 
 pub struct Edit;
@@ -45,7 +45,10 @@ impl Tool for Edit {
 
         let count = content.matches(old).count();
         if count == 0 {
-            return Ok(ToolResult::error(format!("Not found in {}: '{}'", path, old)));
+            return Ok(ToolResult::error(format!(
+                "Not found in {}: '{}'",
+                path, old
+            )));
         }
         if count > 1 && !replace_all {
             return Ok(ToolResult::error(format!(
@@ -73,7 +76,10 @@ impl Tool for Edit {
             )),
             Block::Diff {
                 file: path.to_string(),
-                patch: format!("@@ -1,{} +1,{} @@\n-{}\n+{}", old_lines, new_lines, old, new),
+                patch: format!(
+                    "@@ -1,{} +1,{} @@\n-{}\n+{}",
+                    old_lines, new_lines, old, new
+                ),
             },
         ]))
     }
@@ -117,9 +123,9 @@ impl Tool for MultiEdit {
         let full_path = resolve_workspace_path(&ctx.workspace_root, path)?;
         let mut content = fs::read_to_string(&full_path)?;
 
-        let edits = args["edits"].as_array().ok_or_else(|| {
-            anyhow::anyhow!("edits must be an array")
-        })?;
+        let edits = args["edits"]
+            .as_array()
+            .ok_or_else(|| anyhow::anyhow!("edits must be an array"))?;
 
         let mut total_replacements = 0;
         for edit in edits {

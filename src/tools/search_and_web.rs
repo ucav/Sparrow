@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use serde_json::json;
 
-use super::{resolve_workspace_path, Tool, ToolCtx, ToolResult};
+use super::{Tool, ToolCtx, ToolResult, resolve_workspace_path};
 use crate::event::{Block, RiskLevel};
 
 // ─── Ripgrep search ─────────────────────────────────────────────────────────────
@@ -31,11 +31,7 @@ impl Tool for Search {
     fn risk(&self) -> RiskLevel {
         RiskLevel::ReadOnly
     }
-    async fn call(
-        &self,
-        args: serde_json::Value,
-        ctx: &ToolCtx,
-    ) -> anyhow::Result<ToolResult> {
+    async fn call(&self, args: serde_json::Value, ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
         let pattern = args["pattern"].as_str().unwrap_or("");
         let path = args["path"].as_str().unwrap_or(".");
         let include = args["include"].as_str();
@@ -71,7 +67,9 @@ impl Tool for Search {
                     let mut results = Vec::new();
                     basic_grep(&search_path, pattern, include, &mut results, 0, max_results)?;
                     if results.is_empty() {
-                        Ok(ToolResult::text("No matches found (rg not installed, used basic search)."))
+                        Ok(ToolResult::text(
+                            "No matches found (rg not installed, used basic search).",
+                        ))
                     } else {
                         Ok(ToolResult::text(results.join("\n")))
                     }
@@ -119,16 +117,8 @@ fn basic_grep(
                             break;
                         }
                         if line.to_lowercase().contains(&pattern.to_lowercase()) {
-                            let rel = path
-                                .strip_prefix(dir)
-                                .unwrap_or(&path)
-                                .display();
-                            results.push(format!(
-                                "{}:{}: {}",
-                                rel,
-                                i + 1,
-                                line.trim()
-                            ));
+                            let rel = path.strip_prefix(dir).unwrap_or(&path).display();
+                            results.push(format!("{}:{}: {}", rel, i + 1, line.trim()));
                         }
                     }
                 }
@@ -163,11 +153,7 @@ impl Tool for WebSearch {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Network
     }
-    async fn call(
-        &self,
-        args: serde_json::Value,
-        _ctx: &ToolCtx,
-    ) -> anyhow::Result<ToolResult> {
+    async fn call(&self, args: serde_json::Value, _ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
         let query = args["query"].as_str().unwrap_or("");
         let num = args["num_results"].as_u64().unwrap_or(5);
 
@@ -295,11 +281,7 @@ impl Tool for WebFetch {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Network
     }
-    async fn call(
-        &self,
-        args: serde_json::Value,
-        _ctx: &ToolCtx,
-    ) -> anyhow::Result<ToolResult> {
+    async fn call(&self, args: serde_json::Value, _ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
         let url = args["url"].as_str().unwrap_or("");
         let format = args["format"].as_str().unwrap_or("text");
 
@@ -338,11 +320,9 @@ impl Tool for WebFetch {
             }
         };
 
-        Ok(ToolResult::ok(vec![
-            Block::Text(format!(
-                "URL: {}\nStatus: {}\nType: {}\n\n{}",
-                url, status, content_type, text
-            )),
-        ]))
+        Ok(ToolResult::ok(vec![Block::Text(format!(
+            "URL: {}\nStatus: {}\nType: {}\n\n{}",
+            url, status, content_type, text
+        ))]))
     }
 }

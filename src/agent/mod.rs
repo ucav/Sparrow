@@ -43,7 +43,8 @@ impl Default for Soul {
         Self {
             name: "sparrow".into(),
             role: "senior software engineer".into(),
-            personality: "concise, competent, direct. Prefers working code over explanation.".into(),
+            personality: "concise, competent, direct. Prefers working code over explanation."
+                .into(),
             rules: vec![],
             default_model: None,
             default_autonomy: Some("supervised".into()),
@@ -91,7 +92,10 @@ impl AgentStore for FsAgentStore {
         std::fs::create_dir_all(&self.agents_dir)?;
         let path = self.soul_path(&soul.name);
         if path.exists() {
-            anyhow::bail!("Agent '{}' already exists. Use 'edit' to modify.", soul.name);
+            anyhow::bail!(
+                "Agent '{}' already exists. Use 'edit' to modify.",
+                soul.name
+            );
         }
         let content = soul.to_toml()?;
         std::fs::write(&path, content)?;

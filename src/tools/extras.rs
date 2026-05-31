@@ -32,11 +32,7 @@ impl Tool for BrowserAutomation {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Network
     }
-    async fn call(
-        &self,
-        args: serde_json::Value,
-        _ctx: &ToolCtx,
-    ) -> anyhow::Result<ToolResult> {
+    async fn call(&self, args: serde_json::Value, _ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
         let action = args["action"].as_str().unwrap_or("navigate");
         let url = args["url"].as_str().unwrap_or("about:blank");
 
@@ -45,9 +41,10 @@ impl Tool for BrowserAutomation {
                 "Browser navigation to: {} (requires headless browser runtime)",
                 url
             ))),
-            "screenshot" => Ok(ToolResult::ok(vec![Block::Text(
-                format!("Screenshot of {} (headless browser not embedded — use Playwright or Puppeteer MCP server)", url)
-            )])),
+            "screenshot" => Ok(ToolResult::ok(vec![Block::Text(format!(
+                "Screenshot of {} (headless browser not embedded — use Playwright or Puppeteer MCP server)",
+                url
+            ))])),
             "extract" => Ok(ToolResult::text(format!(
                 "Content extraction from: {} (use web_fetch for simple cases, MCP server for complex)",
                 url
@@ -85,11 +82,7 @@ impl Tool for VisionInput {
     fn risk(&self) -> RiskLevel {
         RiskLevel::ReadOnly
     }
-    async fn call(
-        &self,
-        args: serde_json::Value,
-        ctx: &ToolCtx,
-    ) -> anyhow::Result<ToolResult> {
+    async fn call(&self, args: serde_json::Value, ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
         let path = args["path"].as_str().unwrap_or("");
         let question = args["question"].as_str().unwrap_or("Describe this image");
         let full_path = ctx.workspace_root.join(path);
@@ -108,12 +101,12 @@ impl Tool for VisionInput {
         Ok(ToolResult::ok(vec![
             Block::Text(format!(
                 "Image loaded: {} ({} bytes, {})\nQuestion: {}\n\nBase64 data ready for vision model.",
-                path, data.len(), mime, question
-            )),
-            Block::Image {
-                data,
+                path,
+                data.len(),
                 mime,
-            },
+                question
+            )),
+            Block::Image { data, mime },
         ]))
     }
 }
@@ -167,11 +160,7 @@ impl Tool for ImageGeneration {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Network
     }
-    async fn call(
-        &self,
-        args: serde_json::Value,
-        _ctx: &ToolCtx,
-    ) -> anyhow::Result<ToolResult> {
+    async fn call(&self, args: serde_json::Value, _ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
         let prompt = args["prompt"].as_str().unwrap_or("");
         let size = args["size"].as_str().unwrap_or("1024x1024");
 
@@ -209,11 +198,7 @@ impl Tool for TextToSpeech {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Network
     }
-    async fn call(
-        &self,
-        args: serde_json::Value,
-        _ctx: &ToolCtx,
-    ) -> anyhow::Result<ToolResult> {
+    async fn call(&self, args: serde_json::Value, _ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
         let text = args["text"].as_str().unwrap_or("");
         let voice = args["voice"].as_str().unwrap_or("default");
 
@@ -271,9 +256,7 @@ use tokio::sync::Mutex;
 pub struct SessionBridge {
     pub session_id: String,
     pub active_surface: Mutex<String>,
-    pub pending_approvals: Mutex<
-        Vec<crate::gateway::GatewayResponse>,
-    >,
+    pub pending_approvals: Mutex<Vec<crate::gateway::GatewayResponse>>,
     pub engine: Option<Arc<crate::engine::Engine>>,
 }
 
@@ -291,16 +274,11 @@ impl SessionBridge {
         *self.active_surface.lock().await = surface.to_string();
     }
 
-    pub async fn add_approval(
-        &self,
-        response: crate::gateway::GatewayResponse,
-    ) {
+    pub async fn add_approval(&self, response: crate::gateway::GatewayResponse) {
         self.pending_approvals.lock().await.push(response);
     }
 
-    pub async fn drain_approvals(
-        &self,
-    ) -> Vec<crate::gateway::GatewayResponse> {
+    pub async fn drain_approvals(&self) -> Vec<crate::gateway::GatewayResponse> {
         self.pending_approvals.lock().await.drain(..).collect()
     }
 }

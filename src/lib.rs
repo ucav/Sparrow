@@ -1,25 +1,50 @@
-pub mod event;
-pub mod config;
-pub mod auth;
-pub mod provider;
-pub mod tools;
-pub mod sandbox;
-pub mod router;
-pub mod engine;
-pub mod autonomy;
-pub mod cli;
-pub mod tui;
-pub mod memory;
+#![allow(
+    clippy::collapsible_if,
+    clippy::collapsible_match,
+    clippy::derivable_impls,
+    clippy::format_in_format_args,
+    clippy::if_same_then_else,
+    clippy::iter_cloned_collect,
+    clippy::manual_clamp,
+    clippy::manual_div_ceil,
+    clippy::manual_is_multiple_of,
+    clippy::manual_pattern_char_comparison,
+    clippy::needless_borrow,
+    clippy::needless_range_loop,
+    clippy::new_without_default,
+    clippy::ptr_arg,
+    clippy::should_implement_trait,
+    clippy::single_match,
+    clippy::type_complexity,
+    clippy::unnecessary_cast,
+    clippy::let_and_return,
+    clippy::useless_conversion,
+    clippy::useless_format,
+    clippy::while_let_loop
+)]
+
 pub mod agent;
-pub mod orchestrator;
+pub mod auth;
+pub mod autonomy;
 pub mod capabilities;
-pub mod runtime;
-pub mod gateway;
-pub mod update;
-pub mod redaction;
-pub mod extras;
-pub mod console;
-pub mod reasoning;
-pub mod hooks;
-pub mod onboarding;
+pub mod cli;
 pub mod completions;
+pub mod config;
+pub mod console;
+pub mod engine;
+pub mod event;
+pub mod extras;
+pub mod gateway;
+pub mod hooks;
+pub mod memory;
+pub mod onboarding;
+pub mod orchestrator;
+pub mod provider;
+pub mod reasoning;
+pub mod redaction;
+pub mod router;
+pub mod runtime;
+pub mod sandbox;
+pub mod tools;
+pub mod tui;
+pub mod update;

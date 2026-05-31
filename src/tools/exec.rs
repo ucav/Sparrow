@@ -37,11 +37,7 @@ impl Tool for Exec {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Exec
     }
-    async fn call(
-        &self,
-        args: serde_json::Value,
-        ctx: &ToolCtx,
-    ) -> anyhow::Result<ToolResult> {
+    async fn call(&self, args: serde_json::Value, ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
         let cmd_str = args["command"].as_str().unwrap_or("");
         let timeout_ms = args["timeout_ms"].as_u64().unwrap_or(120_000);
 

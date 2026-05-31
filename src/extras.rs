@@ -1,6 +1,6 @@
+use crate::engine::{Engine, Task};
 use crate::event::Event;
 use crate::memory::{Fact, Memory};
-use crate::engine::{Engine, Task};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 
@@ -13,11 +13,7 @@ pub struct Distiller;
 
 impl Distiller {
     /// Analyze run events and extract facts
-    pub async fn distill(
-        memory: &Arc<dyn Memory>,
-        events: &[Event],
-        _task_description: &str,
-    ) {
+    pub async fn distill(memory: &Arc<dyn Memory>, events: &[Event], _task_description: &str) {
         let mut facts = Vec::new();
 
         // Extract user preferences from tools used
@@ -29,30 +25,53 @@ impl Distiller {
             match event {
                 Event::ToolUseProposed { args, .. } => {
                     if let Some(path) = args.get("path").and_then(|v| v.as_str()) {
-                        if path.ends_with(".rs") { lang_hints.push("Rust".to_string()); }
-                        if path.ends_with(".ts") || path.ends_with(".tsx") { lang_hints.push("TypeScript".to_string()); }
-                        if path.ends_with(".py") { lang_hints.push("Python".to_string()); }
-                        if path.ends_with(".go") { lang_hints.push("Go".to_string()); }
-                        if path.ends_with(".js") || path.ends_with(".jsx") { lang_hints.push("JavaScript".to_string()); }
+                        if path.ends_with(".rs") {
+                            lang_hints.push("Rust".to_string());
+                        }
+                        if path.ends_with(".ts") || path.ends_with(".tsx") {
+                            lang_hints.push("TypeScript".to_string());
+                        }
+                        if path.ends_with(".py") {
+                            lang_hints.push("Python".to_string());
+                        }
+                        if path.ends_with(".go") {
+                            lang_hints.push("Go".to_string());
+                        }
+                        if path.ends_with(".js") || path.ends_with(".jsx") {
+                            lang_hints.push("JavaScript".to_string());
+                        }
                     }
                     if let Some(content) = args.get("content").and_then(|v| v.as_str()) {
-                        if content.contains("Cargo.toml") { framework_hints.push("Rust/Cargo".to_string()); }
-                        if content.contains("package.json") { framework_hints.push("Node.js".to_string()); }
-                        if content.contains("go.mod") { framework_hints.push("Go modules".to_string()); }
+                        if content.contains("Cargo.toml") {
+                            framework_hints.push("Rust/Cargo".to_string());
+                        }
+                        if content.contains("package.json") {
+                            framework_hints.push("Node.js".to_string());
+                        }
+                        if content.contains("go.mod") {
+                            framework_hints.push("Go modules".to_string());
+                        }
                     }
                 }
                 Event::ThinkingDelta { text, .. } => {
-                    if text.contains("refactor") { style_hints.push("prefers refactoring".to_string()); }
-                    if text.contains("test") || text.contains("TDD") { style_hints.push("test-driven".to_string()); }
+                    if text.contains("refactor") {
+                        style_hints.push("prefers refactoring".to_string());
+                    }
+                    if text.contains("test") || text.contains("TDD") {
+                        style_hints.push("test-driven".to_string());
+                    }
                 }
                 _ => {}
             }
         }
 
         // Deduplicate and save facts
-        lang_hints.sort(); lang_hints.dedup();
-        framework_hints.sort(); framework_hints.dedup();
-        style_hints.sort(); style_hints.dedup();
+        lang_hints.sort();
+        lang_hints.dedup();
+        framework_hints.sort();
+        framework_hints.dedup();
+        style_hints.sort();
+        style_hints.dedup();
 
         for lang in &lang_hints {
             facts.push(Fact {
@@ -93,7 +112,10 @@ impl Distiller {
         }
 
         if !lang_hints.is_empty() || !framework_hints.is_empty() {
-            tracing::info!("Distiller: extracted {} facts from session", lang_hints.len() + framework_hints.len() + style_hints.len());
+            tracing::info!(
+                "Distiller: extracted {} facts from session",
+                lang_hints.len() + framework_hints.len() + style_hints.len()
+            );
         }
     }
 }
@@ -109,7 +131,9 @@ pub struct Embeddings {
 
 impl Embeddings {
     pub fn new() -> Self {
-        Self { vectors: Vec::new() }
+        Self {
+            vectors: Vec::new(),
+        }
     }
 
     /// Build a simple embedding from text (bag-of-words normalized)
@@ -129,11 +153,17 @@ impl Embeddings {
     /// Find the most similar stored text to the query
     pub fn search(&self, query: &str, k: usize) -> Vec<String> {
         let q_embed = self.embed(query);
-        let mut scored: Vec<(f64, &str)> = self.vectors.iter()
+        let mut scored: Vec<(f64, &str)> = self
+            .vectors
+            .iter()
             .map(|(text, emb)| (cosine_sim(&q_embed, emb), text.as_str()))
             .collect();
         scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-        scored.into_iter().take(k).map(|(_, t)| t.to_string()).collect()
+        scored
+            .into_iter()
+            .take(k)
+            .map(|(_, t)| t.to_string())
+            .collect()
     }
 
     pub fn add(&mut self, text: &str) {
@@ -143,11 +173,17 @@ impl Embeddings {
 
 fn cosine_sim(a: &[f64], b: &[f64]) -> f64 {
     let len = a.len().min(b.len());
-    if len == 0 { return 0.0; }
+    if len == 0 {
+        return 0.0;
+    }
     let dot: f64 = a.iter().zip(b.iter()).take(len).map(|(x, y)| x * y).sum();
     let norm_a: f64 = a.iter().take(len).map(|x| x * x).sum::<f64>().sqrt();
     let norm_b: f64 = b.iter().take(len).map(|x| x * x).sum::<f64>().sqrt();
-    if norm_a == 0.0 || norm_b == 0.0 { 0.0 } else { dot / (norm_a * norm_b) }
+    if norm_a == 0.0 || norm_b == 0.0 {
+        0.0
+    } else {
+        dot / (norm_a * norm_b)
+    }
 }
 
 // ─── Replay re-execute ──────────────────────────────────────────────────────────
@@ -201,10 +237,19 @@ impl OAuthFlow {
             .post(device_url)
             .form(&[
                 ("client_id", client_id),
-                ("scope", if provider == "github" { "read:user" } else { "openid profile" }),
+                (
+                    "scope",
+                    if provider == "github" {
+                        "read:user"
+                    } else {
+                        "openid profile"
+                    },
+                ),
             ])
-            .send().await?
-            .json().await?;
+            .send()
+            .await?
+            .json()
+            .await?;
 
         Ok((
             resp["verification_uri"].as_str().unwrap_or("").to_string(),
@@ -241,8 +286,10 @@ impl OAuthFlow {
                     ("device_code", device_code),
                     ("grant_type", "urn:ietf:params:oauth:grant-type:device_code"),
                 ])
-                .send().await?
-                .json().await?;
+                .send()
+                .await?
+                .json()
+                .await?;
 
             if let Some(token) = resp["access_token"].as_str() {
                 return Ok(token.to_string());
@@ -263,7 +310,8 @@ impl OAuthFlow {
 /// §9.3: "IBM Plex Mono everywhere (TUI authenticity + web)"
 /// The font is not embedded in the binary; users install it system-wide.
 /// This constant provides the download URL and instructions.
-pub const IBM_PLEX_MONO_URL: &str = "https://github.com/IBM/plex/releases/latest/download/IBM-Plex-Mono.zip";
+pub const IBM_PLEX_MONO_URL: &str =
+    "https://github.com/IBM/plex/releases/latest/download/IBM-Plex-Mono.zip";
 
 pub fn ibm_plex_install_instructions() -> String {
     r#"IBM Plex Mono — recommended font for Sparrow TUI.
@@ -274,7 +322,8 @@ Install:
   Windows: Download from https://github.com/IBM/plex/releases
 
 Then update your terminal to use "IBM Plex Mono" as the font.
-"#.to_string()
+"#
+    .to_string()
 }
 
 // ─── Chat mode ──────────────────────────────────────────────────────────────────
@@ -289,7 +338,11 @@ pub struct ChatSession {
 
 impl ChatSession {
     pub fn new(engine: Arc<Engine>) -> Self {
-        Self { engine, history: Vec::new(), running: true }
+        Self {
+            engine,
+            history: Vec::new(),
+            running: true,
+        }
     }
 
     pub async fn run_interactive(&mut self) -> anyhow::Result<()> {
@@ -307,12 +360,18 @@ impl ChatSession {
             io::stdin().read_line(&mut input)?;
             let input = input.trim().to_string();
 
-            if input.is_empty() { continue; }
-            if input == "/exit" || input == "/quit" { break; }
+            if input.is_empty() {
+                continue;
+            }
+            if input == "/exit" || input == "/quit" {
+                break;
+            }
 
             self.history.push(crate::provider::Msg {
                 role: "user".into(),
-                content: vec![crate::provider::ContentBlock::Text { text: input.clone() }],
+                content: vec![crate::provider::ContentBlock::Text {
+                    text: input.clone(),
+                }],
             });
 
             let (tx, mut rx) = mpsc::unbounded_channel::<Event>();
@@ -322,9 +381,7 @@ impl ChatSession {
             };
 
             let engine = self.engine.clone();
-            let handle = tokio::spawn(async move {
-                engine.drive(task, tx).await
-            });
+            let handle = tokio::spawn(async move { engine.drive(task, tx).await });
 
             while let Some(event) = rx.recv().await {
                 match &event {
@@ -386,9 +443,24 @@ impl PipelineConfig {
         Self {
             name: "planner-coder-verifier".into(),
             steps: vec![
-                PipelineStep { role: "planner".into(), model_preference: None, prompt_override: None, depends_on: vec![] },
-                PipelineStep { role: "coder".into(), model_preference: None, prompt_override: None, depends_on: vec!["planner".into()] },
-                PipelineStep { role: "verifier".into(), model_preference: None, prompt_override: None, depends_on: vec!["coder".into()] },
+                PipelineStep {
+                    role: "planner".into(),
+                    model_preference: None,
+                    prompt_override: None,
+                    depends_on: vec![],
+                },
+                PipelineStep {
+                    role: "coder".into(),
+                    model_preference: None,
+                    prompt_override: None,
+                    depends_on: vec!["planner".into()],
+                },
+                PipelineStep {
+                    role: "verifier".into(),
+                    model_preference: None,
+                    prompt_override: None,
+                    depends_on: vec!["coder".into()],
+                },
             ],
             max_reworks: 3,
         }
@@ -464,11 +536,17 @@ impl Profile {
             }
         };
 
-        let memory: Arc<dyn Memory> = Arc::new(
-            crate::memory::SqliteMemory::open(&state_dir.join("profile.db"))?
-        );
+        let memory: Arc<dyn Memory> = Arc::new(crate::memory::SqliteMemory::open(
+            &state_dir.join("profile.db"),
+        )?);
 
-        Ok(Self { name: name.to_string(), config_dir, state_dir, config, memory })
+        Ok(Self {
+            name: name.to_string(),
+            config_dir,
+            state_dir,
+            config,
+            memory,
+        })
     }
 
     pub fn create(name: &str) -> anyhow::Result<()> {

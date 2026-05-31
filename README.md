@@ -1,198 +1,200 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/brand/sparrow-mascot.svg">
-  <img alt="Sparrow" src="assets/brand/sparrow-mascot.svg" width="140">
-</picture>
-
 # Sparrow
 
-**The only CLI you install.**
+**A local-first Rust agent cockpit for model routing, WebView control, rollback safety, and transparent cost.**
 
-> one cli · grows with you · pirate & builder
-
-[![Status: Specification & Kernel](https://img.shields.io/badge/status-specification%20%2B%20kernel%20in%20progress-amber)](https://github.com/ucav/Sparrow)
+[![CI](https://github.com/ucav/Sparrow/actions/workflows/ci.yml/badge.svg)](https://github.com/ucav/Sparrow/actions/workflows/ci.yml)
+[![Security Audit](https://github.com/ucav/Sparrow/actions/workflows/audit.yml/badge.svg)](https://github.com/ucav/Sparrow/actions/workflows/audit.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Rust](https://img.shields.io/badge/rust-1.96%2B-orange)](https://rust-lang.org)
 
----
+<p>
+  <img alt="Sparrow mascot" src="assets/brand/sparrow-mascot.svg" width="128">
+</p>
 
-Sparrow is a **self-contained, single-binary CLI** that fuses the best ideas of Claude Code, Codex, OpenCode, OpenClaw and Hermes Agent into one native Rust tool. One install. One binary. Any model. No other CLI required.
+Sparrow is an experimental single-binary CLI agent written in Rust. It is built around one event stream that can be rendered by a terminal UI, a WebView console, JSON output, or gateway surfaces. Its main design goal is simple: route each task to the cheapest capable model, keep the user in control, and make every run replayable.
 
----
+Sparrow is inspired by tools like Claude Code, Codex, OpenCode, OpenClaw, and Hermes Agent, but it is intentionally local-first: Ollama can be the first hop, paid providers can be fallbacks, and checkpoints protect the workspace before mutating actions.
 
-## What Sparrow Is
+## Why Explore It
 
-| Capability | In Sparrow |
-|---|---|
-| **One binary** | Static Rust binary — no Python, Node, or external CLIs |
-| **Any model** | Anthropic, OpenAI, NVIDIA, Groq, Ollama, OpenRouter… 35 providers |
-| **Local-first** | Full task offline via Ollama, `$0.00`, no account needed |
-| **Agentic loop** | `think → act → observe` with tool use, context management |
-| **Multi-agent swarm** | `Planner → Coder → Verifier` with adversarial review |
-| **Autonomy dial** | Supervised → Trusted → Autonomous, continuous, not two modes |
-| **Checkpoint & rewind** | Every mutating batch snapshotted; `rewind` restores instantly |
-| **Persistent memory** | 4-tier memory (repo, identity, task, shared) with SQLite |
-| **Self-improving** | Skills created from experience, curated automatically |
-| **Replayable runs** | Every run recorded as `inputs.json` + `events.jsonl` |
-| **Headless + scriptable** | `--json` NDJSON stream, exit codes, CI/hook friendly |
-| **Multi-surface** | CLI · TUI · API · Telegram · Discord · Slack |
+- **Model routing:** budget-aware fallback chains across Ollama, NVIDIA, Anthropic, OpenAI-compatible APIs, and other registry entries.
+- **WebView console:** local cockpit at `http://127.0.0.1:9339/` with live route, token, cost, and config events.
+- **Terminal-native:** TUI, `sparrow run`, `sparrow chat`, `sparrow --json run ...`, replay, memory, setup, and gateway commands.
+- **Rollback safety:** Git-based checkpoints and `sparrow rewind`.
+- **Persistent context:** SQLite memory, SOUL-style agent files, skill registry, transcripts, and replay.
+- **Gateway path:** Telegram, Discord, Slack, and WebSocket API are wired; extra transports are explicit adapters, not silently fake-successing.
 
----
+## Status
 
-## Quick Start (planned)
+Sparrow is **alpha software**. The kernel builds and has a real integration suite, but several ambitious surfaces remain partial or experimental.
+
+| Area | Status | Evidence |
+|---|---:|---|
+| Rust build | Stable | `cargo check`, `cargo build` pass locally |
+| Test suite | Stable | 84 tests pass with `cargo test --all-targets` |
+| Engine loop | Alpha | `src/engine/mod.rs`, integration tests, JSON smoke test |
+| Provider routing | Alpha | Ollama + NVIDIA auto-discovery tested locally |
+| WebView console | Alpha | HTTP + WebSocket console tested on port 9339 |
+| Gateway WebSocket | Alpha | `/status` command roundtrip tested on port 9338 |
+| Telegram/Discord/Slack | Partial | Transport implementations exist; real account tokens required for end-to-end validation |
+| Extra transports | Experimental | WhatsApp/Signal/Email/Feishu/WeCom/QQ/Teams adapters are present but not all fully wired |
+| Cloud sandboxes | Experimental | Modal/Daytona/Vercel/Singularity are placeholders |
+| Image/TTS/LSP | Experimental | Tool shells exist; provider/runtime integration remains future work |
+| Cross-platform release | Planned | workflows exist; no public release artifact yet |
+
+See [docs/AUDIT.md](docs/AUDIT.md) for module-by-module proof.
+
+## Quick Start From Source
 
 ```bash
-curl -fsSL https://sparrow.dev/install.sh | sh
-sparrow setup          # conversational onboarding
-sparrow                # launch TUI
-sparrow run "fix the failing auth test"
+git clone https://github.com/ucav/Sparrow.git
+cd Sparrow
+cargo build
+cargo test --all-targets
 ```
 
----
+Run the WebView console:
+
+```bash
+cargo run -- console
+```
+
+Open:
+
+```text
+http://127.0.0.1:9339/
+```
+
+Run a routing smoke test:
+
+```bash
+cargo run -- --json run "comment sélectionne tu le modèle le plus adapté lors du routing ?"
+```
+
+List detected providers:
+
+```bash
+cargo run -- model --list
+```
+
+Prefer local Ollama:
+
+```bash
+cargo run -- --local run "summarize this repository"
+```
+
+Force a provider/model route:
+
+```bash
+cargo run -- --model nvidia:nvidia/nemotron-3-super-120b-a12b run "explain Sparrow routing"
+```
+
+## First Configuration
+
+Interactive setup:
+
+```bash
+cargo run -- setup
+```
+
+Useful environment variables:
+
+```bash
+NVIDIA_API_KEY=...
+ANTHROPIC_API_KEY=...
+OPENAI_API_KEY=...
+GROQ_API_KEY=...
+OPENROUTER_API_KEY=...
+OLLAMA_HOST=http://127.0.0.1:11434
+```
+
+Configuration lives in the platform config directory, usually:
+
+```text
+%APPDATA%\sparrow\config.toml
+```
+
+Sparrow never needs API keys in the repository.
+
+## Common Commands
+
+```bash
+sparrow setup
+sparrow console
+sparrow run "fix the failing test"
+sparrow --json run "summarize the repo"
+sparrow chat
+sparrow model --list
+sparrow gateway start
+sparrow gateway status
+sparrow gateway stop
+sparrow replay <run-id>
+sparrow checkpoint list
+sparrow rewind <checkpoint-id>
+sparrow memory list
+sparrow doctor
+```
 
 ## Architecture
 
-```
-┌──────────────────────────────────────────────────────┐
-│                  SPARROW RUNTIME                     │
-│  config · auth · provider · tools · sandbox          │  Tier 0
-│  router · engine · memory                            │  Tier 1
-│  autonomy · agent · capabilities                     │  Tier 2
-│  orchestrator · scheduler · runtime                  │  Tier 3
-├──────────────────────────────────────────────────────┤
-│  tui · cli · api · gateway (telegram/discord/slack)  │  Tier 4
-└──────────────────────────────────────────────────────┘
-```
-
-**Everything is a configuration of one primitive: `AgentRun`.**
-
-```
-AgentRun = Identity + BrainPolicy + AutonomyContract + ToolSet + Memory + Workspace
+```text
+                 user task
+                    |
+             routing need classifier
+                    |
+        budget-aware fallback model chain
+                    |
+                  Engine
+        think -> tool -> observe -> emit
+                    |
+          one canonical Event stream
+                    |
+  CLI / TUI / WebView / JSON / Gateway / Recorder
 ```
 
-Every surface (TUI, CLI, API, messaging) is a **thin renderer** over a single event stream. No business logic in surfaces. No provider lock-in.
+Important contracts:
 
----
+- [src/event.rs](src/event.rs) defines the event stream.
+- [src/provider/mod.rs](src/provider/mod.rs) defines the `Brain` abstraction.
+- [src/router/mod.rs](src/router/mod.rs) ranks models and fallbacks.
+- [src/engine/mod.rs](src/engine/mod.rs) drives the agent loop.
+- [src/tools/mod.rs](src/tools/mod.rs) defines tool contracts.
+- [src/gateway/mod.rs](src/gateway/mod.rs) routes external messages.
 
-## CLI (planned)
+## Docs
 
-```bash
-sparrow                                    # launch TUI
-sparrow run "fix the failing auth test"    # one agentic run
-sparrow run "summarize git log" --local    # offline via Ollama
-sparrow swarm "add token revocation"       # planner → coder → verifier
-sparrow schedule "run tests" --cron "0 2 * * *"
-sparrow model --list                       # show active routing
-sparrow replay <run-id>                    # replay from transcript
-sparrow rewind <checkpoint-id>             # restore snapshot
-sparrow --json run "task"                  # NDJSON for CI
-```
+- [Module audit](docs/AUDIT.md)
+- [Architecture](docs/architecture.md)
+- [CLI reference](docs/cli-reference.md)
+- [Configuration](docs/configuration.md)
+- [Routing](docs/routing.md)
+- [Autonomy](docs/autonomy.md)
+- [Sandboxing](docs/sandboxing.md)
+- [Replay](docs/replay.md)
+- [Swarm](docs/swarm.md)
+- [Migration guides](docs/migration/)
+- [Brand assets](assets/brand/)
 
----
+## What Makes Sparrow Different
 
-## Safety Model
+Hermes Agent is excellent at presenting a personal agent loop and learning system. OpenClaw is excellent at operator-oriented docs and gateway/security guidance. Sparrow's angle should be narrower and sharper:
 
-- **Autonomy is a dial**, never two modes
-- Every **mutating action** requires an autonomy decision
-- Every **mutating batch** creates a checkpoint
-- **Destructive actions** are never silently allowed in Supervised
-- **Secrets** are redacted from transcripts, logs, and context
-- **Transcripts** are append-only and audit-friendly
-- **Sandboxing** is core: local-hardened, Docker, SSH, remote
+> a Rust-native local cockpit for routed agents, where every run is visible, replayable, budgeted, and checkpointed.
 
-| Risk Level | Supervised | Trusted | Autonomous |
-|---|---|---|---|
-| ReadOnly | Allow | Allow | Allow |
-| Mutating | Ask | Notify+Checkpoint | Allow+Checkpoint |
-| Exec | Ask | Notify (sandbox) | Allow (sandbox) |
-| Destructive | Deny | Ask | Ask |
-| Network | Ask | Allow | Allow |
-
----
-
-## Project Status
-
-| Component | Status |
-|---|---|
-| Specification | ✅ Complete |
-| Branding & Visual Identity | ✅ Complete |
-| Rust Kernel (M0) | ✅ 54 tests, cargo build --release OK |
-| CLI Grammar | ✅ 25+ subcommands |
-| Provider Registry | ✅ 35 providers (Hermes Agent parity) |
-| Native Ollama Adapter | ✅ /api/chat + NDJSON streaming |
-| Routing Engine | ✅ Scoring + fallback + budget-aware |
-| Autonomy Gate | ✅ 15-combination matrix tested |
-| Checkpoint/Rewind | ✅ Git-based, rewind restores cleanly |
-| Memory (SQLite 4-tier) | ✅ FTS5 + redaction + persistence |
-| Agent SOUL Files | ✅ 5 agents (planner, coder, verifier, researcher, debugger) |
-| TUI (ratatui) | ✅ Cockpit, scroll, ASCII mascot, autocomplete |
-| WebView Console | ✅ HTTP + WebSocket + JS client + config panel |
-| Swarm Orchestrator | ✅ Planner→Coder→Verifier + REWORK + file locks |
-| Skills + Curator | ✅ 11 default skills + self-improving loop |
-| Scheduler | ✅ Cron + persistence |
-| Recorder/Replayer | ✅ Transcripts + golden replay |
-| Gateway | ✅ 11 transports (Telegram, Discord, Slack, ...) |
-| Reasoning Layer | ✅ Anti-simulation + hallucination guard + self-critique |
-| Hooks System | ✅ 12 lifecycle events, blocking/non-blocking |
-| Builder Tools | ✅ test, apply_patch, git PR, fetch_docs, LSP, REPL |
-| Phase 1 (M0-M6) | ✅ Complete |
-| Phase 2 (WS1-WS7) | ✅ Complete |
-| Cross-compilation | ⬜ Linux musl, macOS, Windows (CI configured) |
-
----
-
-## Roadmap
-
-| Milestone | Contents | Status |
-|---|---|---|
-| **M0 Kernel** | config, auth, provider, tools, sandbox, router, engine, CLI, TUI | ✅ |
-| **M1 Trust** | memory, agents, autonomy dial, checkpoints, rewind | ✅ |
-| **M2 Swarm** | orchestrator, planner→coder→verifier, anti-collision | ✅ |
-| **M3 Grows** | skills, Curator, MCP client | ✅ |
-| **M4 Runtime** | daemon, event bus, scheduler, recorder, replayer | ✅ |
-| **M5 Everywhere** | gateway (Telegram, Discord, Slack), WebSocket API | ✅ |
-| **M6 Polish** | theming, self-update, install, full TUI, docs | ⬜ |
-
-[Full roadmap →](ROADMAP.md)
-
----
-
-## Branding
-
-Sparrow's mascot is a **chubby pirate sparrow** — two-feather crest, thick eyebrow, open eye + pirate patch, coral beak, pink cheek, cream belly, key in wing.
-
-[View branding assets →](assets/brand/)
-
-```
-        ^^
-      .-~~~-.
-     /__     \
-    | o   ██  |
-    |    v    |
-    | .       |
-     \ \__/  /
-      '-..-'
-      /|  |\  ╤━o
-     '_|  |_'
-```
-
----
+That is the experience this repository is converging toward.
 
 ## Contributing
 
-Sparrow follows strict architecture rules:
+Before opening a PR:
 
-- **Every module exposes a trait**, testable in isolation with mocks
-- **No business logic in surfaces** — TUI/CLI are thin renderers
-- **No provider lock-in** — switch model with `sparrow model`
-- **No secrets in logs, transcripts, or context** — redact aggressively
-- **Autonomy is a continuous dial**, never two modes
+```bash
+cargo fmt --all -- --check
+cargo clippy --all-targets -- -D warnings
+cargo test --all-targets
+```
 
-[Contributing guide →](CONTRIBUTING.md)
-
----
+Keep docs honest: mark features as `Stable`, `Alpha`, `Partial`, `Experimental`, or `Planned` based on tests and runnable examples.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
-
-Built with Rust. Inspired by the best coding agents — locked to none.
+MIT. See [LICENSE](LICENSE).

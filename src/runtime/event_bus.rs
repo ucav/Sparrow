@@ -14,9 +14,7 @@ pub struct EventBus {
 impl EventBus {
     pub fn new(capacity: usize) -> Self {
         let (tx, _) = broadcast::channel(capacity);
-        Self {
-            tx,
-        }
+        Self { tx }
     }
 
     /// Publish an event to all subscribers

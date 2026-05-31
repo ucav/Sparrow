@@ -19,7 +19,11 @@ impl Migration {
     pub fn import_openclaw(path: &PathBuf) -> anyhow::Result<MigrationResult> {
         let mut result = MigrationResult {
             tool: "openclaw".into(),
-            agents: 0, skills: 0, cron_jobs: 0, config_entries: 0, surfaces: 0,
+            agents: 0,
+            skills: 0,
+            cron_jobs: 0,
+            config_entries: 0,
+            surfaces: 0,
         };
 
         // Agents/SOUL
@@ -57,7 +61,11 @@ impl Migration {
     pub fn import_claude_code(path: &PathBuf) -> anyhow::Result<MigrationResult> {
         let mut result = MigrationResult {
             tool: "claude-code".into(),
-            agents: 0, skills: 0, cron_jobs: 0, config_entries: 0, surfaces: 0,
+            agents: 0,
+            skills: 0,
+            cron_jobs: 0,
+            config_entries: 0,
+            surfaces: 0,
         };
 
         // CLAUDE.md → Sparrow SOUL
@@ -99,7 +107,11 @@ impl Migration {
     pub fn import_codex(path: &PathBuf) -> anyhow::Result<MigrationResult> {
         let mut result = MigrationResult {
             tool: "codex".into(),
-            agents: 0, skills: 0, cron_jobs: 0, config_entries: 0, surfaces: 0,
+            agents: 0,
+            skills: 0,
+            cron_jobs: 0,
+            config_entries: 0,
+            surfaces: 0,
         };
 
         // AGENTS.md → agent import
@@ -123,7 +135,11 @@ impl Migration {
     pub fn import_opencode(path: &PathBuf) -> anyhow::Result<MigrationResult> {
         let mut result = MigrationResult {
             tool: "opencode".into(),
-            agents: 0, skills: 0, cron_jobs: 0, config_entries: 0, surfaces: 0,
+            agents: 0,
+            skills: 0,
+            cron_jobs: 0,
+            config_entries: 0,
+            surfaces: 0,
         };
 
         // opencode.json → config
@@ -142,7 +158,11 @@ impl Migration {
     pub fn import_hermes(path: &PathBuf) -> anyhow::Result<MigrationResult> {
         let mut result = MigrationResult {
             tool: "hermes".into(),
-            agents: 0, skills: 0, cron_jobs: 0, config_entries: 0, surfaces: 0,
+            agents: 0,
+            skills: 0,
+            cron_jobs: 0,
+            config_entries: 0,
+            surfaces: 0,
         };
 
         // agents/*.md → Sparrow SOULs

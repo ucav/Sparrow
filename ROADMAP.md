@@ -1,116 +1,75 @@
 # Roadmap
 
-All Sparrow milestones as defined in the [technical specification](docs/technical-spec.md).
+Sparrow uses evidence-based status labels:
 
----
+- **Stable**: compiled, tested, and used by at least one runnable path.
+- **Alpha**: implemented and tested locally, but needs more real-world validation.
+- **Partial**: meaningful code exists, but the end-to-end promise is not fully wired.
+- **Experimental**: adapter, shell, or prototype exists.
+- **Planned**: not implemented.
 
-## M0 — Kernel ✅
+## Current Alpha
 
-**Done when:** "Claude Code, but model-agnostic": edit a repo with a chosen/free model.
+| Area | Status | Notes |
+|---|---:|---|
+| Core event model | Stable | `Event` is the load-bearing contract across surfaces and recorder. |
+| Brain/provider abstraction | Stable | Unified `Brain`, `BrainRequest`, `BrainEvent`, `ToolSpec`. |
+| Engine loop | Alpha | Think/tool/observe loop exists with routing, tokens, redaction, and event emission. |
+| Provider registry | Alpha | Registry covers many providers; runtime auto-discovers configured env keys. |
+| Ollama adapter | Alpha | Native `/api/chat` streaming path exists. |
+| OpenAI-compatible adapter | Alpha | Used for NVIDIA and similar providers. |
+| Anthropic adapter | Alpha | Streaming tool-use IDs fixed and tested via build suite. |
+| Routing | Alpha | Budget-aware fallback, local/free preference, tool/vision penalties. |
+| Autonomy | Stable | 15-combination matrix covered in tests. |
+| Memory | Alpha | SQLite persistence and redaction tests. |
+| Checkpoint/rewind | Alpha | Git refs/stash-based implementation with integration coverage. |
+| TUI | Alpha | Terminal cockpit exists; more visual polish needed. |
+| WebView console | Alpha | Local HTTP/WebSocket console tested on port 9339. |
+| Gateway WebSocket | Alpha | Message response roundtrip tested on port 9338. |
+| Telegram/Discord/Slack | Partial | Real transport implementations exist; account-token E2E validation still needed. |
+| Extra gateway transports | Experimental | Adapters present; several return explicit unsupported errors rather than fake success. |
+| Swarm orchestrator | Partial | Planner/Coder/Verifier loop exists; stronger landed-only-after-PASS proof remains needed. |
+| Skills/Curator | Alpha | Filesystem skills and relevance path exist. |
+| MCP client | Alpha | stdio/HTTP client surface exists. |
+| Scheduler/recorder/replay | Alpha | Runtime pieces and transcript tests exist. |
+| Cloud sandboxes | Experimental | Modal/Daytona/Vercel/Singularity placeholders. |
+| Browser/LSP/Image/TTS | Experimental | Tool shells exist; full backends are future work. |
+| Release packaging | Planned | CI definitions exist; public release artifacts are not published yet. |
 
-- [x] Config loading (TOML + env + CLI flags)
-- [x] Auth store (env + encrypted file + OS keychain)
-- [x] Provider adapters (Anthropic Messages, OpenAI Compatible, OpenAI Responses, Bedrock, Ollama)
-- [x] Core tools (fs read/write/list, edit, search, exec, git, todo)
-- [x] Sandbox (local + hardened + Docker + SSH + serverless stubs)
-- [x] Basic router with scoring + fallback chains
-- [x] Agentic engine loop (think → act → observe)
-- [x] Supervised autonomy gate
-- [x] CLI command grammar
-- [x] Terminal TUI (ratatui cockpit)
+## Near-Term Priorities
 
----
+1. **Public GitHub polish**
+   - Add repository description, website, topics, and first alpha release in GitHub settings.
+   - Add screenshots or a short GIF for WebView console, TUI, and JSON stream.
+   - Keep README status aligned with `docs/AUDIT.md`.
 
-## M1 — Trust ✅
+2. **CI/release hardening**
+   - Keep CI on `master` and `main`.
+   - Make `cargo fmt`, `clippy -D warnings`, build, and tests mandatory.
+   - Publish `v0.1.0-alpha` binaries with checksums.
 
-**Done when:** Run Trusted/Autonomous safely; rewind works.
+3. **M0 acceptance**
+   - Keep `examples/m0_hello.sh` runnable against real Ollama.
+   - Add a deterministic no-network mock acceptance path for CI.
 
-- [x] 4-tier memory (SQLite): repo, identity, task, shared
-- [x] Persistent agents (SOUL files)
-- [x] Full autonomy dial (Supervised → Trusted → Autonomous)
-- [x] Git-based checkpoints with `sparrow checkpoint list` and `sparrow rewind`
-- [x] Auto-checkpoint before mutating/exec/destructive actions
-- [x] Redaction filter for secrets
+4. **Swarm proof**
+   - Add an integration test proving coder diffs are not landed until verifier PASS.
+   - Record REWORK/PASS events in transcripts.
 
----
+5. **Gateway proof**
+   - Add token-backed manual test guides for Telegram, Discord, and Slack.
+   - Add mock gateway tests for command routing and response delivery.
 
-## M2 — Swarm ✅
+6. **Sandbox reality**
+   - Replace placeholder cloud sandbox output with either real adapters or explicit unsupported errors.
+   - Add Linux `local-hardened` acceptance tests for path escape/network denial.
 
-**Done when:** Diffs land only after adversarial PASS.
+## Beyond Alpha
 
-- [x] Orchestrator with default pipeline (Planner → Coder → Verifier)
-- [x] Adversarial review loop (REWORK until PASS)
-- [x] Shared memory coordination (signals, working docs)
-- [x] File-level locks for anti-collision
-- [x] Subagent spawn tool
-
----
-
-## M3 — Grows ✅
-
-**Done when:** Skills are created/curated; MCP tools are usable.
-
-- [x] Skill struct + SKILL.md format
-- [x] Filesystem skill library
-- [x] Curator (grade → dedupe → prune)
-- [x] Auto-generated skills from successful runs
-- [x] MCP client (stdio + HTTP transports)
-- [x] Skill relevance matching in engine context
-
----
-
-## M4 — Runtime ✅
-
-**Done when:** Scheduled unattended jobs run; replay works.
-
-- [x] Centralized EventBus (broadcast pub/sub)
-- [x] Runtime daemon with TCP API socket
-- [x] Cron scheduler with job persistence
-- [x] Run recorder (transcripts as `inputs.json` + `events.jsonl`)
-- [x] Replayer (load + render transcripts)
-- [x] `sparrow replay <run-id>` command
-
----
-
-## M5 — Everywhere ✅
-
-**Done when:** Continue a session across surfaces.
-
-- [x] Gateway transport trait
-- [x] Telegram transport (Bot API, long polling)
-- [x] Discord transport (Gateway WebSocket)
-- [x] Slack transport (Socket Mode)
-- [x] WhatsApp, Signal, Email, Feishu, WeCom, QQBot, Teams stubs
-- [x] WebSocket API server
-- [x] Message router (command parsing, task routing)
-- [x] `sparrow --web` / `sparrow console`
-
----
-
-## M6 — Polish ⬜
-
-**Done when:** Ships as v1.
-
-- [x] Theming (color tokens from §9.2)
-- [x] ASCII logo + boot sequence in TUI
-- [x] Self-update (`sparrow update`)
-- [x] `sparrow doctor` diagnostics
-- [ ] IBM Plex Mono embedded
-- [ ] Full cross-compilation (Linux musl, macOS, Windows MSVC)
-- [ ] Signed release binaries + checksums
-- [ ] `curl | sh` install tested on all platforms
-- [ ] Website / landing page
-- [ ] Benchmark suite
-
----
-
-## Beyond v1
-
-- [ ] Python RPC channel (persistent kernel for subagents)
-- [ ] Browser automation tool (headless playback)
-- [ ] Vision/image generation/TTS tools
-- [ ] OAuth device flow for provider setup
-- [ ] Real local-hardened sandbox (firejail/bwrap on Linux)
-- [ ] Hot-reload config for daemon
-- [ ] Multi-profile isolation
-- [ ] Plugin system for provider/model extensions
+- Persistent Python kernel for subagents.
+- Browser automation backend.
+- Real image generation/TTS provider integration.
+- OAuth/device-flow provider setup.
+- Multi-profile isolation end-to-end.
+- Plugin system for providers, tools, and surfaces.
+- Public website and installation script tested on Windows/macOS/Linux.

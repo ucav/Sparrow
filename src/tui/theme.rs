@@ -3,24 +3,24 @@ use ratatui::style::Color;
 // ─── Color tokens from §9.2 ─────────────────────────────────────────────────────
 
 pub struct Theme {
-    pub brand: Color,       // #f2a93c amber — brand, cost
-    pub coral: Color,       // #f0674a coral — secondary accent
-    pub agent: Color,       // #4ec9b0 teal — active agent / coder
-    pub planner: Color,     // #6fa6e6 blue — routing / planner
-    pub verifier: Color,    // #c9a14e sand — verifier
-    pub add: Color,         // #74c258 green — diff +
-    pub rem: Color,         // #d96a63 red — diff -
-    pub gold: Color,        // #f2c94c — pirate hoop / highlights
-    pub steel: Color,       // #b9b0a3 — tool metal
-    pub supervised: Color,  // #74c258 green
-    pub trusted: Color,     // #f2a93c amber
-    pub autonomous: Color,  // #d96a63 red
-    pub bg: Color,          // #0e0b08 near-black
-    pub panel: Color,       // #16120d panel bg
-    pub line: Color,        // #2c251c hairline
-    pub fg: Color,          // #ece2cf text
-    pub dim: Color,         // #897d6c muted
-    pub dimmer: Color,      // #5c5346 faint
+    pub brand: Color,      // #f2a93c amber — brand, cost
+    pub coral: Color,      // #f0674a coral — secondary accent
+    pub agent: Color,      // #4ec9b0 teal — active agent / coder
+    pub planner: Color,    // #6fa6e6 blue — routing / planner
+    pub verifier: Color,   // #c9a14e sand — verifier
+    pub add: Color,        // #74c258 green — diff +
+    pub rem: Color,        // #d96a63 red — diff -
+    pub gold: Color,       // #f2c94c — pirate hoop / highlights
+    pub steel: Color,      // #b9b0a3 — tool metal
+    pub supervised: Color, // #74c258 green
+    pub trusted: Color,    // #f2a93c amber
+    pub autonomous: Color, // #d96a63 red
+    pub bg: Color,         // #0e0b08 near-black
+    pub panel: Color,      // #16120d panel bg
+    pub line: Color,       // #2c251c hairline
+    pub fg: Color,         // #ece2cf text
+    pub dim: Color,        // #897d6c muted
+    pub dimmer: Color,     // #5c5346 faint
 }
 
 pub const THEME_CAPTAIN: Theme = Theme {

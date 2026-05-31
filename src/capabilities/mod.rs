@@ -212,9 +212,7 @@ impl FsSkillLibrary {
                                 .file_name()
                                 .map(|n| n.to_string_lossy().to_string())
                                 .unwrap_or_default();
-                            if let Some(skill) =
-                                Skill::from_markdown(&content, &rel)
-                            {
+                            if let Some(skill) = Skill::from_markdown(&content, &rel) {
                                 skills.push(skill);
                             }
                         }
@@ -254,11 +252,7 @@ impl SkillLibrary for FsSkillLibrary {
 
         scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
-        scored
-            .into_iter()
-            .take(limit)
-            .map(|(_, s)| s)
-            .collect()
+        scored.into_iter().take(limit).map(|(_, s)| s).collect()
     }
 
     fn add(&self, skill: Skill) -> anyhow::Result<()> {
@@ -365,12 +359,12 @@ impl Curator {
                     continue;
                 }
                 // Check similarity: same first 3 chars of name, or >50% trigger overlap
-                let name_overlap = current.name[..current.name.len().min(3).min(skills[j].name.len())]
+                let name_overlap = current.name
+                    [..current.name.len().min(3).min(skills[j].name.len())]
                     == skills[j].name[..skills[j].name.len().min(3).min(current.name.len())];
 
                 let trigger_overlap = {
-                    let a: std::collections::HashSet<_> =
-                        current.trigger.iter().cloned().collect();
+                    let a: std::collections::HashSet<_> = current.trigger.iter().cloned().collect();
                     let b: std::collections::HashSet<_> =
                         skills[j].trigger.iter().cloned().collect();
                     let intersection = a.intersection(&b).count();
@@ -384,8 +378,7 @@ impl Curator {
 
                 if name_overlap || trigger_overlap {
                     // Merge: combine bodies, take higher score
-                    current.body =
-                        format!("{}\n\n---\n\n{}", current.body, skills[j].body);
+                    current.body = format!("{}\n\n---\n\n{}", current.body, skills[j].body);
                     current.score = current.score.max(skills[j].score);
                     current.trigger.extend(skills[j].trigger.clone());
                     current.trigger.sort();
@@ -398,7 +391,11 @@ impl Curator {
 
         // 3. Prune: remove low-score auto-generated skills, keep total under max
         merged.retain(|s| !s.auto_generated || s.score >= self.min_score);
-        merged.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        merged.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         if merged.len() > self.max_skills {
             merged.truncate(self.max_skills);
         }
@@ -444,7 +441,10 @@ impl Curator {
             .iter()
             .filter(|w| w.len() > 3)
             .take(5)
-            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase())
+            .map(|w| {
+                w.trim_matches(|c: char| !c.is_alphanumeric())
+                    .to_lowercase()
+            })
             .collect();
 
         let name = words

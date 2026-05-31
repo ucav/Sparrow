@@ -6,9 +6,9 @@ use std::pin::Pin;
 use crate::event::{StopReason, TokenUsage};
 
 pub mod anthropic;
+pub mod ollama;
 pub mod openai_compat;
 pub mod responses;
-pub mod ollama;
 
 // ─── Model capabilities ─────────────────────────────────────────────────────────
 
@@ -65,9 +65,7 @@ pub enum ContentBlock {
     #[serde(rename = "text")]
     Text { text: String },
     #[serde(rename = "image")]
-    Image {
-        source: ImageSource,
-    },
+    Image { source: ImageSource },
     #[serde(rename = "tool_use")]
     ToolUse {
         id: String,
@@ -86,10 +84,7 @@ pub enum ContentBlock {
 #[serde(tag = "type")]
 pub enum ImageSource {
     #[serde(rename = "base64")]
-    Base64 {
-        media_type: String,
-        data: String,
-    },
+    Base64 { media_type: String, data: String },
     #[serde(rename = "url")]
     Url { url: String },
 }
@@ -133,17 +128,9 @@ impl Default for BrainRequest {
 #[derive(Debug, Clone)]
 pub enum BrainEvent {
     TextDelta(String),
-    ToolUseStart {
-        id: String,
-        name: String,
-    },
-    ToolUseDelta {
-        id: String,
-        json: String,
-    },
-    ToolUseEnd {
-        id: String,
-    },
+    ToolUseStart { id: String, name: String },
+    ToolUseDelta { id: String, json: String },
+    ToolUseEnd { id: String },
     Usage(TokenUsage),
     Done(StopReason),
     Error(String),

@@ -26,10 +26,23 @@ pub struct AntiSimulationGuard;
 impl AntiSimulationGuard {
     /// Keywords that suggest a fabricated result claim
     const CLAIM_KEYWORDS: &'static [&'static str] = &[
-        "all tests pass", "tests pass", "build succeeds", "build successful",
-        "output:", "returns:", "returned:", "the result is", "got:",
-        "passed", "succeeded", "compiled", "ran successfully",
-        "no errors", "0 errors", "zero failures", "green",
+        "all tests pass",
+        "tests pass",
+        "build succeeds",
+        "build successful",
+        "output:",
+        "returns:",
+        "returned:",
+        "the result is",
+        "got:",
+        "passed",
+        "succeeded",
+        "compiled",
+        "ran successfully",
+        "no errors",
+        "0 errors",
+        "zero failures",
+        "green",
     ];
 
     /// Check if an assistant message contains a result claim without having tool output
@@ -62,8 +75,17 @@ impl AntiSimulationGuard {
             return None;
         }
         let lower = text.to_lowercase();
-        let code_claims = ["function", "struct", "impl", "trait", "fn ", "pub fn", "mod ", "class "];
-        let assertion_patterns = ["exists", "is defined", "takes", "returns", "has a", "contains"];
+        let code_claims = [
+            "function", "struct", "impl", "trait", "fn ", "pub fn", "mod ", "class ",
+        ];
+        let assertion_patterns = [
+            "exists",
+            "is defined",
+            "takes",
+            "returns",
+            "has a",
+            "contains",
+        ];
 
         let has_code_ref = code_claims.iter().any(|c| lower.contains(c));
         let has_assertion = assertion_patterns.iter().any(|a| lower.contains(a));
@@ -96,10 +118,7 @@ pub struct SelfCritique;
 
 impl SelfCritique {
     /// Before a mutating batch, self-review the changes against constraints
-    pub fn pre_mutation_review(
-        diffs: &[crate::event::FileDiff],
-        spec: Option<&str>,
-    ) -> String {
+    pub fn pre_mutation_review(diffs: &[crate::event::FileDiff], spec: Option<&str>) -> String {
         let mut review = String::from("## Self-critique (pre-mutation review)\n\n");
 
         if diffs.is_empty() {
@@ -109,10 +128,7 @@ impl SelfCritique {
 
         review.push_str(&format!("Files to change: {}\n", diffs.len()));
         for d in diffs {
-            review.push_str(&format!(
-                "- {} (+{} -{})\n",
-                d.file, d.plus, d.minus
-            ));
+            review.push_str(&format!("- {} (+{} -{})\n", d.file, d.plus, d.minus));
         }
 
         review.push_str("\n### Checklist\n");
@@ -226,9 +242,13 @@ impl Default for ReasoningEngine {
 impl ReasoningEngine {
     /// Decide planning depth based on task complexity
     pub fn plan_depth(&self, task: &str) -> usize {
-        let tier = crate::router::TaskTier::from_str(
-            if task.len() > 100 { "hard" } else if task.len() > 30 { "medium" } else { "small" }
-        );
+        let tier = crate::router::TaskTier::from_str(if task.len() > 100 {
+            "hard"
+        } else if task.len() > 30 {
+            "medium"
+        } else {
+            "small"
+        });
         match self.depth {
             ReasoningDepth::Fast => 1,
             ReasoningDepth::Deep => 5,
@@ -243,11 +263,7 @@ impl ReasoningEngine {
     }
 
     /// Run the anti-simulation guard on an assistant turn
-    pub fn guard_turn(
-        &self,
-        messages: &[Msg],
-        tool_outputs_in_turn: bool,
-    ) -> Option<String> {
+    pub fn guard_turn(&self, messages: &[Msg], tool_outputs_in_turn: bool) -> Option<String> {
         if self.anti_simulation {
             AntiSimulationGuard::check(messages, tool_outputs_in_turn)
         } else {

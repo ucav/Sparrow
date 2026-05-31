@@ -1,7 +1,7 @@
+use futures::{SinkExt, StreamExt};
 use tokio::sync::mpsc;
 use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite::Message as WsMessage;
-use futures::{SinkExt, StreamExt};
 
 use super::{GatewayMessage, GatewayResponse, GatewayTransport};
 
@@ -36,7 +36,10 @@ impl DiscordTransport {
             .unwrap_or("wss://gateway.discord.gg/?v=10&encoding=json")
             .to_string();
 
-        Ok(format!("{}?v=10&encoding=json", url.trim_end_matches("?v=10&encoding=json")))
+        Ok(format!(
+            "{}?v=10&encoding=json",
+            url.trim_end_matches("?v=10&encoding=json")
+        ))
     }
 }
 
@@ -46,10 +49,7 @@ impl GatewayTransport for DiscordTransport {
         "discord"
     }
 
-    async fn start(
-        &self,
-        tx: mpsc::UnboundedSender<GatewayMessage>,
-    ) -> anyhow::Result<()> {
+    async fn start(&self, tx: mpsc::UnboundedSender<GatewayMessage>) -> anyhow::Result<()> {
         let token = self.bot_token.clone();
         let allowed = self.allowed_users.clone();
 
@@ -71,10 +71,14 @@ impl GatewayTransport for DiscordTransport {
 
                                     match op {
                                         10 => {
-                                            let heartbeat_interval = payload["d"]["heartbeat_interval"]
-                                                .as_u64()
-                                                .unwrap_or(41250);
-                                            tracing::debug!("Discord heartbeat interval: {} ms", heartbeat_interval);
+                                            let heartbeat_interval =
+                                                payload["d"]["heartbeat_interval"]
+                                                    .as_u64()
+                                                    .unwrap_or(41250);
+                                            tracing::debug!(
+                                                "Discord heartbeat interval: {} ms",
+                                                heartbeat_interval
+                                            );
 
                                             // Send Identify
                                             let identify = serde_json::json!({
@@ -90,9 +94,7 @@ impl GatewayTransport for DiscordTransport {
                                                 }
                                             });
                                             let _ = ws_stream
-                                                .send(WsMessage::Text(
-                                                    identify.to_string().into(),
-                                                ))
+                                                .send(WsMessage::Text(identify.to_string().into()))
                                                 .await;
                                         }
                                         11 => {
@@ -102,9 +104,7 @@ impl GatewayTransport for DiscordTransport {
                                             // Dispatch
                                             let seq = payload["s"].as_u64();
                                             tracing::trace!("Discord sequence: {:?}", seq);
-                                            let event_type = payload["t"]
-                                                .as_str()
-                                                .unwrap_or("");
+                                            let event_type = payload["t"].as_str().unwrap_or("");
 
                                             if event_type == "MESSAGE_CREATE" {
                                                 let author_id = payload["d"]["author"]["id"]
@@ -124,7 +124,9 @@ impl GatewayTransport for DiscordTransport {
                                                     .map(|s| s.to_string());
 
                                                 // Ignore bot's own messages
-                                                if !allowed.is_empty() && !allowed.contains(&author_id) {
+                                                if !allowed.is_empty()
+                                                    && !allowed.contains(&author_id)
+                                                {
                                                     continue;
                                                 }
 

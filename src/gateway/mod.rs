@@ -5,11 +5,11 @@ use crate::engine::{Engine, Task};
 use crate::event::Event;
 use crate::runtime::recorder::{FsRecorder, Recorder, RunInputs};
 
-pub mod telegram;
 pub mod discord;
-pub mod slack;
-pub mod ws;
 pub mod extra_transports;
+pub mod slack;
+pub mod telegram;
+pub mod ws;
 
 // ─── Gateway message types ──────────────────────────────────────────────────────
 
@@ -36,10 +36,7 @@ pub struct GatewayResponse {
 #[async_trait::async_trait]
 pub trait GatewayTransport: Send + Sync {
     fn name(&self) -> &str;
-    async fn start(
-        &self,
-        tx: mpsc::UnboundedSender<GatewayMessage>,
-    ) -> anyhow::Result<()>;
+    async fn start(&self, tx: mpsc::UnboundedSender<GatewayMessage>) -> anyhow::Result<()>;
     async fn send(&self, response: GatewayResponse) -> anyhow::Result<()>;
     async fn stop(&self) -> anyhow::Result<()>;
 }
@@ -75,9 +72,7 @@ impl MessageRouter {
         responses: &mpsc::UnboundedSender<GatewayResponse>,
     ) {
         // Check user authorization
-        if !self.allowed_users.is_empty()
-            && !self.allowed_users.contains(&msg.user_id)
-        {
+        if !self.allowed_users.is_empty() && !self.allowed_users.contains(&msg.user_id) {
             let _ = responses.send(GatewayResponse {
                 surface: msg.surface.clone(),
                 chat_id: msg.chat_id.clone(),
@@ -99,9 +94,11 @@ impl MessageRouter {
 
         // Command parsing
         if text.starts_with('/') {
-            self.handle_command(text, surface, chat_id, reply_to, responses).await;
+            self.handle_command(text, surface, chat_id, reply_to, responses)
+                .await;
         } else {
-            self.handle_task(text, surface, chat_id, reply_to, responses).await;
+            self.handle_task(text, surface, chat_id, reply_to, responses)
+                .await;
         }
     }
 
@@ -147,7 +144,8 @@ impl MessageRouter {
                     });
                     return;
                 }
-                self.handle_task(args, surface, chat_id, reply_to, responses).await;
+                self.handle_task(args, surface, chat_id, reply_to, responses)
+                    .await;
             }
             "/status" => {
                 let _ = responses.send(GatewayResponse {
@@ -345,19 +343,15 @@ pub fn format_event(event: &Event) -> Option<String> {
         Event::RunStarted { task, agent, .. } => {
             Some(format!("Started: {} (agent: {})", task, agent))
         }
-        Event::RunFinished { outcome, .. } => {
-            Some(format!(
-                "Finished: {} | Cost: ${:.4} | Files: {}",
-                outcome.status,
-                outcome.cost_usd,
-                outcome.diffs.len()
-            ))
-        }
+        Event::RunFinished { outcome, .. } => Some(format!(
+            "Finished: {} | Cost: ${:.4} | Files: {}",
+            outcome.status,
+            outcome.cost_usd,
+            outcome.diffs.len()
+        )),
         Event::ThinkingDelta { text, .. } => Some(text.clone()),
         Event::ToolUseProposed { name, .. } => Some(format!("[{}]", name)),
-        Event::ApprovalRequested { summary, .. } => {
-            Some(format!("Approve: {}", summary))
-        }
+        Event::ApprovalRequested { summary, .. } => Some(format!("Approve: {}", summary)),
         Event::Error { message, .. } => Some(format!("Error: {}", message)),
         Event::CostUpdate { usd, .. } => Some(format!("Cost: ${:.4}", usd)),
         Event::CheckpointCreated { label, .. } => Some(format!("Checkpoint: {}", label)),

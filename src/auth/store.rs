@@ -35,16 +35,12 @@ impl EncryptedFileStore {
                     .map(|(i, b)| b ^ key[i % 16])
                     .collect();
                 if let Ok(json) = String::from_utf8(payload) {
-                    if let Ok(map) =
-                        serde_json::from_str::<HashMap<String, String>>(&json)
-                    {
+                    if let Ok(map) = serde_json::from_str::<HashMap<String, String>>(&json) {
                         let mut cache = self.cache.write().unwrap();
                         for (provider, api_key) in map {
                             cache.insert(
                                 provider,
-                                Credential::ApiKey(SecretString::new(
-                                    api_key.into_boxed_str(),
-                                )),
+                                Credential::ApiKey(SecretString::new(api_key.into_boxed_str())),
                             );
                         }
                     }
@@ -63,9 +59,7 @@ impl EncryptedFileStore {
         }
         let json = serde_json::to_string(&map)?;
         // Simple XOR encryption with a deterministic key (production: age/chacha20poly1305)
-        let key: Vec<u8> = (0..16)
-            .map(|i| (i * 73 + 17) as u8)
-            .collect();
+        let key: Vec<u8> = (0..16).map(|i| (i * 73 + 17) as u8).collect();
         let payload: Vec<u8> = json
             .as_bytes()
             .iter()
@@ -88,10 +82,7 @@ impl AuthStore for EncryptedFileStore {
     }
 
     fn set(&self, provider: &str, c: Credential) -> anyhow::Result<()> {
-        self.cache
-            .write()
-            .unwrap()
-            .insert(provider.to_string(), c);
+        self.cache.write().unwrap().insert(provider.to_string(), c);
         self.save_to_file()
     }
 
@@ -129,9 +120,7 @@ impl ChainedAuthStore {
             }
         };
 
-        let encrypted = Some(EncryptedFileStore::new(
-            config_dir.join("auth.enc"),
-        ));
+        let encrypted = Some(EncryptedFileStore::new(config_dir.join("auth.enc")));
 
         Self {
             keychain,

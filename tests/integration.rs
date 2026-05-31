@@ -1,14 +1,18 @@
+#![allow(
+    clippy::assertions_on_constants,
+    clippy::single_match,
+    clippy::useless_vec
+)]
+
 #[cfg(test)]
 mod tests {
-    use sparrow::autonomy::{
-        AutonomyContract, AutonomyLevel, HardStop, ProposedAction,
-    };
+    use sparrow::autonomy::{AutonomyContract, AutonomyLevel, HardStop, ProposedAction};
+    use sparrow::config::Config;
     use sparrow::event::{Decision, RiskLevel};
-    use sparrow::router::{BasicRouter, BudgetState, Router, RoutingNeed, TaskTier};
-    use sparrow::sandbox::{Command, Limits, LocalSandbox, Sandbox};
     use sparrow::event::{Event, OutcomeSummary, RunId};
     use sparrow::redaction::RedactionFilter;
-    use sparrow::config::Config;
+    use sparrow::router::{BasicRouter, BudgetState, Router, RoutingNeed, TaskTier};
+    use sparrow::sandbox::{Command, Limits, LocalSandbox, Sandbox};
     use std::sync::Arc;
 
     // ─── Autonomy Matrix Tests (§12) ──────────────────────────────────────────
@@ -95,16 +99,20 @@ mod tests {
     #[test]
     fn test_autonomy_hardstop_destructive() {
         let mut contract = AutonomyContract::autonomous();
-        contract.stops.push(HardStop::RiskLevel(RiskLevel::Destructive));
+        contract
+            .stops
+            .push(HardStop::RiskLevel(RiskLevel::Destructive));
         let action = test_action(RiskLevel::Destructive);
         assert_eq!(contract.decide(&action), Decision::Deny);
     }
 
     // ─── Router Simulation Tests (§12) ────────────────────────────────────────
 
-    use sparrow::provider::{Brain, BrainError, BrainRequest, BrainStream, ModelCaps, LatencyClass};
     use async_trait::async_trait;
     use futures::stream;
+    use sparrow::provider::{
+        Brain, BrainError, BrainRequest, BrainStream, LatencyClass, ModelCaps,
+    };
 
     struct MockBrain {
         id: String,
@@ -113,14 +121,23 @@ mod tests {
 
     #[async_trait]
     impl Brain for MockBrain {
-        fn id(&self) -> &str { &self.id }
-        fn caps(&self) -> ModelCaps { self.caps.clone() }
+        fn id(&self) -> &str {
+            &self.id
+        }
+        fn caps(&self) -> ModelCaps {
+            self.caps.clone()
+        }
         async fn complete(&self, _req: BrainRequest) -> anyhow::Result<BrainStream> {
             Ok(Box::pin(stream::empty()))
         }
     }
 
-    fn make_mock(id: &str, input_cost: f64, output_cost: f64, latency: LatencyClass) -> Arc<dyn Brain> {
+    fn make_mock(
+        id: &str,
+        input_cost: f64,
+        output_cost: f64,
+        latency: LatencyClass,
+    ) -> Arc<dyn Brain> {
         Arc::new(MockBrain {
             id: id.to_string(),
             caps: ModelCaps {
@@ -141,8 +158,19 @@ mod tests {
         config.routing.free_first = true;
 
         let mut providers = std::collections::HashMap::new();
-        providers.insert("local".into(), vec![make_mock("local:free-model", 0.0, 0.0, LatencyClass::Slow)]);
-        providers.insert("cloud".into(), vec![make_mock("cloud:paid-model", 10.0, 30.0, LatencyClass::Fast)]);
+        providers.insert(
+            "local".into(),
+            vec![make_mock("local:free-model", 0.0, 0.0, LatencyClass::Slow)],
+        );
+        providers.insert(
+            "cloud".into(),
+            vec![make_mock(
+                "cloud:paid-model",
+                10.0,
+                30.0,
+                LatencyClass::Fast,
+            )],
+        );
 
         let router = BasicRouter::new(&config, providers);
 
@@ -172,7 +200,15 @@ mod tests {
         config.routing.free_first = false;
 
         let mut providers = std::collections::HashMap::new();
-        providers.insert("cloud".into(), vec![make_mock("cloud:paid-model", 10.0, 30.0, LatencyClass::Fast)]);
+        providers.insert(
+            "cloud".into(),
+            vec![make_mock(
+                "cloud:paid-model",
+                10.0,
+                30.0,
+                LatencyClass::Fast,
+            )],
+        );
 
         let router = BasicRouter::new(&config, providers);
 
@@ -198,12 +234,21 @@ mod tests {
     #[test]
     fn test_router_policy_tiers() {
         let mut config = Config::default();
-        config.routing.policy.insert("trivial".into(), "local".into());
+        config
+            .routing
+            .policy
+            .insert("trivial".into(), "local".into());
         config.routing.policy.insert("hard".into(), "cloud".into());
 
         let mut providers = std::collections::HashMap::new();
-        providers.insert("local".into(), vec![make_mock("local:cheap", 0.0, 0.0, LatencyClass::Fast)]);
-        providers.insert("cloud".into(), vec![make_mock("cloud:powerful", 10.0, 30.0, LatencyClass::Slow)]);
+        providers.insert(
+            "local".into(),
+            vec![make_mock("local:cheap", 0.0, 0.0, LatencyClass::Fast)],
+        );
+        providers.insert(
+            "cloud".into(),
+            vec![make_mock("cloud:powerful", 10.0, 30.0, LatencyClass::Slow)],
+        );
 
         let router = BasicRouter::new(&config, providers);
 
@@ -215,8 +260,10 @@ mod tests {
         };
 
         let budget = BudgetState {
-            daily_limit_usd: 100.0, daily_spent_usd: 0.0,
-            session_limit_usd: 10.0, session_spent_usd: 0.0,
+            daily_limit_usd: 100.0,
+            daily_spent_usd: 0.0,
+            session_limit_usd: 10.0,
+            session_spent_usd: 0.0,
         };
 
         let chain = router.select(&need, &budget);
@@ -230,8 +277,14 @@ mod tests {
         config.routing.free_first = true;
 
         let mut providers = std::collections::HashMap::new();
-        providers.insert("ollama".into(), vec![make_mock("qwen3.5:32b", 0.0, 0.0, LatencyClass::Slow)]);
-        providers.insert("nvidia".into(), vec![make_mock("nvidia/nemotron", 0.0, 0.0, LatencyClass::Fast)]);
+        providers.insert(
+            "ollama".into(),
+            vec![make_mock("qwen3.5:32b", 0.0, 0.0, LatencyClass::Slow)],
+        );
+        providers.insert(
+            "nvidia".into(),
+            vec![make_mock("nvidia/nemotron", 0.0, 0.0, LatencyClass::Fast)],
+        );
 
         let router = BasicRouter::new(&config, providers);
         let need = RoutingNeed {
@@ -255,33 +308,42 @@ mod tests {
     #[test]
     fn test_router_vision_penalizes_non_vision_models() {
         let mut config = Config::default();
-        config.routing.policy.insert("vision".into(), "cloud".into());
+        config
+            .routing
+            .policy
+            .insert("vision".into(), "cloud".into());
 
         let mut providers = std::collections::HashMap::new();
-        providers.insert("cloud".into(), vec![Arc::new(MockBrain {
-            id: "text-only".into(),
-            caps: ModelCaps {
-                context_window: 128_000,
-                max_output: 16_000,
-                tools: true,
-                vision: false,
-                cost_input_per_mtok: 0.0,
-                cost_output_per_mtok: 0.0,
-                latency: LatencyClass::Fast,
-            },
-        }) as Arc<dyn Brain>]);
-        providers.insert("vision".into(), vec![Arc::new(MockBrain {
-            id: "vision-model".into(),
-            caps: ModelCaps {
-                context_window: 128_000,
-                max_output: 16_000,
-                tools: true,
-                vision: true,
-                cost_input_per_mtok: 5.0,
-                cost_output_per_mtok: 15.0,
-                latency: LatencyClass::Medium,
-            },
-        }) as Arc<dyn Brain>]);
+        providers.insert(
+            "cloud".into(),
+            vec![Arc::new(MockBrain {
+                id: "text-only".into(),
+                caps: ModelCaps {
+                    context_window: 128_000,
+                    max_output: 16_000,
+                    tools: true,
+                    vision: false,
+                    cost_input_per_mtok: 0.0,
+                    cost_output_per_mtok: 0.0,
+                    latency: LatencyClass::Fast,
+                },
+            }) as Arc<dyn Brain>],
+        );
+        providers.insert(
+            "vision".into(),
+            vec![Arc::new(MockBrain {
+                id: "vision-model".into(),
+                caps: ModelCaps {
+                    context_window: 128_000,
+                    max_output: 16_000,
+                    tools: true,
+                    vision: true,
+                    cost_input_per_mtok: 5.0,
+                    cost_output_per_mtok: 15.0,
+                    latency: LatencyClass::Medium,
+                },
+            }) as Arc<dyn Brain>],
+        );
 
         let router = BasicRouter::new(&config, providers);
         let need = RoutingNeed {
@@ -306,10 +368,20 @@ mod tests {
         let router = BasicRouter::new(&Config::default(), std::collections::HashMap::new());
         let brain = make_mock("test", 1.0, 1.0, LatencyClass::Fast);
 
-        let retry = router.on_error(brain.as_ref(), &BrainError::RateLimit { retry_after: Some(5) });
+        let retry = router.on_error(
+            brain.as_ref(),
+            &BrainError::RateLimit {
+                retry_after: Some(5),
+            },
+        );
         assert!(matches!(retry, sparrow::router::Retry::WaitAndRetry(5)));
 
-        let retry = router.on_error(brain.as_ref(), &BrainError::RateLimit { retry_after: Some(60) });
+        let retry = router.on_error(
+            brain.as_ref(),
+            &BrainError::RateLimit {
+                retry_after: Some(60),
+            },
+        );
         assert!(matches!(retry, sparrow::router::Retry::NextInChain));
 
         let retry = router.on_error(brain.as_ref(), &BrainError::Refusal("no".into()));
@@ -352,7 +424,10 @@ mod tests {
             env: std::collections::HashMap::new(),
             workdir: tmp.clone(),
         };
-        let limits = Limits { timeout_ms: 5000, max_output_bytes: 1024 };
+        let limits = Limits {
+            timeout_ms: 5000,
+            max_output_bytes: 1024,
+        };
 
         let rt = tokio::runtime::Runtime::new().unwrap();
         let result = rt.block_on(sandbox.exec(&cmd, &limits));
@@ -413,7 +488,10 @@ mod tests {
                     status: "completed".into(),
                     diffs: vec![],
                     cost_usd: 0.01,
-                    tokens: sparrow::event::TokenUsage { input: 100, output: 50 },
+                    tokens: sparrow::event::TokenUsage {
+                        input: 100,
+                        output: 50,
+                    },
                 },
             },
         ];
@@ -458,14 +536,12 @@ mod tests {
         // Invalid: unknown dependency
         let invalid = PipelineConfig {
             name: "bad".into(),
-            steps: vec![
-                sparrow::extras::PipelineStep {
-                    role: "coder".into(),
-                    model_preference: None,
-                    prompt_override: None,
-                    depends_on: vec!["nonexistent".into()],
-                },
-            ],
+            steps: vec![sparrow::extras::PipelineStep {
+                role: "coder".into(),
+                model_preference: None,
+                prompt_override: None,
+                depends_on: vec!["nonexistent".into()],
+            }],
             max_reworks: 3,
         };
         assert!(invalid.validate().is_err());
@@ -553,18 +629,13 @@ mod tests {
 
     #[test]
     fn test_provider_registry_caps_feed_router() {
-        let nvidia = sparrow::config::providers::model_caps(
-            "nvidia",
-            "nvidia/nemotron-3-super-120b-a12b",
-        );
+        let nvidia =
+            sparrow::config::providers::model_caps("nvidia", "nvidia/nemotron-3-super-120b-a12b");
         assert_eq!(nvidia.cost_input_per_mtok, 0.0);
         assert!(nvidia.tools);
         assert!(nvidia.context_window >= 100_000);
 
-        let anthropic = sparrow::config::providers::model_caps(
-            "anthropic",
-            "claude-sonnet-4-6",
-        );
+        let anthropic = sparrow::config::providers::model_caps("anthropic", "claude-sonnet-4-6");
         assert!(anthropic.vision);
         assert!(anthropic.cost_input_per_mtok > 0.0);
     }
@@ -585,12 +656,15 @@ mod tests {
     fn test_api_key_not_in_config_view() {
         use sparrow::config::ProviderConfig;
         let mut cfg = sparrow::config::Config::default();
-        cfg.providers.insert("test".into(), ProviderConfig {
-            adapter: "openai-compatible".into(),
-            base_url: Some("https://example.com".into()),
-            models: vec!["gpt-5".into()],
-            api_key_env: Some("sk-real-key-12345".into()),
-        });
+        cfg.providers.insert(
+            "test".into(),
+            ProviderConfig {
+                adapter: "openai-compatible".into(),
+                base_url: Some("https://example.com".into()),
+                models: vec!["gpt-5".into()],
+                api_key_env: Some("sk-real-key-12345".into()),
+            },
+        );
         // The config itself may hold a key, but the API view should redact
         let p = cfg.providers.get("test").unwrap();
         assert!(p.api_key_env.as_ref().unwrap().contains("sk-"));
@@ -613,15 +687,37 @@ mod tests {
         std::fs::create_dir_all(&tmp).ok();
 
         // Init git repo
-        std::process::Command::new("git").args(["init"]).current_dir(&tmp).output().ok();
-        std::process::Command::new("git").args(["config","user.email","test@sparrow.dev"]).current_dir(&tmp).output().ok();
-        std::process::Command::new("git").args(["config","user.name","Test"]).current_dir(&tmp).output().ok();
+        std::process::Command::new("git")
+            .args(["init"])
+            .current_dir(&tmp)
+            .output()
+            .ok();
+        std::process::Command::new("git")
+            .args(["config", "user.email", "test@sparrow.dev"])
+            .current_dir(&tmp)
+            .output()
+            .ok();
+        std::process::Command::new("git")
+            .args(["config", "user.name", "Test"])
+            .current_dir(&tmp)
+            .output()
+            .ok();
         std::fs::write(tmp.join("test.txt"), "original").ok();
-        std::process::Command::new("git").args(["add","test.txt"]).current_dir(&tmp).output().ok();
-        std::process::Command::new("git").args(["commit","-m","init"]).current_dir(&tmp).output().ok();
+        std::process::Command::new("git")
+            .args(["add", "test.txt"])
+            .current_dir(&tmp)
+            .output()
+            .ok();
+        std::process::Command::new("git")
+            .args(["commit", "-m", "init"])
+            .current_dir(&tmp)
+            .output()
+            .ok();
 
         let cp = GitCheckpoints::new(tmp.clone());
-        let id = cp.snapshot("pre-mutation").expect("snapshot should succeed");
+        let id = cp
+            .snapshot("pre-mutation")
+            .expect("snapshot should succeed");
         assert!(!id.0.is_empty());
 
         // Mutate
@@ -630,7 +726,11 @@ mod tests {
         // Rewind
         cp.rewind(id).expect("rewind should succeed");
         let content = std::fs::read_to_string(tmp.join("test.txt")).unwrap_or_default();
-        assert_eq!(content.trim(), "original", "rewind must restore original content");
+        assert_eq!(
+            content.trim(),
+            "original",
+            "rewind must restore original content"
+        );
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
@@ -643,8 +743,11 @@ mod tests {
 
         let mem = SqliteMemory::open(&tmp).expect("open memory");
         let fact = Fact {
-            id: "test-1".into(), key: "user:language".into(), value: "Rust".into(),
-            created_at: "2026-01-01".into(), updated_at: "2026-01-01".into(),
+            id: "test-1".into(),
+            key: "user:language".into(),
+            value: "Rust".into(),
+            created_at: "2026-01-01".into(),
+            updated_at: "2026-01-01".into(),
         };
         mem.remember(fact.clone()).expect("remember");
 
@@ -668,8 +771,18 @@ mod tests {
         use sparrow::autonomy::{AutonomyContract, ProposedAction};
         use sparrow::event::{AutonomyLevel, RiskLevel};
 
-        let levels = [AutonomyLevel::Supervised, AutonomyLevel::Trusted, AutonomyLevel::Autonomous];
-        let risks = [RiskLevel::ReadOnly, RiskLevel::Mutating, RiskLevel::Exec, RiskLevel::Destructive, RiskLevel::Network];
+        let levels = [
+            AutonomyLevel::Supervised,
+            AutonomyLevel::Trusted,
+            AutonomyLevel::Autonomous,
+        ];
+        let risks = [
+            RiskLevel::ReadOnly,
+            RiskLevel::Mutating,
+            RiskLevel::Exec,
+            RiskLevel::Destructive,
+            RiskLevel::Network,
+        ];
 
         for level in &levels {
             for risk in &risks {
@@ -685,7 +798,12 @@ mod tests {
                 };
                 let decision = contract.decide(&action);
                 // Every combination must produce a valid decision
-                assert!(matches!(decision, sparrow::event::Decision::Allow | sparrow::event::Decision::AskUser | sparrow::event::Decision::Deny));
+                assert!(matches!(
+                    decision,
+                    sparrow::event::Decision::Allow
+                        | sparrow::event::Decision::AskUser
+                        | sparrow::event::Decision::Deny
+                ));
             }
         }
         // 5 × 3 = 15 combinations tested
@@ -696,9 +814,17 @@ mod tests {
         use sparrow::autonomy::AutonomyContract;
         let contract = AutonomyContract::supervised();
         // Budget exceeded should be a hard stop
-        assert!(contract.stops.iter().any(|s| matches!(s, sparrow::autonomy::HardStop::BudgetExceeded)));
+        assert!(
+            contract
+                .stops
+                .iter()
+                .any(|s| matches!(s, sparrow::autonomy::HardStop::BudgetExceeded))
+        );
         // Destructive should be denied in supervised
-        assert!(contract.stops.iter().any(|s| matches!(s, sparrow::autonomy::HardStop::RiskLevel(sparrow::event::RiskLevel::Destructive))));
+        assert!(contract.stops.iter().any(|s| matches!(
+            s,
+            sparrow::autonomy::HardStop::RiskLevel(sparrow::event::RiskLevel::Destructive)
+        )));
     }
 
     #[test]
@@ -709,9 +835,11 @@ mod tests {
 
         let mem = SqliteMemory::open(&tmp).expect("open memory");
         let fact_with_secret = Fact {
-            id: "secret-1".into(), key: "token".into(),
+            id: "secret-1".into(),
+            key: "token".into(),
             value: "sk-ant-api03-secret-key-here".into(),
-            created_at: "2026-01-01".into(), updated_at: "2026-01-01".into(),
+            created_at: "2026-01-01".into(),
+            updated_at: "2026-01-01".into(),
         };
         mem.remember(fact_with_secret).expect("remember");
 
@@ -719,7 +847,11 @@ mod tests {
         assert!(!facts.is_empty());
         // The value should be redacted
         let val = &facts[0].value;
-        assert!(!val.contains("sk-ant-api03"), "Secret should be redacted: {}", val);
+        assert!(
+            !val.contains("sk-ant-api03"),
+            "Secret should be redacted: {}",
+            val
+        );
 
         let _ = std::fs::remove_file(&tmp);
     }
@@ -749,7 +881,9 @@ mod tests {
     fn test_swarm_verdict_pass_rework() {
         use sparrow::orchestrator::Verdict;
         let pass = Verdict::Pass;
-        let rework = Verdict::Rework { findings: vec!["missing edge case".into()] };
+        let rework = Verdict::Rework {
+            findings: vec!["missing edge case".into()],
+        };
 
         assert!(matches!(pass, Verdict::Pass));
         if let Verdict::Rework { findings } = rework {
@@ -775,7 +909,10 @@ mod tests {
             std::collections::HashMap::new(),
         ));
         let memory: Arc<dyn sparrow::memory::Memory> = Arc::new(
-            sparrow::memory::SqliteMemory::open(&std::env::temp_dir().join("sparrow-m2-swarm-smoke.db")).unwrap()
+            sparrow::memory::SqliteMemory::open(
+                &std::env::temp_dir().join("sparrow-m2-swarm-smoke.db"),
+            )
+            .unwrap(),
         );
         let _orchestrator = sparrow::orchestrator::DefaultOrchestrator::new(router, config, memory);
         // Verify orchestrator can be constructed without panicking
@@ -801,10 +938,15 @@ mod tests {
     fn test_skill_relevance_scoring() {
         use sparrow::capabilities::Skill;
         let skill = Skill {
-            name: "test".into(), description: "desc".into(),
+            name: "test".into(),
+            description: "desc".into(),
             trigger: vec!["rust".into(), "error".into(), "handling".into()],
-            body: "test body".into(), source_file: "".into(),
-            usage_count: 0, created_at: "".into(), score: 0.5, auto_generated: false,
+            body: "test body".into(),
+            source_file: "".into(),
+            usage_count: 0,
+            created_at: "".into(),
+            score: 0.5,
+            auto_generated: false,
         };
         let score = skill.relevance("I need help with Rust error handling in my code");
         assert!(score > 0.0, "Should be relevant for matching context");
@@ -817,10 +959,15 @@ mod tests {
     fn test_skill_markdown_roundtrip() {
         use sparrow::capabilities::Skill;
         let original = Skill {
-            name: "TestSkill".into(), description: "A test skill".into(),
+            name: "TestSkill".into(),
+            description: "A test skill".into(),
             trigger: vec!["test".into(), "demo".into()],
-            body: "This is the body".into(), source_file: "test.skill.md".into(),
-            usage_count: 2, created_at: "2026-01-01".into(), score: 0.7, auto_generated: true,
+            body: "This is the body".into(),
+            source_file: "test.skill.md".into(),
+            usage_count: 2,
+            created_at: "2026-01-01".into(),
+            score: 0.7,
+            auto_generated: true,
         };
         let md = original.to_markdown();
         let parsed = Skill::from_markdown(&md, "test.skill.md");
@@ -831,10 +978,8 @@ mod tests {
     #[test]
     fn test_curator_propose_skill() {
         use sparrow::capabilities::Curator;
-        let candidate = Curator::propose_skill(
-            "Implement Rust error handling with anyhow",
-            "completed"
-        );
+        let candidate =
+            Curator::propose_skill("Implement Rust error handling with anyhow", "completed");
         assert!(candidate.is_some());
         let skill = candidate.unwrap();
         assert!(skill.auto_generated);
@@ -849,10 +994,15 @@ mod tests {
         let lib = FsSkillLibrary::new(tmp.clone());
 
         let skill = Skill {
-            name: "test-skill".into(), description: "test".into(),
-            trigger: vec!["test".into()], body: "body".into(),
-            source_file: "test".into(), usage_count: 0,
-            created_at: "2026-01-01".into(), score: 0.5, auto_generated: true,
+            name: "test-skill".into(),
+            description: "test".into(),
+            trigger: vec!["test".into()],
+            body: "body".into(),
+            source_file: "test".into(),
+            usage_count: 0,
+            created_at: "2026-01-01".into(),
+            score: 0.5,
+            auto_generated: true,
         };
         lib.add(skill).expect("add skill");
         let found = lib.get("test-skill");
@@ -871,9 +1021,13 @@ mod tests {
 
         let client = BasicMcpClient::new(tmp.clone());
         let server = McpServer {
-            name: "test-server".into(), transport: Transport::Stdio,
-            command: Some("echo".into()), args: vec!["hello".into()],
-            url: None, env: Default::default(), allow_tools: vec![],
+            name: "test-server".into(),
+            transport: Transport::Stdio,
+            command: Some("echo".into()),
+            args: vec!["hello".into()],
+            url: None,
+            env: Default::default(),
+            allow_tools: vec![],
         };
         client.add_server(server).expect("add server");
         let found = client.get_server("test-server");
@@ -907,31 +1061,45 @@ mod tests {
 
     #[test]
     fn test_recorder_transcript_roundtrip() {
-        use sparrow::runtime::recorder::{FsRecorder, Replayer, RunInputs, Recorder};
-        use sparrow::event::{Event, RunId, OutcomeSummary, TokenUsage};
+        use sparrow::event::{Event, OutcomeSummary, RunId, TokenUsage};
+        use sparrow::runtime::recorder::{FsRecorder, Recorder, Replayer, RunInputs};
         let tmp = std::env::temp_dir().join("sparrow-m4-transcript-test");
         let _ = std::fs::remove_dir_all(&tmp);
 
         let recorder = FsRecorder::new(tmp.clone());
         let run_id = "test-run-1".to_string();
-        recorder.start_run(run_id.clone(), RunInputs {
-            task: "test".into(), config_snapshot: serde_json::json!({}),
-            model_id: "test-model".into(), repo_head: None,
-            timestamp: "2026-01-01".into(), agent: "test-agent".into(),
-        });
+        recorder.start_run(
+            run_id.clone(),
+            RunInputs {
+                task: "test".into(),
+                config_snapshot: serde_json::json!({}),
+                model_id: "test-model".into(),
+                repo_head: None,
+                timestamp: "2026-01-01".into(),
+                agent: "test-agent".into(),
+            },
+        );
 
         // Record events
         recorder.record(&Event::RunStarted {
-            run: RunId(run_id.clone()), task: "test".into(), agent: "test-agent".into(),
+            run: RunId(run_id.clone()),
+            task: "test".into(),
+            agent: "test-agent".into(),
         });
         recorder.record(&Event::ThinkingDelta {
-            run: RunId(run_id.clone()), text: "thinking...".into(),
+            run: RunId(run_id.clone()),
+            text: "thinking...".into(),
         });
         recorder.record(&Event::RunFinished {
             run: RunId(run_id.clone()),
             outcome: OutcomeSummary {
-                status: "completed".into(), diffs: vec![], cost_usd: 0.0,
-                tokens: TokenUsage { input: 100, output: 50 },
+                status: "completed".into(),
+                diffs: vec![],
+                cost_usd: 0.0,
+                tokens: TokenUsage {
+                    input: 100,
+                    output: 50,
+                },
             },
         });
 
@@ -952,25 +1120,42 @@ mod tests {
 
     #[test]
     fn test_golden_replay_deterministic() {
-        use sparrow::event::{Event, RunId, OutcomeSummary, TokenUsage};
+        use sparrow::event::{Event, OutcomeSummary, RunId, TokenUsage};
         let events = vec![
-            Event::RunStarted { run: RunId("g1".into()), task: "t1".into(), agent: "a1".into() },
-            Event::ThinkingDelta { run: RunId("g1".into()), text: "hello".into() },
-            Event::RunFinished { run: RunId("g1".into()), outcome: OutcomeSummary {
-                status: "ok".into(), diffs: vec![], cost_usd: 0.0,
-                tokens: TokenUsage { input: 10, output: 5 },
-            }},
+            Event::RunStarted {
+                run: RunId("g1".into()),
+                task: "t1".into(),
+                agent: "a1".into(),
+            },
+            Event::ThinkingDelta {
+                run: RunId("g1".into()),
+                text: "hello".into(),
+            },
+            Event::RunFinished {
+                run: RunId("g1".into()),
+                outcome: OutcomeSummary {
+                    status: "ok".into(),
+                    diffs: vec![],
+                    cost_usd: 0.0,
+                    tokens: TokenUsage {
+                        input: 10,
+                        output: 5,
+                    },
+                },
+            },
         ];
 
         // Serialize
-        let jsonl: String = events.iter()
+        let jsonl: String = events
+            .iter()
             .map(|e| serde_json::to_string(e).unwrap())
             .collect::<Vec<_>>()
             .join("\n");
         let jsonl = jsonl + "\n";
 
         // Deserialize
-        let parsed: Vec<Event> = jsonl.lines()
+        let parsed: Vec<Event> = jsonl
+            .lines()
             .filter(|l| !l.is_empty())
             .filter_map(|l| serde_json::from_str(l).ok())
             .collect();
@@ -978,13 +1163,19 @@ mod tests {
         assert_eq!(parsed.len(), 3, "Deterministic: 3 events roundtrip");
         if let Event::RunStarted { task, .. } = &parsed[0] {
             assert_eq!(task, "t1");
-        } else { panic!("Wrong event type"); }
+        } else {
+            panic!("Wrong event type");
+        }
         if let Event::ThinkingDelta { text, .. } = &parsed[1] {
             assert_eq!(text, "hello");
-        } else { panic!("Wrong event type"); }
+        } else {
+            panic!("Wrong event type");
+        }
         if let Event::RunFinished { outcome, .. } = &parsed[2] {
             assert_eq!(outcome.status, "ok");
-        } else { panic!("Wrong event type"); }
+        } else {
+            panic!("Wrong event type");
+        }
     }
 
     // ─── M5 Gateway Tests ────────────────────────────────────────────────
@@ -994,8 +1185,11 @@ mod tests {
         use sparrow::gateway::GatewayMessage;
         // Test that command parsing works for /help
         let msg = GatewayMessage {
-            surface: "telegram".into(), user_id: "123".into(),
-            chat_id: "456".into(), text: "/help".into(), message_id: None,
+            surface: "telegram".into(),
+            user_id: "123".into(),
+            chat_id: "456".into(),
+            text: "/help".into(),
+            message_id: None,
         };
         // Verify the message is well-formed (router handles actual dispatch)
         assert_eq!(msg.surface, "telegram");
@@ -1004,11 +1198,13 @@ mod tests {
 
     #[test]
     fn test_gateway_event_formatting() {
-        use sparrow::gateway::format_event;
         use sparrow::event::{Event, RunId};
+        use sparrow::gateway::format_event;
 
         let event = Event::RunStarted {
-            run: RunId("test".into()), task: "fix auth with key sk-ant-secret".into(), agent: "sparrow".into(),
+            run: RunId("test".into()),
+            task: "fix auth with key sk-ant-secret".into(),
+            agent: "sparrow".into(),
         };
         let formatted = format_event(&event);
         assert!(formatted.is_some());
@@ -1020,8 +1216,11 @@ mod tests {
     fn test_gateway_response_buttons() {
         use sparrow::gateway::GatewayResponse;
         let resp = GatewayResponse {
-            surface: "telegram".into(), chat_id: "123".into(), text: "Approve?".into(),
-            reply_to: None, buttons: vec![vec!["/approve".into(), "/deny".into()]],
+            surface: "telegram".into(),
+            chat_id: "123".into(),
+            text: "Approve?".into(),
+            reply_to: None,
+            buttons: vec![vec!["/approve".into(), "/deny".into()]],
         };
         assert_eq!(resp.buttons.len(), 1);
         assert_eq!(resp.buttons[0].len(), 2);
@@ -1037,9 +1236,15 @@ mod tests {
             assert!(!bridge.session_id.is_empty());
 
             bridge.set_surface("telegram").await;
-            bridge.add_approval(sparrow::gateway::GatewayResponse {
-                surface: "telegram".into(), chat_id: "123".into(), text: "Approve?".into(), reply_to: None, buttons: vec![],
-            }).await;
+            bridge
+                .add_approval(sparrow::gateway::GatewayResponse {
+                    surface: "telegram".into(),
+                    chat_id: "123".into(),
+                    text: "Approve?".into(),
+                    reply_to: None,
+                    buttons: vec![],
+                })
+                .await;
             let approvals = bridge.drain_approvals().await;
             assert_eq!(approvals.len(), 1);
         });
@@ -1090,7 +1295,11 @@ mod tests {
         // Test that MigrationResult struct is well-formed
         let result = sparrow::onboarding::migration::MigrationResult {
             tool: "openclaw".into(),
-            agents: 3, skills: 5, cron_jobs: 2, config_entries: 10, surfaces: 1,
+            agents: 3,
+            skills: 5,
+            cron_jobs: 2,
+            config_entries: 10,
+            surfaces: 1,
         };
         assert_eq!(result.agents, 3);
         assert_eq!(result.skills, 5);
@@ -1115,11 +1324,7 @@ mod tests {
     fn test_org_policy_blocks_protected_paths() {
         use sparrow::onboarding::enterprise::OrgPolicy;
         let policy = OrgPolicy::default();
-        let result = policy.enforce(
-            &sparrow::event::AutonomyLevel::Supervised,
-            0.0,
-            ".env",
-        );
+        let result = policy.enforce(&sparrow::event::AutonomyLevel::Supervised, 0.0, ".env");
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("protected"));
     }
@@ -1140,9 +1345,13 @@ mod tests {
     fn test_audit_export_json() {
         use sparrow::onboarding::enterprise::{AuditEntry, export_audit_log};
         let entries = vec![AuditEntry {
-            timestamp: "2026-01-01".into(), user: "alice".into(),
-            action: "run".into(), run_id: "r1".into(),
-            cost_usd: 0.01, tokens: 500, autonomy: "supervised".into(),
+            timestamp: "2026-01-01".into(),
+            user: "alice".into(),
+            action: "run".into(),
+            run_id: "r1".into(),
+            cost_usd: 0.01,
+            tokens: 500,
+            autonomy: "supervised".into(),
             status: "completed".into(),
         }];
         let json = export_audit_log(&entries, "json");
@@ -1154,37 +1363,51 @@ mod tests {
 
     #[test]
     fn test_crash_recovery_transcript_persistence() {
-        use sparrow::runtime::recorder::{FsRecorder, Recorder, Replayer, RunInputs};
         use sparrow::event::{Event, RunId};
+        use sparrow::runtime::recorder::{FsRecorder, Recorder, Replayer, RunInputs};
         let tmp = std::env::temp_dir().join("sparrow-ws16-crash");
         let _ = std::fs::remove_dir_all(&tmp);
 
         let recorder = FsRecorder::new(tmp.clone());
         let rid = "crash-test-1".to_string();
-        recorder.start_run(rid.clone(), RunInputs {
-            task: "test".into(), config_snapshot: serde_json::json!({}),
-            model_id: "test".into(), repo_head: None,
-            timestamp: "2026-01-01".into(), agent: "test".into(),
-        });
+        recorder.start_run(
+            rid.clone(),
+            RunInputs {
+                task: "test".into(),
+                config_snapshot: serde_json::json!({}),
+                model_id: "test".into(),
+                repo_head: None,
+                timestamp: "2026-01-01".into(),
+                agent: "test".into(),
+            },
+        );
         let event = Event::RunStarted {
-            run: RunId(rid.clone()), task: "test".into(), agent: "test".into(),
+            run: RunId(rid.clone()),
+            task: "test".into(),
+            agent: "test".into(),
         };
         recorder.record(&event);
         // Simulate crash: finalize is called even though no RunFinished
         let transcript = recorder.finalize(&rid).expect("finalize after crash");
-        assert!(!transcript.events.is_empty(), "Partial transcript saved despite crash");
+        assert!(
+            !transcript.events.is_empty(),
+            "Partial transcript saved despite crash"
+        );
 
         // Reload — transcript is recoverable
         let loaded = recorder.load(&rid);
-        assert!(loaded.is_some(), "Transcript recoverable after simulated crash");
+        assert!(
+            loaded.is_some(),
+            "Transcript recoverable after simulated crash"
+        );
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn test_anti_simulation_guard_detects_fabrication() {
-        use sparrow::reasoning::AntiSimulationGuard;
         use sparrow::provider::{ContentBlock, Msg};
+        use sparrow::reasoning::AntiSimulationGuard;
         let messages = vec![Msg {
             role: "assistant".into(),
             content: vec![ContentBlock::Text {
@@ -1192,7 +1415,10 @@ mod tests {
             }],
         }];
         let violation = AntiSimulationGuard::check(&messages, false);
-        assert!(violation.is_some(), "Guard must detect fabricated test claims");
+        assert!(
+            violation.is_some(),
+            "Guard must detect fabricated test claims"
+        );
     }
 
     #[test]
@@ -1200,9 +1426,13 @@ mod tests {
         use sparrow::reasoning::AntiSimulationGuard;
         let violation = AntiSimulationGuard::check_code_claim(
             "the validate() function exists in auth.rs and returns a bool",
-            false, false,
+            false,
+            false,
         );
-        assert!(violation.is_some(), "Guard must detect unverified code claims");
+        assert!(
+            violation.is_some(),
+            "Guard must detect unverified code claims"
+        );
     }
 
     #[test]
@@ -1210,9 +1440,13 @@ mod tests {
         use sparrow::reasoning::AntiSimulationGuard;
         let violation = AntiSimulationGuard::check_code_claim(
             "the validate() function exists in auth.rs",
-            true, false, // had fs_read
+            true,
+            false, // had fs_read
         );
-        assert!(violation.is_none(), "Guard must allow claims backed by fs_read");
+        assert!(
+            violation.is_none(),
+            "Guard must allow claims backed by fs_read"
+        );
     }
 
     #[test]
@@ -1220,7 +1454,8 @@ mod tests {
         // Fuzz-like: serialize/deserialize with edge cases
         let cfg = sparrow::config::Config::default();
         let serialized = toml::to_string_pretty(&cfg).expect("serialize");
-        let deserialized: sparrow::config::Config = toml::from_str(&serialized).expect("deserialize");
+        let deserialized: sparrow::config::Config =
+            toml::from_str(&serialized).expect("deserialize");
         assert_eq!(deserialized.budget.daily_usd, cfg.budget.daily_usd);
     }
 
@@ -1233,8 +1468,18 @@ mod tests {
             assert!(!p.id.is_empty(), "Provider {} has empty id", p.label);
             assert!(!p.adapter.is_empty(), "Provider {} has empty adapter", p.id);
             for m in &p.models {
-                assert!(!m.name.is_empty(), "Model {}/{} has empty name", p.id, m.label);
-                assert!(m.context_window > 0, "Model {}/{} has zero context window", p.id, m.name);
+                assert!(
+                    !m.name.is_empty(),
+                    "Model {}/{} has empty name",
+                    p.id,
+                    m.label
+                );
+                assert!(
+                    m.context_window > 0,
+                    "Model {}/{} has zero context window",
+                    p.id,
+                    m.name
+                );
             }
         }
     }
@@ -1247,8 +1492,16 @@ mod tests {
         let providers = sparrow::config::providers::provider_registry();
         for p in &providers {
             if let Some(env) = &p.api_key_env {
-                assert!(!env.contains("sk-"), "Hardcoded secret in provider {}", p.id);
-                assert!(!env.contains("nvapi-"), "Hardcoded secret in provider {}", p.id);
+                assert!(
+                    !env.contains("sk-"),
+                    "Hardcoded secret in provider {}",
+                    p.id
+                );
+                assert!(
+                    !env.contains("nvapi-"),
+                    "Hardcoded secret in provider {}",
+                    p.id
+                );
             }
         }
     }
@@ -1286,7 +1539,10 @@ mod tests {
     fn test_engine_budget_stop() {
         let mut config = sparrow::config::Config::default();
         config.budget.session_usd = 0.0; // Zero budget
-        let router = Arc::new(sparrow::router::BasicRouter::new(&config, std::collections::HashMap::new()));
+        let router = Arc::new(sparrow::router::BasicRouter::new(
+            &config,
+            std::collections::HashMap::new(),
+        ));
         let _engine = sparrow::engine::Engine::new(router, config);
         // Engine with zero budget should still construct
         // The budget enforcement happens in the drive loop
@@ -1303,16 +1559,23 @@ mod tests {
     #[test]
     fn test_repo_map_scans_current_dir() {
         let map = sparrow::memory::RepoMap::scan(&std::path::PathBuf::from("src"));
-        assert!(!map.files.is_empty(), "Should find at least some files in src/");
+        assert!(
+            !map.files.is_empty(),
+            "Should find at least some files in src/"
+        );
     }
 
     #[test]
     fn test_context_manager_compaction_preserves_last() {
         let cm = sparrow::redaction::ContextManager::new(1000);
-        let messages = (0..10).map(|i| sparrow::provider::Msg {
-            role: if i % 2 == 0 { "user" } else { "assistant" }.into(),
-            content: vec![sparrow::provider::ContentBlock::Text { text: format!("msg {}", i) }],
-        }).collect::<Vec<_>>();
+        let messages = (0..10)
+            .map(|i| sparrow::provider::Msg {
+                role: if i % 2 == 0 { "user" } else { "assistant" }.into(),
+                content: vec![sparrow::provider::ContentBlock::Text {
+                    text: format!("msg {}", i),
+                }],
+            })
+            .collect::<Vec<_>>();
         let compacted = cm.compact_messages(&messages, 100, 2);
         assert!(compacted.len() <= 6); // first + summary + last 2 max
     }

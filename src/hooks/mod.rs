@@ -58,7 +58,9 @@ pub struct Hook {
     pub enabled: bool,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 impl Hook {
     pub fn matches(&self, event: &HookEvent, context: &str) -> bool {
@@ -96,7 +98,10 @@ pub struct HookRegistry {
 
 impl HookRegistry {
     pub fn new(sandbox: Arc<dyn Sandbox>) -> Self {
-        Self { hooks: Vec::new(), sandbox }
+        Self {
+            hooks: Vec::new(),
+            sandbox,
+        }
     }
 
     pub fn load(&mut self, config_hooks: Vec<Hook>) {
@@ -108,11 +113,7 @@ impl HookRegistry {
     }
 
     /// Execute all matching hooks for an event
-    pub async fn execute(
-        &self,
-        event: &HookEvent,
-        context: &str,
-    ) -> Vec<HookResult> {
+    pub async fn execute(&self, event: &HookEvent, context: &str) -> Vec<HookResult> {
         let mut results = Vec::new();
 
         for hook in &self.hooks {

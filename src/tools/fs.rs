@@ -3,7 +3,7 @@ use serde_json::json;
 use std::fs;
 use std::path::PathBuf;
 
-use super::{resolve_workspace_path, Tool, ToolCtx, ToolResult};
+use super::{Tool, ToolCtx, ToolResult, resolve_workspace_path};
 use crate::event::RiskLevel;
 
 pub struct FsRead;
