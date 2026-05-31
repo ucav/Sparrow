@@ -1,0 +1,29 @@
+name: Feature Request
+description: Propose a new feature for Sparrow
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Feature requests should align with Sparrow's architecture and principles.
+  - type: textarea
+    id: description
+    attributes:
+      label: Feature description
+      description: What should Sparrow do?
+    validations:
+      required: true
+  - type: textarea
+    id: rationale
+    attributes:
+      label: Why is this useful?
+      description: What problem does it solve? How does it fit Sparrow's north star (sell trust, not power)?
+  - type: checkboxes
+    id: principles
+    attributes:
+      label: Architecture principles
+      options:
+        - label: Does not introduce provider lock-in
+        - label: Keeps surfaces as thin renderers (no business logic in TUI/CLI)
+        - label: Respects autonomy dial (No hidden unsafe modes)
+        - label: Compatible with trait-based module isolation

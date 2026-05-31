@@ -1,0 +1,33 @@
+name: Technical Task
+description: Track an implementation task from the roadmap
+labels: [technical]
+body:
+  - type: dropdown
+    id: milestone
+    attributes:
+      label: Milestone
+      options: [M0 Kernel, M1 Trust, M2 Swarm, M3 Grows, M4 Runtime, M5 Everywhere, M6 Polish]
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Task description
+      description: What needs to be implemented?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How do we know this is done?
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Definition of done
+      options:
+        - label: Tests written and passing
+        - label: Docs updated
+        - label: No secrets in logs/transcripts
+        - label: Autonomy/security impact reviewed
+        - label: cargo build + cargo test pass

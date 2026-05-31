@@ -75,6 +75,49 @@ pub struct AgentRun {
     pub workspace: Workspace,
 }
 
+fn estimate_text_tokens(text: &str) -> u64 {
+    let chars = text.chars().count() as u64;
+    ((chars + 3) / 4).max(1)
+}
+
+fn estimate_content_tokens(blocks: &[ContentBlock]) -> u64 {
+    blocks
+        .iter()
+        .map(|block| match block {
+            ContentBlock::Text { text } => estimate_text_tokens(text),
+            ContentBlock::Image { source } => match source {
+                crate::provider::ImageSource::Base64 { data, .. } => {
+                    256 + estimate_text_tokens(data).min(2_000)
+                }
+                crate::provider::ImageSource::Url { url } => 256 + estimate_text_tokens(url),
+            },
+            ContentBlock::ToolUse { name, input, .. } => {
+                estimate_text_tokens(name) + estimate_text_tokens(&input.to_string())
+            }
+            ContentBlock::ToolResult { content, .. } => 8 + estimate_content_tokens(content),
+        })
+        .sum()
+}
+
+fn estimate_request_tokens(req: &BrainRequest) -> u64 {
+    let system = req.system.as_deref().map(estimate_text_tokens).unwrap_or(0);
+    let messages: u64 = req
+        .messages
+        .iter()
+        .map(|msg| estimate_text_tokens(&msg.role) + estimate_content_tokens(&msg.content) + 4)
+        .sum();
+    let tools: u64 = req
+        .tools
+        .iter()
+        .map(|tool| {
+            estimate_text_tokens(&tool.name)
+                + estimate_text_tokens(&tool.description)
+                + estimate_text_tokens(&tool.input_schema.to_string())
+        })
+        .sum();
+    system + messages + tools
+}
+
 // ─── System prompt / SOUL ───────────────────────────────────────────────────────
 
 fn build_system_prompt(
@@ -338,15 +381,33 @@ impl Engine {
 
         if self.is_routing_question(&task.description) {
             let text = self.routing_explanation(&tier, &need, &chain_ids);
+            let input_tokens =
+                estimate_text_tokens(&task.description) + estimate_text_tokens(&task_summary);
+            let output_tokens = estimate_text_tokens(&text);
+            let _ = event_tx.send(Event::TokenUsageEstimated {
+                run: run_id.clone(),
+                input: input_tokens,
+                output: 0,
+                reason: "router meta request estimate".into(),
+            });
+            let _ = event_tx.send(Event::TokenUsageEstimated {
+                run: run_id.clone(),
+                input: 0,
+                output: output_tokens,
+                reason: "router meta response estimate".into(),
+            });
             let _ = event_tx.send(Event::ThinkingDelta {
                 run: run_id.clone(),
-                text,
+                text: text.clone(),
             });
             let outcome = OutcomeSummary {
                 status: "completed".into(),
                 diffs: vec![],
                 cost_usd: 0.0,
-                tokens: TokenUsage { input: 0, output: 0 },
+                tokens: TokenUsage {
+                    input: input_tokens,
+                    output: output_tokens,
+                },
             };
             let _ = event_tx.send(Event::RunFinished {
                 run: run_id.clone(),
@@ -441,6 +502,9 @@ impl Engine {
 
         let mut total_input: u64 = 0;
         let mut total_output: u64 = 0;
+        let mut estimated_input_unconfirmed: u64 = 0;
+        let mut estimated_output_unconfirmed: u64 = 0;
+        let mut estimated_cost_unconfirmed: f64 = 0.0;
         let mut cost_usd: f64 = 0.0;
         let diffs: Vec<crate::event::FileDiff> = Vec::new();
         let mut current_chain_idx = 0usize;
@@ -459,12 +523,12 @@ impl Engine {
         // Main agentic loop
         loop {
             // Budget check: hard stop if exceeded
-            if cost_usd >= budget_session {
+            if cost_usd + estimated_cost_unconfirmed >= budget_session {
                 send(Event::Error {
                     run: run_id.clone(),
                     message: format!(
                         "Budget exceeded: ${:.4} of ${:.2} session cap",
-                        cost_usd, budget_session
+                        cost_usd + estimated_cost_unconfirmed, budget_session
                     ),
                 });
                 had_error = true;
@@ -487,6 +551,21 @@ impl Engine {
                 stop: vec![],
             };
 
+            let estimated_input = estimate_request_tokens(&req);
+            estimated_input_unconfirmed += estimated_input;
+            estimated_cost_unconfirmed +=
+                caps.cost_input_per_mtok * (estimated_input as f64) / 1_000_000.0;
+            let _ = event_tx.send(Event::TokenUsageEstimated {
+                run: run_id.clone(),
+                input: estimated_input,
+                output: 0,
+                reason: "prompt estimate before provider usage".into(),
+            });
+            let _ = event_tx.send(Event::CostUpdate {
+                run: run_id.clone(),
+                usd: cost_usd + estimated_cost_unconfirmed,
+            });
+
             let _ = event_tx.send(Event::AgentStatus {
                 run: run_id.clone(),
                 role: "main".into(),
@@ -498,10 +577,33 @@ impl Engine {
                 Ok(mut stream) => {
                     let mut current_tool_name = String::new();
                     let mut current_tool_json = String::new();
+                    let mut output_chars_seen: u64 = 0;
+                    let mut output_tokens_emitted: u64 = 0;
 
                     while let Some(event) = stream.next().await {
                         match event {
                             BrainEvent::TextDelta(text) => {
+                                output_chars_seen += text.chars().count() as u64;
+                                let estimated_output = (output_chars_seen + 3) / 4;
+                                let output_delta =
+                                    estimated_output.saturating_sub(output_tokens_emitted);
+                                if output_delta > 0 {
+                                    output_tokens_emitted += output_delta;
+                                    estimated_output_unconfirmed += output_delta;
+                                    estimated_cost_unconfirmed += caps.cost_output_per_mtok
+                                        * (output_delta as f64)
+                                        / 1_000_000.0;
+                                    let _ = event_tx.send(Event::TokenUsageEstimated {
+                                        run: run_id.clone(),
+                                        input: 0,
+                                        output: output_delta,
+                                        reason: "streamed output estimate".into(),
+                                    });
+                                    let _ = event_tx.send(Event::CostUpdate {
+                                        run: run_id.clone(),
+                                        usd: cost_usd + estimated_cost_unconfirmed,
+                                    });
+                                }
                                 let _ = event_tx.send(Event::ThinkingDelta {
                                     run: run_id.clone(),
                                     text: text.clone(),
@@ -656,6 +758,10 @@ impl Engine {
                             BrainEvent::Usage(usage) => {
                                 total_input += usage.input;
                                 total_output += usage.output;
+                                estimated_input_unconfirmed =
+                                    estimated_input_unconfirmed.saturating_sub(usage.input);
+                                estimated_output_unconfirmed =
+                                    estimated_output_unconfirmed.saturating_sub(usage.output);
                                 let _ = event_tx.send(Event::TokenUsage {
                                     run: run_id.clone(),
                                     input: usage.input,
@@ -667,11 +773,14 @@ impl Engine {
                                     caps.cost_input_per_mtok * (usage.input as f64) / 1_000_000.0;
                                 let output_cost =
                                     caps.cost_output_per_mtok * (usage.output as f64) / 1_000_000.0;
-                                cost_usd += input_cost + output_cost;
+                                let actual_cost = input_cost + output_cost;
+                                cost_usd += actual_cost;
+                                estimated_cost_unconfirmed =
+                                    (estimated_cost_unconfirmed - actual_cost).max(0.0);
 
                                 let _ = event_tx.send(Event::CostUpdate {
                                     run: run_id.clone(),
-                                    usd: cost_usd,
+                                    usd: cost_usd + estimated_cost_unconfirmed,
                                 });
                             }
                             BrainEvent::Done(reason) => {
@@ -761,10 +870,10 @@ impl Engine {
                 "completed".into()
             },
             diffs,
-            cost_usd,
+            cost_usd: cost_usd + estimated_cost_unconfirmed,
             tokens: TokenUsage {
-                input: total_input,
-                output: total_output,
+                input: total_input + estimated_input_unconfirmed,
+                output: total_output + estimated_output_unconfirmed,
             },
         };
 
