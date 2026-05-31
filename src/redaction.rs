@@ -184,18 +184,61 @@ impl ContextManager {
             used += self.estimate_tokens(&serde_json::to_string(first).unwrap_or_default());
         }
 
-        // Summarize middle section as a single message
+        // Summarize middle section: extract real key topics
         let middle: Vec<&Msg> = messages[1..messages.len() - keep_last].iter().collect();
         if !middle.is_empty() {
-            let summary = format!(
-                "[Earlier conversation: {} messages summarized. Key topics: task execution, tool use, code changes.]",
-                middle.len()
-            );
+            // Extract key topics from actual message content
+            let mut tools_used = std::collections::HashSet::new();
+            let mut files_mentioned = std::collections::HashSet::new();
+            let mut error_count = 0u32;
+
+            for msg in &middle {
+                for block in &msg.content {
+                    if let crate::provider::ContentBlock::Text { text } = block {
+                        // Extract tool names
+                        for tool in &["fs_read", "fs_write", "edit", "exec", "git", "search", "test"] {
+                            if text.contains(tool) { tools_used.insert(*tool); }
+                        }
+                        // Extract file mentions
+                        for word in text.split_whitespace() {
+                            if word.ends_with(".rs") || word.ends_with(".toml") || word.ends_with(".md")
+                                || word.ends_with(".py") || word.ends_with(".js") || word.ends_with(".ts") {
+                                files_mentioned.insert(word.to_string());
+                            }
+                        }
+                        if text.contains("error") || text.contains("Error") || text.contains("FAILED") {
+                            error_count += 1;
+                        }
+                    }
+                }
+            }
+
+            let mut topics = Vec::new();
+            if !tools_used.is_empty() {
+                let mut tools: Vec<_> = tools_used.into_iter().collect();
+                tools.sort();
+                topics.push(format!("tools: {}", tools.join(", ")));
+            }
+            if !files_mentioned.is_empty() {
+                let mut files: Vec<_> = files_mentioned.into_iter().collect();
+                files.sort();
+                topics.push(format!("files: {}", files.join(", ")));
+            }
+            if error_count > 0 {
+                topics.push(format!("errors encountered: {}", error_count));
+            }
+
+            let summary = if topics.is_empty() {
+                format!("[{} messages summarized]", middle.len())
+            } else {
+                format!("[{} messages summarized. {}]", middle.len(), topics.join("; "))
+            };
+
             compacted.push(Msg {
                 role: "user".into(),
                 content: vec![crate::provider::ContentBlock::Text { text: summary }],
             });
-            used += self.estimate_tokens(&"[Earlier conversation summarized]");
+            used += self.estimate_tokens(&summary);
         }
 
         // Keep last N messages

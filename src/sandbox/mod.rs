@@ -297,7 +297,7 @@ impl Sandbox for LocalSandbox {
                             exit_code: -1,
                         });
                     }
-                    std::thread::sleep(std::time::Duration::from_millis(50));
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                 }
             }
         }

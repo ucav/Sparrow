@@ -170,7 +170,7 @@ impl Tool for PythonRpc {
                         let _ = child.kill();
                         return Ok(ToolResult::error("Python execution timed out"));
                     }
-                    std::thread::sleep(std::time::Duration::from_millis(50));
+                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                 }
             }
         }
