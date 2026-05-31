@@ -978,11 +978,14 @@ mod tests {
     #[test]
     fn test_curator_propose_skill() {
         use sparrow::capabilities::Curator;
-        let candidate =
-            Curator::propose_skill("Implement Rust error handling with anyhow", "completed");
+        let candidate = Curator::propose_skill(
+            "write unit tests for the error handling module",
+            "added tests and fixed the failing assertions",
+        );
         assert!(candidate.is_some());
         let skill = candidate.unwrap();
         assert!(skill.auto_generated);
+        assert_eq!(skill.name, "write-and-fix-tests");
         assert!(!skill.trigger.is_empty());
     }
 

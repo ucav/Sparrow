@@ -429,40 +429,68 @@ impl Curator {
     /// Generate a skill candidate from a successful run trajectory.
     /// Called by the engine after a `RunFinished` event.
     pub fn propose_skill(run_description: &str, outcome: &str) -> Option<Skill> {
-        // Simple heuristic: if the run was successful and the description
-        // is specific enough, propose a skill.
         let words: Vec<&str> = run_description.split_whitespace().collect();
-        if words.len() < 5 || outcome.contains("error") {
+        let lower = run_description.to_lowercase();
+        let outcome_lower = outcome.to_lowercase();
+
+        if words.len() < 5 || outcome_lower.contains("error") {
             return None;
         }
 
-        // Extract key terms as triggers
-        let triggers: Vec<String> = words
+        let specificity_markers = [
+            "github.com",
+            "repo",
+            "http",
+            "https",
+            ".rs",
+            ".py",
+            ".js",
+            ".ts",
+            "this ",
+            "that ",
+            "the file",
+            "my ",
+            "your ",
+            "2024",
+            "2025",
+            "2026",
+            "v0.",
+            "v1.",
+            "v2.",
+        ];
+        if specificity_markers
             .iter()
-            .filter(|w| w.len() > 3)
-            .take(5)
-            .map(|w| {
-                w.trim_matches(|c: char| !c.is_alphanumeric())
-                    .to_lowercase()
-            })
-            .collect();
+            .any(|marker| lower.contains(marker))
+        {
+            return None;
+        }
+        if words.iter().any(|word| {
+            let cleaned = word.trim_matches(|c: char| !c.is_alphanumeric());
+            cleaned
+                .chars()
+                .next()
+                .map(|c| c.is_uppercase())
+                .unwrap_or(false)
+                && cleaned.chars().count() > 8
+        }) {
+            return None;
+        }
 
-        let name = words
-            .iter()
-            .take(4)
-            .map(|w| {
-                let mut c = w.chars();
-                match c.next() {
-                    None => String::new(),
-                    Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("");
+        let has_concrete_output = [
+            "diff", "fn ", "struct ", "impl ", "test", "fixed", "refactor",
+        ]
+        .iter()
+        .any(|needle| outcome_lower.contains(needle));
+        if !has_concrete_output {
+            return None;
+        }
+
+        let name = skill_name_from_pattern(run_description)?.to_string();
+        let triggers = skill_triggers_for_pattern(&name);
 
         Some(Skill {
             name,
-            description: format!("Auto-generated from: {}", run_description),
+            description: format!("Reusable pattern learned from: {}", run_description),
             trigger: triggers,
             body: format!(
                 "## Context\nTask: {}\n\n## Approach\n{}",
@@ -475,6 +503,76 @@ impl Curator {
             auto_generated: true,
         })
     }
+
+    pub fn propose_skill_if_missing(
+        run_description: &str,
+        outcome: &str,
+        library: &dyn SkillLibrary,
+    ) -> Option<Skill> {
+        let candidate = Self::propose_skill(run_description, outcome)?;
+        if library.get(&candidate.name).is_some() {
+            None
+        } else {
+            Some(candidate)
+        }
+    }
+}
+
+pub fn skill_name_from_pattern(description: &str) -> Option<&'static str> {
+    let d = description.to_lowercase();
+    if d.contains("test") && (d.contains("add") || d.contains("write") || d.contains("fix")) {
+        return Some("write-and-fix-tests");
+    }
+    if d.contains("refactor") || d.contains("rename") || d.contains("extract") {
+        return Some("refactor-safely");
+    }
+    if d.contains("debug") || d.contains("error") || d.contains("panic") || d.contains("crash") {
+        return Some("debug-systematically");
+    }
+    if d.contains("document")
+        || d.contains("comment")
+        || d.contains("readme")
+        || d.contains("docstring")
+    {
+        return Some("write-docs");
+    }
+    if d.contains("secur") || d.contains("vulnerab") || d.contains("audit") {
+        return Some("security-audit");
+    }
+    if d.contains("performance") || d.contains("slow") || d.contains("optim") || d.contains("bench")
+    {
+        return Some("performance-profile");
+    }
+    if d.contains("upgrade") || d.contains("bump") || d.contains("depend") || d.contains("package")
+    {
+        return Some("upgrade-dependencies");
+    }
+    if d.contains("review") || d.contains("pr") || d.contains("pull request") || d.contains("diff")
+    {
+        return Some("code-review");
+    }
+    if d.contains("git") || d.contains("commit") || d.contains("branch") || d.contains("merge") {
+        return Some("git-workflow");
+    }
+    None
+}
+
+fn skill_triggers_for_pattern(name: &str) -> Vec<String> {
+    match name {
+        "write-and-fix-tests" => vec!["test", "unit", "fix", "assert"],
+        "refactor-safely" => vec!["refactor", "rename", "extract", "safe"],
+        "debug-systematically" => vec!["debug", "error", "panic", "crash"],
+        "write-docs" => vec!["document", "readme", "comment", "docstring"],
+        "security-audit" => vec!["security", "audit", "vulnerability", "safe"],
+        "performance-profile" => vec!["performance", "slow", "optimize", "bench"],
+        "upgrade-dependencies" => vec!["upgrade", "bump", "dependency", "package"],
+        "code-review" => vec!["review", "pr", "diff", "pull-request"],
+        "git-workflow" => vec!["git", "commit", "branch", "merge"],
+        _ => vec!["skill"],
+    }
+    .into_iter()
+    .map(String::from)
+    .collect()
 }
 
 impl Default for Curator {
