@@ -680,25 +680,6 @@ impl Engine {
                 }
             }
 
-            // ─── Anti-simulation / hallucination guard ───────────────────
-            // Check if the assistant's last turn contains unverified claims
-            let _last_assistant_msgs: Vec<&Msg> =
-                messages.iter().filter(|m| m.role == "assistant").collect();
-            let has_tool_output = !tool_results_pending.is_empty();
-            if let Some(correction) = self.reasoning.guard_turn(
-                &messages.iter().cloned().collect::<Vec<_>>(),
-                has_tool_output,
-            ) {
-                // Inject corrective system message
-                messages.push(Msg {
-                    role: "user".into(),
-                    content: vec![ContentBlock::Text {
-                        text: format!("SYSTEM: {}. Please execute the relevant tool and report the actual results.", correction),
-                    }],
-                });
-                continue;
-            }
-
             // ─── Org policy enforcement ──────────────────────────────────
             if let Some(ref policy) = self.org_policy {
                 let proposed_file = tool_results_pending
@@ -768,10 +749,13 @@ impl Engine {
                     let mut output_tokens_emitted: u64 = 0;
                     let mut continue_agent_loop = false;
                     let mut stop_after_tool_result = false;
+                    let mut assistant_text = String::new();
+                    let mut tool_output_seen_this_completion = false;
 
                     while let Some(event) = stream.next().await {
                         match event {
                             BrainEvent::TextDelta(text) => {
+                                assistant_text.push_str(&text);
                                 output_chars_seen += text.chars().count() as u64;
                                 let estimated_output = (output_chars_seen + 3) / 4;
                                 let output_delta =
@@ -950,6 +934,7 @@ impl Engine {
                                             id: id.clone(),
                                             blocks,
                                         });
+                                        tool_output_seen_this_completion = true;
                                         tool_results_pending.push((
                                             id.clone(),
                                             proposed.tool_name.clone(),
@@ -1043,6 +1028,7 @@ impl Engine {
                                                 id: approval_id.clone(),
                                                 blocks,
                                             });
+                                            tool_output_seen_this_completion = true;
                                             tool_results_pending.push((
                                                 approval_id,
                                                 approval_name,
@@ -1056,6 +1042,7 @@ impl Engine {
                                                 id: approval_id.clone(),
                                                 blocks: vec![Block::Text("Denied by user".into())],
                                             });
+                                            tool_output_seen_this_completion = true;
                                             tool_results_pending.push((
                                                 approval_id,
                                                 approval_name,
@@ -1075,6 +1062,7 @@ impl Engine {
                                                 "Denied by autonomy policy".into(),
                                             )],
                                         });
+                                        tool_output_seen_this_completion = true;
                                         tool_results_pending.push((
                                             id.clone(),
                                             proposed.tool_name.clone(),
@@ -1119,7 +1107,47 @@ impl Engine {
                             BrainEvent::Done(reason) => {
                                 match reason {
                                     crate::event::StopReason::EndTurn => {
-                                        // Task complete
+                                        if !assistant_text.trim().is_empty() {
+                                            let assistant_msg = Msg {
+                                                role: "assistant".into(),
+                                                content: vec![ContentBlock::Text {
+                                                    text: assistant_text.clone(),
+                                                }],
+                                            };
+                                            let turn_messages = vec![assistant_msg.clone()];
+                                            let has_verified_tool_context =
+                                                tool_output_seen_this_completion
+                                                    || messages.iter().any(|m| {
+                                                        m.content.iter().any(|block| {
+                                                            matches!(
+                                                                block,
+                                                                ContentBlock::ToolResult { .. }
+                                                            )
+                                                        })
+                                                    });
+
+                                            if let Some(correction) = self.reasoning.guard_turn(
+                                                &turn_messages,
+                                                has_verified_tool_context,
+                                            ) {
+                                                messages.push(assistant_msg);
+                                                let _ = event_tx.send(Event::Message {
+                                                    run: run_id.clone(),
+                                                    role: "guard".into(),
+                                                    text: correction.clone(),
+                                                });
+                                                messages.push(Msg {
+                                                    role: "user".into(),
+                                                    content: vec![ContentBlock::Text {
+                                                        text: format!("SYSTEM: {}. Execute the relevant tool first, then report the actual raw result.", correction),
+                                                    }],
+                                                });
+                                                continue_agent_loop = true;
+                                                break;
+                                            }
+
+                                            messages.push(assistant_msg);
+                                        }
                                     }
                                     crate::event::StopReason::ToolUse => {
                                         // Feed tool results back

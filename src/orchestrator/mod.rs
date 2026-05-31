@@ -685,14 +685,6 @@ impl Orchestrator for DefaultOrchestrator {
 
             all_diffs = diffs.clone();
 
-            // Emit diff applied events
-            for diff in &diffs {
-                let _ = event_tx.send(Event::DiffApplied {
-                    run: run_id.clone(),
-                    file: diff.file.clone(),
-                });
-            }
-
             // ▸ VERIFIER
             let verdict = self
                 .run_verifier(
@@ -723,6 +715,12 @@ impl Orchestrator for DefaultOrchestrator {
                         failed: 0,
                         detail: "Verifier PASS".into(),
                     });
+                    for diff in &diffs {
+                        let _ = event_tx.send(Event::DiffApplied {
+                            run: run_id.clone(),
+                            file: diff.file.clone(),
+                        });
+                    }
                     break; // Done!
                 }
                 Verdict::Rework { findings } => {
