@@ -1,0 +1,31 @@
+#compdef sparrow
+_sparrow() {
+    local -a commands
+    commands=(
+        'run:Execute a single agentic task'
+        'chat:Interactive multi-turn chat'
+        'swarm:Run planner->coder->verifier pipeline'
+        'schedule:Schedule a recurring job'
+        'model:Show or override model routing'
+        'auth:Manage provider credentials'
+        'agent:Manage persistent agents'
+        'skills:Manage skill library'
+        'mcp:Manage MCP connectors'
+        'checkpoint:List git checkpoints'
+        'rewind:Restore workspace to checkpoint'
+        'replay:Replay a transcript'
+        'gateway:Start/stop messaging daemon'
+        'profile:Manage isolated profiles'
+        'import:Migrate from another tool'
+        'config:Edit config.toml'
+        'update:Self-update'
+        'doctor:Run diagnostics'
+        'setup:Interactive onboarding'
+        'learn:Interactive tutorial'
+        'memory:Manage persistent memory'
+        'tui:Launch terminal TUI'
+        'console:Launch webview console'
+    )
+    _describe 'command' commands
+}
+_sparrow
