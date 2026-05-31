@@ -6,6 +6,7 @@ use std::sync::Mutex;
 use crate::engine::Identity;
 use crate::event::RunId;
 use crate::provider::Msg;
+use crate::redaction::RedactionFilter;
 
 // ─── Repo map ───────────────────────────────────────────────────────────────────
 
@@ -291,6 +292,21 @@ impl SqliteMemory {
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
+            -- FTS5 full-text search for memory recall (M1)
+            CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts USING fts5(
+                key, value, content='facts', content_rowid='rowid'
+            );
+            -- Triggers to keep FTS5 index in sync
+            CREATE TRIGGER IF NOT EXISTS facts_ai AFTER INSERT ON facts BEGIN
+                INSERT INTO facts_fts(rowid, key, value) VALUES (new.rowid, new.key, new.value);
+            END;
+            CREATE TRIGGER IF NOT EXISTS facts_ad AFTER DELETE ON facts BEGIN
+                INSERT INTO facts_fts(facts_fts, rowid, key, value) VALUES ('delete', old.rowid, old.key, old.value);
+            END;
+            CREATE TRIGGER IF NOT EXISTS facts_au AFTER UPDATE ON facts BEGIN
+                INSERT INTO facts_fts(facts_fts, rowid, key, value) VALUES ('delete', old.rowid, old.key, old.value);
+                INSERT INTO facts_fts(rowid, key, value) VALUES (new.rowid, new.key, new.value);
+            END;
             ",
         )?;
         Ok(())
@@ -416,37 +432,48 @@ impl Memory for SqliteMemory {
     }
 
     fn remember(&self, fact: Fact) -> anyhow::Result<()> {
+        let redaction = RedactionFilter::new();
+        let safe_value = redaction.redact_str(&fact.value);
+        let safe_key = redaction.redact_str(&fact.key);
+        if redaction.contains_secret(&fact.value) {
+            tracing::warn!("Redacted secret from memory fact: {}", fact.key);
+        }
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT OR REPLACE INTO facts (id, key, value, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![fact.id, fact.key, fact.value, fact.created_at, fact.updated_at],
+            params![fact.id, safe_key, safe_value, fact.created_at, fact.updated_at],
         )?;
         Ok(())
     }
 
     fn recall(&self, q: &str, k: usize) -> Vec<Fact> {
-        // Simple SQL LIKE search (no embeddings for M1)
         let conn = self.conn.lock().unwrap();
-        let pattern = format!("%{}%", q);
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, key, value, created_at, updated_at FROM facts WHERE key LIKE ?1 OR value LIKE ?1 LIMIT ?2",
-            )
-            .unwrap();
-        let facts = stmt
-            .query_map(params![pattern, k as i64], |row| {
-                Ok(Fact {
-                    id: row.get(0)?,
-                    key: row.get(1)?,
-                    value: row.get(2)?,
-                    created_at: row.get(3)?,
-                    updated_at: row.get(4)?,
-                })
-            })
-            .unwrap()
-            .filter_map(|r| r.ok())
-            .collect();
-        facts
+        // FTS5 full-text search with LIKE fallback
+        let pattern = q.split_whitespace().map(|w| format!("{}*", w)).collect::<Vec<_>>().join(" ");
+
+        let result = conn.prepare(
+            "SELECT f.id, f.key, f.value, f.created_at, f.updated_at FROM facts f
+             INNER JOIN facts_fts ft ON f.rowid = ft.rowid
+             WHERE facts_fts MATCH ?1 ORDER BY rank LIMIT ?2"
+        );
+
+        match result {
+            Ok(mut stmt) => {
+                stmt.query_map(params![pattern, k as i64], |row| {
+                    Ok(Fact { id: row.get(0)?, key: row.get(1)?, value: row.get(2)?, created_at: row.get(3)?, updated_at: row.get(4)? })
+                }).unwrap().filter_map(|r| r.ok()).collect()
+            }
+            Err(_) => {
+                // Fallback to LIKE
+                let like_pattern = format!("%{}%", q);
+                let mut stmt = conn.prepare(
+                    "SELECT id, key, value, created_at, updated_at FROM facts WHERE key LIKE ?1 OR value LIKE ?1 LIMIT ?2"
+                ).unwrap();
+                stmt.query_map(params![like_pattern, k as i64], |row| {
+                    Ok(Fact { id: row.get(0)?, key: row.get(1)?, value: row.get(2)?, created_at: row.get(3)?, updated_at: row.get(4)? })
+                }).unwrap().filter_map(|r| r.ok()).collect()
+            }
+        }
     }
 
     fn all_facts(&self) -> Vec<Fact> {

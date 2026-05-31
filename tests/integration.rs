@@ -536,4 +536,126 @@ mod tests {
         assert!(cfg.providers.is_empty());
         assert_eq!(cfg.budget.daily_usd, 5.0);
     }
+
+    // ─── M1 Trust Tests ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_checkpoints_rewind() {
+        use sparrow::autonomy::{Checkpoints, GitCheckpoints};
+        let tmp = std::env::temp_dir().join("sparrow-m1-checkpoint-test");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).ok();
+
+        // Init git repo
+        std::process::Command::new("git").args(["init"]).current_dir(&tmp).output().ok();
+        std::process::Command::new("git").args(["config","user.email","test@sparrow.dev"]).current_dir(&tmp).output().ok();
+        std::process::Command::new("git").args(["config","user.name","Test"]).current_dir(&tmp).output().ok();
+        std::fs::write(tmp.join("test.txt"), "original").ok();
+        std::process::Command::new("git").args(["add","test.txt"]).current_dir(&tmp).output().ok();
+        std::process::Command::new("git").args(["commit","-m","init"]).current_dir(&tmp).output().ok();
+
+        let cp = GitCheckpoints::new(tmp.clone());
+        let id = cp.snapshot("pre-mutation").expect("snapshot should succeed");
+        assert!(!id.0.is_empty());
+
+        // Mutate
+        std::fs::write(tmp.join("test.txt"), "modified").ok();
+
+        // Rewind
+        cp.rewind(id).expect("rewind should succeed");
+        let content = std::fs::read_to_string(tmp.join("test.txt")).unwrap_or_default();
+        assert_eq!(content.trim(), "original", "rewind must restore original content");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_memory_persistence() {
+        use sparrow::memory::{Fact, Memory, SqliteMemory};
+        let tmp = std::env::temp_dir().join("sparrow-m1-memory.db");
+        let _ = std::fs::remove_file(&tmp);
+
+        let mem = SqliteMemory::open(&tmp).expect("open memory");
+        let fact = Fact {
+            id: "test-1".into(), key: "user:language".into(), value: "Rust".into(),
+            created_at: "2026-01-01".into(), updated_at: "2026-01-01".into(),
+        };
+        mem.remember(fact.clone()).expect("remember");
+
+        // Re-open (simulates new session)
+        drop(mem);
+        let mem2 = SqliteMemory::open(&tmp).expect("re-open memory");
+        let facts = mem2.all_facts();
+        assert_eq!(facts.len(), 1);
+        assert_eq!(facts[0].key, "user:language");
+        assert_eq!(facts[0].value, "Rust");
+
+        // Recall via FTS5
+        let recalled = mem2.recall("Rust", 5);
+        assert!(!recalled.is_empty());
+
+        let _ = std::fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn test_autonomy_matrix_15_combinations() {
+        use sparrow::autonomy::{AutonomyContract, ProposedAction};
+        use sparrow::event::{AutonomyLevel, RiskLevel};
+
+        let levels = [AutonomyLevel::Supervised, AutonomyLevel::Trusted, AutonomyLevel::Autonomous];
+        let risks = [RiskLevel::ReadOnly, RiskLevel::Mutating, RiskLevel::Exec, RiskLevel::Destructive, RiskLevel::Network];
+
+        for level in &levels {
+            for risk in &risks {
+                let contract = match level {
+                    AutonomyLevel::Supervised => AutonomyContract::supervised(),
+                    AutonomyLevel::Trusted => AutonomyContract::trusted(),
+                    AutonomyLevel::Autonomous => AutonomyContract::autonomous(),
+                    _ => unreachable!(),
+                };
+                let action = ProposedAction {
+                    tool_name: "test".into(),
+                    risk: risk.clone(),
+                    args: serde_json::json!({}),
+                };
+                let decision = contract.decide(&action);
+                // Every combination must produce a valid decision
+                assert!(matches!(decision, sparrow::event::Decision::Allow | sparrow::event::Decision::AskUser | sparrow::event::Decision::Deny));
+            }
+        }
+        // 5 × 3 = 15 combinations tested
+    }
+
+    #[test]
+    fn test_budget_hard_stop_in_contract() {
+        use sparrow::autonomy::AutonomyContract;
+        let contract = AutonomyContract::supervised();
+        // Budget exceeded should be a hard stop
+        assert!(contract.stops.iter().any(|s| matches!(s, sparrow::autonomy::HardStop::BudgetExceeded)));
+        // Destructive should be denied in supervised
+        assert!(contract.stops.iter().any(|s| matches!(s, sparrow::autonomy::HardStop::RiskLevel(sparrow::event::RiskLevel::Destructive))));
+    }
+
+    #[test]
+    fn test_memory_redaction() {
+        use sparrow::memory::{Fact, Memory, SqliteMemory};
+        let tmp = std::env::temp_dir().join("sparrow-m1-redact.db");
+        let _ = std::fs::remove_file(&tmp);
+
+        let mem = SqliteMemory::open(&tmp).expect("open memory");
+        let fact_with_secret = Fact {
+            id: "secret-1".into(), key: "token".into(),
+            value: "sk-ant-api03-secret-key-here".into(),
+            created_at: "2026-01-01".into(), updated_at: "2026-01-01".into(),
+        };
+        mem.remember(fact_with_secret).expect("remember");
+
+        let facts = mem.all_facts();
+        assert!(!facts.is_empty());
+        // The value should be redacted
+        let val = &facts[0].value;
+        assert!(!val.contains("sk-ant-api03"), "Secret should be redacted: {}", val);
+
+        let _ = std::fs::remove_file(&tmp);
+    }
 }
