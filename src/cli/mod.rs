@@ -155,6 +155,12 @@ pub enum Commands {
     /// Interactive tutorial
     Learn,
 
+    /// Initialize a project with .sparrow/ config
+    Init,
+
+    /// Show live status (active runs, budget, session)
+    Status,
+
     /// Manage persistent memory
     Memory {
         #[command(subcommand)]

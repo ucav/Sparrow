@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use crate::event::AutonomyLevel;
 
 pub mod providers;
+pub mod validate;
 
 /// The full configuration tree (§11).
 #[derive(Debug, Clone, Serialize, Deserialize)]
