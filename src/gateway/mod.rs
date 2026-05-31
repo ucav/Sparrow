@@ -311,6 +311,33 @@ impl MessageRouter {
                             buttons: vec![],
                         });
                     }
+                    Event::ModelSwitched {
+                        from, to, reason, ..
+                    } => {
+                        if !buffer.is_empty() {
+                            let _ = resp_tx2.send(GatewayResponse {
+                                surface: surface_for_stream.clone(),
+                                chat_id: cid2.clone(),
+                                text: buffer.clone(),
+                                reply_to: None,
+                                buttons: vec![],
+                            });
+                            buffer.clear();
+                        }
+                        let clean = crate::event::friendly_model_switch_reason(reason);
+                        let text = if crate::event::is_local_model_unavailable(reason) {
+                            format!("modèle local indisponible → routage modèle cloud ({})", to)
+                        } else {
+                            format!("fallback: {} → {} ({})", from, to, clean)
+                        };
+                        let _ = resp_tx2.send(GatewayResponse {
+                            surface: surface_for_stream.clone(),
+                            chat_id: cid2.clone(),
+                            text,
+                            reply_to: None,
+                            buttons: vec![],
+                        });
+                    }
                     Event::ApprovalRequested { summary, .. } => {
                         let _ = resp_tx2.send(GatewayResponse {
                             surface: surface_for_stream.clone(),
@@ -350,9 +377,28 @@ pub fn format_event(event: &Event) -> Option<String> {
             outcome.diffs.len()
         )),
         Event::ThinkingDelta { text, .. } => Some(text.clone()),
+        Event::ModelSwitched {
+            from, to, reason, ..
+        } => {
+            let clean = crate::event::friendly_model_switch_reason(reason);
+            if crate::event::is_local_model_unavailable(reason) {
+                Some(format!(
+                    "modèle local indisponible → routage modèle cloud ({})",
+                    to
+                ))
+            } else {
+                Some(format!("Fallback: {} → {} ({})", from, to, clean))
+            }
+        }
         Event::ToolUseProposed { name, .. } => Some(format!("[{}]", name)),
         Event::ApprovalRequested { summary, .. } => Some(format!("Approve: {}", summary)),
-        Event::Error { message, .. } => Some(format!("Error: {}", message)),
+        Event::Error { message, .. } => {
+            if crate::event::is_local_model_unavailable(message) {
+                None
+            } else {
+                Some(format!("Error: {}", message))
+            }
+        }
         Event::CostUpdate { usd, .. } => Some(format!("Cost: ${:.4}", usd)),
         Event::CheckpointCreated { label, .. } => Some(format!("Checkpoint: {}", label)),
         _ => None,

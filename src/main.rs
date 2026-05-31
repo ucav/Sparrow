@@ -757,6 +757,19 @@ async fn run_task(
                 sparrow::event::Event::CheckpointCreated { id, label, .. } => {
                     println!("\n[Checkpoint: {} — {}]", id.0, label);
                 }
+                sparrow::event::Event::ModelSwitched {
+                    from, to, reason, ..
+                } => {
+                    let clean = sparrow::event::friendly_model_switch_reason(reason);
+                    if sparrow::event::is_local_model_unavailable(reason) {
+                        println!(
+                            "\n[Routing] modèle local indisponible → routage modèle cloud ({})",
+                            to
+                        );
+                    } else {
+                        println!("\n[Routing] {} → {} ({})", from, to, clean);
+                    }
+                }
                 sparrow::event::Event::CostUpdate { usd, .. } => {
                     println!("\n[Cost: ${:.4}]", usd);
                 }
@@ -766,7 +779,9 @@ async fn run_task(
                         outcome.cost_usd, outcome.tokens.input, outcome.tokens.output
                     );
                 }
-                sparrow::event::Event::Error { message, .. } => {
+                sparrow::event::Event::Error { message, .. }
+                    if !sparrow::event::is_local_model_unavailable(message) =>
+                {
                     eprintln!("\nError: {}", message);
                 }
                 _ => {}
@@ -851,7 +866,9 @@ async fn run_swarm(
                         println!("  {}  +{}/-{}", d.file, d.plus, d.minus);
                     }
                 }
-                sparrow::event::Event::Error { message, .. } => {
+                sparrow::event::Event::Error { message, .. }
+                    if !sparrow::event::is_local_model_unavailable(message) =>
+                {
                     eprintln!("Error: {}", message);
                 }
                 _ => {}
@@ -1064,7 +1081,9 @@ async fn handle_replay(
                             outcome.status, outcome.cost_usd
                         );
                     }
-                    sparrow::event::Event::Error { message, .. } => {
+                    sparrow::event::Event::Error { message, .. }
+                        if !sparrow::event::is_local_model_unavailable(message) =>
+                    {
                         eprintln!("\n[Error: {}]", message);
                     }
                     _ => {}
