@@ -88,6 +88,7 @@ impl Tui {
             Event::SkillLearned { name, .. } => self.add_line(&format!("✦ skill learned · {}", name), LogStyle::Agent, 0),
             Event::CostUpdate { usd, .. } => self.cost_usd = *usd,
             Event::TokenUsage { input, output, .. } => self.total_tokens += input + output,
+            Event::TokenUsageEstimated { input, output, .. } => self.total_tokens += input + output,
             Event::AutonomyChanged { level, .. } => self.autonomy = format!("{:?}", level).to_lowercase(),
             Event::DiffProposed { file, plus, minus, .. } => self.add_line(&format!("◇ {}  +{} / -{}  · proposed", file, plus, minus), LogStyle::Dim, 0),
             Event::TestResult { passed, failed, detail, .. } => {

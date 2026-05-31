@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" aria-label="Sparrow mascot">
+  <defs>
+    <linearGradient id="sp-body" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8bf57"/><stop offset="1" stop-color="#ef9b2f"/>
+    </linearGradient>
+    <linearGradient id="sp-belly" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fde6bd"/><stop offset="1" stop-color="#f7d089"/>
+    </linearGradient>
+    <linearGradient id="sp-key" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#b9b0a3"/><stop offset="1" stop-color="#f2c94c"/>
+    </linearGradient>
+  </defs>
+  <path d="M138 198 L138 208 M134 208 L142 208 M138 203 L142 208 M138 203 L134 208" fill="none" stroke="#5a4326" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M102 198 L102 208 M98 208 L106 208 M102 203 L106 208 M102 203 L98 208" fill="none" stroke="#5a4326" stroke-width="2.2" stroke-linecap="round"/>
+  <path d="M40 120 L22 106 L32 134 L14 120 L26 142 L10 134 L24 150" fill="none" stroke="#5a4326" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <ellipse cx="100" cy="140" rx="62" ry="54" fill="url(#sp-body)"/>
+  <ellipse cx="108" cy="158" rx="34" ry="28" fill="url(#sp-belly)"/>
+  <path d="M40 120 C34 108, 48 98, 64 100 C56 112, 50 120, 40 120 Z" fill="#d4892a"/>
+  <path d="M150 118 C162 104, 178 98, 190 104 C188 118, 174 128, 150 118 Z" fill="#e8962b" stroke="#5a4326" stroke-width="1.8" stroke-linejoin="round"/>
+  <g transform="translate(172,96) rotate(-15)">
+    <rect x="0" y="0" width="26" height="5" rx="2" fill="url(#sp-key)"/>
+    <circle cx="24" cy="2.5" r="6" fill="none" stroke="url(#sp-key)" stroke-width="2.5"/>
+    <rect x="12" y="5" width="3" height="7" rx="1" fill="url(#sp-key)"/>
+    <rect x="6" y="5" width="3" height="5" rx="1" fill="url(#sp-key)"/>
+  </g>
+  <path d="M72 82 L115 80 L138 88" fill="none" stroke="#1a1008" stroke-width="3"/>
+  <ellipse cx="96" cy="92" rx="34" ry="32" fill="url(#sp-body)"/>
+  <path d="M88 64 L86 44 M86 44 L80 34 M86 44 L92 32" fill="none" stroke="#5a4326" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M96 62 L98 42 M98 42 L92 30 M98 42 L104 28" fill="none" stroke="#5a4326" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M72 82 L88 78" stroke="#5a4326" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="80" cy="88" r="5" fill="#fff"/><circle cx="80" cy="88" r="2.8" fill="#0e0b08"/>
+  <path d="M106 78 L122 82" stroke="#5a4326" stroke-width="4" stroke-linecap="round"/>
+  <ellipse cx="114" cy="89" rx="9" ry="10" fill="#1a1008"/><ellipse cx="114" cy="89" rx="7" ry="8" fill="#221910"/>
+  <path d="M92 96 L100 108 L98 106 L112 108 L98 100 Z" fill="#f0674a" stroke="#d05540" stroke-width="1.2" stroke-linejoin="round"/>
+  <circle cx="74" cy="102" r="7" fill="#f0674a" opacity="0.35"/>
+</svg>

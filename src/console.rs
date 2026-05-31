@@ -95,11 +95,15 @@ struct RunResponse {
 #[derive(serde::Serialize)]
 struct ProviderView {
     name: String,
+    label: String,
     adapter: String,
     base_url: Option<String>,
     models: Vec<String>,
+    tags: Vec<String>,
+    notes: String,
     api_key_env: Option<String>,
     has_credential: bool,
+    configured: bool,
 }
 
 #[derive(serde::Serialize)]
@@ -160,19 +164,80 @@ async fn get_config(
 
     let cfg = shared.read().expect("config lock poisoned").clone();
     let auth = crate::auth::store::ChainedAuthStore::new(cfg.config_dir.clone());
-    let mut providers = cfg
-        .providers
-        .iter()
-        .map(|(name, p)| ProviderView {
+    let mut providers = crate::config::providers::onboarding_providers()
+        .into_iter()
+        .map(|def| {
+            let configured = cfg.providers.get(&def.id);
+            let api_key_env = configured
+                .and_then(|p| {
+                    p.api_key_env
+                        .as_ref()
+                        .filter(|value| !looks_like_api_key(value))
+                        .cloned()
+                })
+                .or_else(|| def.api_key_env.clone());
+            let has_credential = auth.get(&def.id).is_some()
+                || configured
+                    .and_then(|p| p.api_key_env.as_ref())
+                    .map(|value| {
+                        looks_like_api_key(value)
+                            || std::env::var(value)
+                                .map(|env_value| !env_value.is_empty())
+                                .unwrap_or(false)
+                    })
+                    .unwrap_or(false)
+                || api_key_env
+                    .as_ref()
+                    .map(|value| {
+                        std::env::var(value)
+                            .map(|env_value| !env_value.is_empty())
+                            .unwrap_or(false)
+                    })
+                    .unwrap_or(false);
+
+            ProviderView {
+                name: def.id,
+                label: def.label,
+                adapter: configured
+                    .map(|p| p.adapter.clone())
+                    .unwrap_or(def.adapter),
+                base_url: configured
+                    .and_then(|p| p.base_url.clone())
+                    .or(Some(def.base_url)),
+                models: configured
+                    .map(|p| if p.models.is_empty() {
+                        def.models.iter().map(|m| m.name.clone()).collect()
+                    } else {
+                        p.models.clone()
+                    })
+                    .unwrap_or_else(|| def.models.iter().map(|m| m.name.clone()).collect()),
+                tags: def.tags,
+                notes: def.notes,
+                api_key_env,
+                has_credential,
+                configured: configured.is_some(),
+            }
+        })
+        .collect::<Vec<_>>();
+
+    for (name, p) in &cfg.providers {
+        if providers.iter().any(|view| &view.name == name) {
+            continue;
+        }
+        let api_key_env = p
+            .api_key_env
+            .as_ref()
+            .filter(|value| !looks_like_api_key(value))
+            .cloned();
+        providers.push(ProviderView {
             name: name.clone(),
+            label: name.clone(),
             adapter: p.adapter.clone(),
             base_url: p.base_url.clone(),
             models: p.models.clone(),
-            api_key_env: p
-                .api_key_env
-                .as_ref()
-                .filter(|value| !looks_like_api_key(value))
-                .cloned(),
+            tags: vec!["custom".into()],
+            notes: "Custom configured provider.".into(),
+            api_key_env: api_key_env.clone(),
             has_credential: auth.get(name).is_some()
                 || p.api_key_env
                     .as_ref()
@@ -183,8 +248,9 @@ async fn get_config(
                                 .unwrap_or(false)
                     })
                     .unwrap_or(false),
-        })
-        .collect::<Vec<_>>();
+            configured: true,
+        });
+    }
     providers.sort_by(|a, b| a.name.cmp(&b.name));
 
     axum::extract::Json(ConfigResponse {

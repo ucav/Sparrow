@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sparrow — Logo / Mascot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e0b08;
+    --fg: #ece2cf;
+    --brand: #f2a93c;
+    --coral: #f0674a;
+    --dim: #897d6c;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body {
+    font-family: 'IBM Plex Mono', monospace;
+    background: var(--bg); color: var(--fg);
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; min-height: 100vh; gap: 40px; padding: 40px 16px;
+  }
+  h2 { color: var(--dim); font-size: 11px; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 8px; }
+  .row { display: flex; gap: 48px; align-items: center; flex-wrap: wrap; justify-content: center; }
+  .col { display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .label { color: var(--dim); font-size: 10px; letter-spacing: 2px; }
+  .brand-gradient {
+    font-weight: 700; letter-spacing: 4px; font-size: 22px;
+    background: linear-gradient(90deg, var(--brand), var(--coral));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .ascii {
+    font-size: 13px; line-height: 1.22; white-space: pre; color: var(--brand);
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .ascii .coral { color: var(--coral); }
+  .ascii .white { color: #fff; }
+  .ascii .gold { color: #f2c94c; }
+  .ascii .steel { color: #b9b0a3; }
+  .ascii .cream { color: #f7d089; }
+  .ascii .brown { color: #5a4326; }
+  .ascii .pink { color: #f0674a; }
+  .ascii .dark { color: #221910; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════ CANONICAL SVG SYMBOL ═══════════════════ -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <defs>
+    <!-- body gradient: amber -->
+    <linearGradient id="sp-body" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8bf57"/>
+      <stop offset="1" stop-color="#ef9b2f"/>
+    </linearGradient>
+    <!-- belly gradient: cream -->
+    <linearGradient id="sp-belly" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fde6bd"/>
+      <stop offset="1" stop-color="#f7d089"/>
+    </linearGradient>
+    <!-- key gradient: steel → gold -->
+    <linearGradient id="sp-key" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#b9b0a3"/>
+      <stop offset="1" stop-color="#f2c94c"/>
+    </linearGradient>
+
+    <!-- ═══ CANONICAL SPARROW MASCOT ═══
+         Chubby pirate sparrow.
+         Props: two-feather crest, thick dark eyebrow, open eye,
+         pirate eye-patch with strap, downward coral beak,
+         pink cheek blush, cream belly, key held in wing, two feet.
+         viewBox 0 0 240 240 = generous padding around the bird.
+    -->
+    <symbol id="sparrow" viewBox="0 0 240 240">
+      <!-- right foot -->
+      <path d="M138 198 L138 208 M134 208 L142 208 M138 203 L142 208 M138 203 L134 208"
+            fill="none" stroke="#5a4326" stroke-width="2.2" stroke-linecap="round"/>
+      <!-- left foot -->
+      <path d="M102 198 L102 208 M98 208 L106 208 M102 203 L106 208 M102 203 L98 208"
+            fill="none" stroke="#5a4326" stroke-width="2.2" stroke-linecap="round"/>
+
+      <!-- tail feathers -->
+      <path d="M40 120 L22 106 L32 134 L14 120 L26 142 L10 134 L24 150"
+            fill="none" stroke="#5a4326" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+      <!-- body (chubby round shape) -->
+      <ellipse cx="100" cy="140" rx="62" ry="54" fill="url(#sp-body)"/>
+
+      <!-- belly -->
+      <ellipse cx="108" cy="158" rx="34" ry="28" fill="url(#sp-belly)"/>
+
+      <!-- left wing (behind body) -->
+      <path d="M40 120 C34 108, 48 98, 64 100 C56 112, 50 120, 40 120 Z"
+            fill="#d4892a"/>
+
+      <!-- right wing (front, holding key) -->
+      <path d="M150 118 C162 104, 178 98, 190 104 C188 118, 174 128, 150 118 Z"
+            fill="#e8962b" stroke="#5a4326" stroke-width="1.8" stroke-linejoin="round"/>
+
+      <!-- KEY held in right wing -->
+      <g transform="translate(172,96) rotate(-15)">
+        <rect x="0" y="0" width="26" height="5" rx="2" fill="url(#sp-key)"/>
+        <circle cx="24" cy="2.5" r="6" fill="none" stroke="url(#sp-key)" stroke-width="2.5"/>
+        <rect x="12" y="5" width="3" height="7" rx="1" fill="url(#sp-key)"/>
+        <rect x="6" y="5" width="3" height="5" rx="1" fill="url(#sp-key)"/>
+      </g>
+
+      <!-- eye-patch strap -->
+      <path d="M72 82 L115 80 L138 88" fill="none" stroke="#1a1008" stroke-width="3"/>
+
+      <!-- HEAD -->
+      <ellipse cx="96" cy="92" rx="34" ry="32" fill="url(#sp-body)"/>
+
+      <!-- two-feather crest -->
+      <path d="M88 64 L86 44 M86 44 L80 34 M86 44 L92 32"
+            fill="none" stroke="#5a4326" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M96 62 L98 42 M98 42 L92 30 M98 42 L104 28"
+            fill="none" stroke="#5a4326" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+
+      <!-- thick dark eyebrow (left eye — open) -->
+      <path d="M72 82 L88 78" stroke="#5a4326" stroke-width="4" stroke-linecap="round"/>
+
+      <!-- open eye (left) -->
+      <circle cx="80" cy="88" r="5" fill="#fff"/>
+      <circle cx="80" cy="88" r="2.8" fill="#0e0b08"/>
+
+      <!-- thick dark eyebrow (right eye — under patch) -->
+      <path d="M106 78 L122 82" stroke="#5a4326" stroke-width="4" stroke-linecap="round"/>
+
+      <!-- pirate eye patch (right eye) -->
+      <ellipse cx="114" cy="89" rx="9" ry="10" fill="#1a1008"/>
+      <ellipse cx="114" cy="89" rx="7" ry="8" fill="#221910"/>
+
+      <!-- downward coral beak -->
+      <path d="M92 96 L100 108 L98 106 L112 108 L98 100 Z"
+            fill="#f0674a" stroke="#d05540" stroke-width="1.2" stroke-linejoin="round"/>
+
+      <!-- pink cheek blush -->
+      <circle cx="74" cy="102" r="7" fill="#f0674a" opacity="0.35"/>
+    </symbol>
+
+    <!-- small cockpit variant — head + patch only -->
+    <symbol id="sparrow-cockpit" viewBox="0 0 64 64">
+      <ellipse cx="28" cy="30" rx="20" ry="19" fill="url(#sp-body)"/>
+      <path d="M24 14 L22 8 M22 8 L18 2 M22 8 L26 1"
+            fill="none" stroke="#5a4326" stroke-width="2" stroke-linecap="round"/>
+      <path d="M30 13 L31 7 M31 7 L27 1 M31 7 L34 0"
+            fill="none" stroke="#5a4326" stroke-width="1.8" stroke-linecap="round"/>
+      <path d="M14 24 L26 21" stroke="#5a4326" stroke-width="3.5" stroke-linecap="round"/>
+      <circle cx="20" cy="28" r="4" fill="#fff"/>
+      <circle cx="20" cy="28" r="2.2" fill="#0e0b08"/>
+      <path d="M36 22 L46 24" stroke="#5a4326" stroke-width="3.5" stroke-linecap="round"/>
+      <ellipse cx="42" cy="28" rx="7" ry="8" fill="#1a1008"/>
+      <ellipse cx="42" cy="28" rx="5.5" ry="6.5" fill="#221910"/>
+      <path d="M26 34 L30 40 L30 38 L37 40 L30 37 Z"
+            fill="#f0674a" stroke="#d05540" stroke-width="1" stroke-linejoin="round"/>
+      <circle cx="16" cy="38" r="5" fill="#f0674a" opacity="0.35"/>
+    </symbol>
+  </defs>
+</svg>
+
+<!-- ═══════════════════ RENDERED PREVIEWS ═══════════════════ -->
+
+<h2>canonical mascot (240×240)</h2>
+<svg width="240" height="240" aria-label="Sparrow mascot">
+  <use href="#sparrow"/>
+</svg>
+
+<h2>cockpit mark (28×28)</h2>
+<svg width="28" height="28" aria-label="Sparrow cockpit mark">
+  <use href="#sparrow-cockpit"/>
+</svg>
+
+<h2>ASCII variant (console native)</h2>
+<pre class="ascii">
+        <span class="coral">^^</span>
+      <span class="coral">.-~~~-.</span>
+     <span class="brown">/__</span><span class="coral">     \</span>
+    | <span class="white">o</span>   <span class="dark">██</span>  |
+    |    <span class="coral">v</span>    |
+    | <span class="pink">.</span>       |
+     \ <span class="cream">\__/</span>  /
+      <span class="coral">'-..-'</span>
+      /|  |\  <span class="steel">╤━</span><span class="gold">o</span>
+     '_|  |_'
+</pre>
+<span class="label">sparrow mascot — pirate &amp; builder</span>
+
+<div class="row">
+  <div class="col">
+    <span class="label">brand + wordmark</span>
+    <svg width="28" height="28" aria-hidden="true"><use href="#sparrow-cockpit"/></svg>
+    <span class="brand-gradient">SPARROW</span>
+  </div>
+</div>
+
+</body>
+</html>
