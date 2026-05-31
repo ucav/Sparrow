@@ -35,6 +35,11 @@ impl OllamaAdapter {
         }
     }
 
+    pub fn with_caps(mut self, caps: ModelCaps) -> Self {
+        self.caps = caps;
+        self
+    }
+
     /// Convert Sparrow Msg into Ollama's native format
     fn build_ollama_messages(req: &BrainRequest) -> Vec<serde_json::Value> {
         let mut messages: Vec<serde_json::Value> = Vec::new();

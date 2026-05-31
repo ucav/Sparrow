@@ -232,6 +232,8 @@ pub trait Memory: Send + Sync {
     fn recall(&self, q: &str, k: usize) -> Vec<Fact>;
     fn all_facts(&self) -> Vec<Fact>;
     fn forget(&self, id: &str) -> anyhow::Result<()>;
+    fn cache_discovered_models(&self, provider_id: &str, models: &[String]) -> anyhow::Result<()>;
+    fn get_discovered_models(&self, provider_id: &str) -> Vec<String>;
 }
 
 // ─── SQLite-backed memory implementation ────────────────────────────────────────
@@ -287,6 +289,12 @@ impl SqliteMemory {
                 value TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE IF NOT EXISTS discovered_models (
+                provider_id TEXT NOT NULL,
+                model_name TEXT NOT NULL,
+                fetched_at TEXT NOT NULL,
+                PRIMARY KEY (provider_id, model_name)
             );
             -- FTS5 full-text search for memory recall (M1)
             CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts USING fts5(
@@ -519,5 +527,44 @@ impl Memory for SqliteMemory {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM facts WHERE id = ?1", params![id])?;
         Ok(())
+    }
+
+    fn cache_discovered_models(&self, provider_id: &str, models: &[String]) -> anyhow::Result<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM discovered_models WHERE provider_id = ?1",
+            params![provider_id],
+        )?;
+        let fetched_at = chrono::Utc::now().to_rfc3339();
+        for model in models {
+            let model = model.trim();
+            if model.is_empty() {
+                continue;
+            }
+            tx.execute(
+                "INSERT OR REPLACE INTO discovered_models (provider_id, model_name, fetched_at)
+                 VALUES (?1, ?2, ?3)",
+                params![provider_id, model, fetched_at],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    fn get_discovered_models(&self, provider_id: &str) -> Vec<String> {
+        let conn = self.conn.lock().unwrap();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT model_name FROM discovered_models
+             WHERE provider_id = ?1
+               AND datetime(fetched_at) >= datetime('now', '-24 hours')
+             ORDER BY model_name ASC",
+        ) else {
+            return Vec::new();
+        };
+        let Ok(rows) = stmt.query_map(params![provider_id], |row| row.get::<_, String>(0)) else {
+            return Vec::new();
+        };
+        rows.filter_map(|row| row.ok()).collect()
     }
 }

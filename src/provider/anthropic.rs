@@ -27,6 +27,11 @@ impl AnthropicAdapter {
         }
     }
 
+    pub fn with_caps(mut self, caps: ModelCaps) -> Self {
+        self.caps = caps;
+        self
+    }
+
     fn model_caps(model: &str) -> ModelCaps {
         if model.contains("opus") {
             ModelCaps {
