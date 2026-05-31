@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
 use crate::config::Config;
 use crate::engine::{Engine, Task};
@@ -49,6 +50,7 @@ pub struct SparrowRuntime {
     running: std::sync::atomic::AtomicBool,
     // Running tasks
     active_runs: tokio::sync::Mutex<std::collections::HashMap<String, tokio::task::JoinHandle<()>>>,
+    cancellations: Arc<tokio::sync::Mutex<std::collections::HashMap<String, CancellationToken>>>,
 }
 
 impl SparrowRuntime {
@@ -69,6 +71,7 @@ impl SparrowRuntime {
             _config: config,
             running: std::sync::atomic::AtomicBool::new(false),
             active_runs: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+            cancellations: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
         }
     }
 
@@ -182,6 +185,7 @@ impl Runtime for SparrowRuntime {
     async fn submit(&self, req: RunRequest) -> anyhow::Result<String> {
         let run_id = uuid::Uuid::new_v4().to_string();
         let (tx, mut rx) = mpsc::unbounded_channel();
+        let cancel_token = CancellationToken::new();
 
         let task = Task {
             description: req.task.clone(),
@@ -204,13 +208,32 @@ impl Runtime for SparrowRuntime {
         let event_bus = self.event_bus.clone();
         let recorder = self.recorder.clone();
         let rid = run_id.clone();
+        let token = cancel_token.clone();
+        let cancellations = self.cancellations.clone();
 
         let handle = tokio::spawn(async move {
             let engine_rid = rid.clone();
+            let cancel_rid = rid.clone();
+            let cancel_tx = tx.clone();
             let engine_handle = tokio::spawn(async move {
-                engine
-                    .drive_with_run_id(task, tx, crate::event::RunId(engine_rid))
-                    .await
+                tokio::select! {
+                    result = engine.drive_with_run_id(task, tx, crate::event::RunId(engine_rid)) => result,
+                    _ = token.cancelled() => {
+                        let _ = cancel_tx.send(Event::Error {
+                            run: crate::event::RunId(cancel_rid),
+                            message: "interrupted".into(),
+                        });
+                        Ok(crate::event::OutcomeSummary {
+                            status: "interrupted".into(),
+                            cost_usd: 0.0,
+                            tokens: crate::event::TokenUsage {
+                                input: 0,
+                                output: 0,
+                            },
+                            diffs: vec![],
+                        })
+                    }
+                }
             });
 
             while let Some(event) = rx.recv().await {
@@ -221,9 +244,14 @@ impl Runtime for SparrowRuntime {
             if let Err(err) = engine_handle.await {
                 tracing::error!("runtime engine task failed: {}", err);
             }
+            cancellations.lock().await.remove(&rid);
             let _ = recorder.finalize(&rid);
         });
 
+        self.cancellations
+            .lock()
+            .await
+            .insert(run_id.clone(), cancel_token);
         self.active_runs.lock().await.insert(run_id.clone(), handle);
         Ok(run_id)
     }
@@ -232,10 +260,14 @@ impl Runtime for SparrowRuntime {
         self.event_bus.subscribe_all()
     }
 
-    async fn interrupt(&self, _run_id: &str, _msg: &str) -> anyhow::Result<()> {
-        // M4: basic — just note the interrupt
-        tracing::info!("Interrupt requested for run {}: {}", _run_id, _msg);
-        Ok(())
+    async fn interrupt(&self, run_id: &str, msg: &str) -> anyhow::Result<()> {
+        tracing::info!("Interrupt requested for run {}: {}", run_id, msg);
+        if let Some(token) = self.cancellations.lock().await.get(run_id).cloned() {
+            token.cancel();
+            Ok(())
+        } else {
+            anyhow::bail!("No active run found for interrupt: {}", run_id)
+        }
     }
 
     async fn start(&self) -> anyhow::Result<()> {

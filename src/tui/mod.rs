@@ -15,6 +15,7 @@ use ratatui::{
     text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph},
 };
+use tokio::sync::mpsc;
 
 pub mod theme;
 
@@ -80,6 +81,8 @@ pub struct Tui {
     frame: u64,
     spinner_idx: usize,
     booted: bool,
+    event_rx: Option<mpsc::UnboundedReceiver<Event>>,
+    task_tx: Option<mpsc::UnboundedSender<String>>,
 }
 
 impl Tui {
@@ -96,7 +99,19 @@ impl Tui {
             frame: 0,
             spinner_idx: 0,
             booted: false,
+            event_rx: None,
+            task_tx: None,
         }
+    }
+
+    pub fn with_channels(
+        mut self,
+        task_tx: mpsc::UnboundedSender<String>,
+        event_rx: mpsc::UnboundedReceiver<Event>,
+    ) -> Self {
+        self.task_tx = Some(task_tx);
+        self.event_rx = Some(event_rx);
+        self
     }
 
     pub fn push_event(&mut self, event: Event) {
@@ -231,19 +246,7 @@ impl Tui {
     }
 
     fn boot(&mut self) {
-        let logo = [
-            "        ^^          ",
-            "      .-~~~-.        ",
-            "     /__     \\       ",
-            "    | o   ██  |      ",
-            "    |    v    |      ",
-            "    | .       |      ",
-            "     \\ \\__/  /       ",
-            "      '-..-'          ",
-            "      /|  |\\  ╤━o     ",
-            "     '_|  |_'          ",
-        ];
-        for l in &logo {
+        for l in theme::ASCII_SPARROW.lines() {
             self.add_line(l, LogStyle::Brand, 0);
         }
         self.add_line(
@@ -296,6 +299,7 @@ impl Tui {
     fn main_loop(&mut self, terminal: &mut CrosstermTerminal) -> io::Result<()> {
         let start = Instant::now();
         loop {
+            self.drain_engine_events();
             self.frame += 1;
             self.spinner_idx = (self.spinner_idx + 1) % 10;
             terminal.draw(|f| self.render(f, start.elapsed().as_secs_f64()))?;
@@ -320,12 +324,18 @@ impl Tui {
                             self.input.pop();
                         }
                         KeyCode::Enter => {
-                            if !self.input.is_empty() {
-                                self.add_line(
-                                    &format!("sparrow › {}", self.input),
-                                    LogStyle::Prompt,
-                                    0,
-                                );
+                            let task = self.input.trim().to_string();
+                            if !task.is_empty() {
+                                self.add_line(&format!("sparrow › {}", task), LogStyle::Prompt, 0);
+                                if let Some(tx) = &self.task_tx {
+                                    if tx.send(task).is_err() {
+                                        self.add_line(
+                                            "runtime channel disconnected",
+                                            LogStyle::Err,
+                                            0,
+                                        );
+                                    }
+                                }
                                 self.input.clear();
                             }
                         }
@@ -335,6 +345,30 @@ impl Tui {
             }
         }
         Ok(())
+    }
+
+    fn drain_engine_events(&mut self) {
+        let mut disconnected = false;
+        let mut events = Vec::new();
+        if let Some(rx) = self.event_rx.as_mut() {
+            loop {
+                match rx.try_recv() {
+                    Ok(event) => events.push(event),
+                    Err(mpsc::error::TryRecvError::Empty) => break,
+                    Err(mpsc::error::TryRecvError::Disconnected) => {
+                        disconnected = true;
+                        break;
+                    }
+                }
+            }
+        }
+        for event in events {
+            self.push_event(event);
+        }
+        if disconnected {
+            self.event_rx = None;
+            self.add_line("runtime event stream disconnected", LogStyle::Warn, 0);
+        }
     }
 
     fn render(&self, f: &mut Frame, _elapsed: f64) {

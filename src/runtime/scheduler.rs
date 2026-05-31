@@ -2,8 +2,10 @@ use chrono::{DateTime, Timelike, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+use crate::engine::{Engine, Task};
 use crate::event::AutonomyLevel;
 use crate::memory::Memory;
+use crate::runtime::recorder::{FsRecorder, Recorder, RunInputs};
 
 // ─── Job ────────────────────────────────────────────────────────────────────────
 
@@ -145,6 +147,57 @@ impl MemoryScheduler {
                 }
             }
         }
+    }
+
+    pub fn start_cron_loop(
+        self: &Arc<Self>,
+        engine: Arc<Engine>,
+        recorder: Arc<FsRecorder>,
+    ) -> tokio::task::JoinHandle<()> {
+        let scheduler = self.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
+                let due_jobs = scheduler.tick().await;
+                for job in due_jobs {
+                    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+                    let task = Task {
+                        description: job.task.clone(),
+                        context: vec![],
+                    };
+                    let run_id = uuid::Uuid::new_v4().to_string();
+                    recorder.start_run(
+                        run_id.clone(),
+                        RunInputs {
+                            task: job.task.clone(),
+                            config_snapshot: serde_json::json!({}),
+                            model_id: "scheduled".into(),
+                            repo_head: None,
+                            timestamp: Utc::now().to_rfc3339(),
+                            agent: "scheduler".into(),
+                        },
+                    );
+
+                    let engine_clone = engine.clone();
+                    let recorder_clone = recorder.clone();
+                    tokio::spawn(async move {
+                        let engine_run_id = run_id.clone();
+                        let engine_handle = tokio::spawn(async move {
+                            engine_clone
+                                .drive_with_run_id(task, tx, crate::event::RunId(engine_run_id))
+                                .await
+                        });
+                        while let Some(event) = rx.recv().await {
+                            recorder_clone.record(&event);
+                        }
+                        if let Err(err) = engine_handle.await {
+                            tracing::error!("scheduled engine task failed: {}", err);
+                        }
+                        let _ = recorder_clone.finalize(&run_id);
+                    });
+                }
+            }
+        })
     }
 }
 
