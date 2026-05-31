@@ -226,6 +226,34 @@ mod tests {
     }
 
     #[test]
+    fn test_router_small_prefers_ollama_before_free_cloud() {
+        let mut config = Config::default();
+        config.routing.free_first = true;
+
+        let mut providers = std::collections::HashMap::new();
+        providers.insert("ollama".into(), vec![make_mock("qwen3.5:32b", 0.0, 0.0, LatencyClass::Slow)]);
+        providers.insert("nvidia".into(), vec![make_mock("nvidia/nemotron", 0.0, 0.0, LatencyClass::Fast)]);
+
+        let router = BasicRouter::new(&config, providers);
+        let need = RoutingNeed {
+            tier: TaskTier::Small,
+            required_tools: false,
+            required_vision: false,
+            prefer_local: false,
+        };
+        let budget = BudgetState {
+            daily_limit_usd: 100.0,
+            daily_spent_usd: 0.0,
+            session_limit_usd: 10.0,
+            session_spent_usd: 0.0,
+        };
+
+        let chain = router.select(&need, &budget);
+        assert_eq!(chain[0].id(), "qwen3.5:32b");
+        assert_eq!(chain[1].id(), "nvidia/nemotron");
+    }
+
+    #[test]
     fn test_router_rate_limit_retry() {
         let router = BasicRouter::new(&Config::default(), std::collections::HashMap::new());
         let brain = make_mock("test", 1.0, 1.0, LatencyClass::Fast);

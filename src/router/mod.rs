@@ -241,6 +241,19 @@ impl Router for BasicRouter {
             result.push(brain.clone());
         }
 
+        if matches!(need.tier, TaskTier::Trivial | TaskTier::Small) {
+            if let Some((pos, _)) = scored
+                .iter()
+                .enumerate()
+                .find(|(_, (_, provider_name, _))| {
+                    provider_name == "local" || provider_name == "ollama"
+                })
+            {
+                let local_brain = result.remove(pos);
+                result.insert(0, local_brain);
+            }
+        }
+
         // If free_first and there's a free model, push it first for small tasks.
         if self.free_first {
             if let Some(pos) = result.iter().position(|b| {

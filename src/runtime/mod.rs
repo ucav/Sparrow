@@ -89,7 +89,7 @@ impl SparrowRuntime {
                 for job in due_jobs {
                     tracing::info!("Running scheduled job: {} ({})", job.id, job.task);
 
-                    let (tx, _rx) = mpsc::unbounded_channel::<Event>();
+                    let (tx, mut rx) = mpsc::unbounded_channel::<Event>();
                     let task = Task {
                         description: job.task.clone(),
                         context: vec![],
@@ -108,16 +108,33 @@ impl SparrowRuntime {
                         },
                     );
 
-                    // Forward events to bus + recorder
                     let event_bus_clone = event_bus.clone();
                     let recorder_clone = recorder.clone();
                     let run_id_clone = run_id.clone();
+                    let engine_clone = engine.clone();
 
-                    // Submit to engine
-                    let _engine = engine.clone();
-                    let _tx = tx;
+                    tokio::spawn(async move {
+                        let engine_run_id = run_id_clone.clone();
+                        let engine_handle = tokio::spawn(async move {
+                            engine_clone
+                                .drive_with_run_id(
+                                    task,
+                                    tx,
+                                    crate::event::RunId(engine_run_id),
+                                )
+                                .await
+                        });
 
-                    let _ = recorder_clone.finalize(&run_id_clone);
+                        while let Some(event) = rx.recv().await {
+                            recorder_clone.record(&event);
+                            event_bus_clone.publish(event);
+                        }
+
+                        if let Err(err) = engine_handle.await {
+                            tracing::error!("scheduled engine task failed: {}", err);
+                        }
+                        let _ = recorder_clone.finalize(&run_id_clone);
+                    });
                 }
             }
         });
@@ -172,7 +189,7 @@ impl SparrowRuntime {
 impl Runtime for SparrowRuntime {
     async fn submit(&self, req: RunRequest) -> anyhow::Result<String> {
         let run_id = uuid::Uuid::new_v4().to_string();
-        let (tx, _rx) = mpsc::unbounded_channel();
+        let (tx, mut rx) = mpsc::unbounded_channel();
 
         let task = Task {
             description: req.task.clone(),
@@ -197,11 +214,20 @@ impl Runtime for SparrowRuntime {
         let rid = run_id.clone();
 
         let handle = tokio::spawn(async move {
-            if let Ok(outcome) = engine.drive(task, tx).await {
-                let _ = event_bus.publish(Event::RunFinished {
-                    run: crate::event::RunId(rid.clone()),
-                    outcome,
-                });
+            let engine_rid = rid.clone();
+            let engine_handle = tokio::spawn(async move {
+                engine
+                    .drive_with_run_id(task, tx, crate::event::RunId(engine_rid))
+                    .await
+            });
+
+            while let Some(event) = rx.recv().await {
+                recorder.record(&event);
+                event_bus.publish(event);
+            }
+
+            if let Err(err) = engine_handle.await {
+                tracing::error!("runtime engine task failed: {}", err);
             }
             let _ = recorder.finalize(&rid);
         });
@@ -227,12 +253,9 @@ impl Runtime for SparrowRuntime {
         self.running
             .store(true, std::sync::atomic::Ordering::SeqCst);
 
-        // Start API server
         let api_addr = "127.0.0.1:9337";
-        // Don't .await - let it run in background
-        let runtime = self as *const SparrowRuntime;
-        // We can't easily call &self methods from a static context,
-        // so we just note the API is available.
+        self.cron_loop().await;
+        self.serve_api(api_addr).await?;
         tracing::info!("Runtime started. API at {}", api_addr);
         tracing::info!("Scheduled jobs active.");
 

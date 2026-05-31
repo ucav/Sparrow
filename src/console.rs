@@ -1,10 +1,12 @@
 use std::net::SocketAddr;
+use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, oneshot, Mutex};
 
 use crate::auth::{AuthStore, Credential};
 use crate::config::{Config, ConfigStore, FsConfigStore, ProviderConfig};
-use crate::event::Event;
+use crate::engine::{ApprovalHandler, ApprovalRequest};
+use crate::event::{Decision, Event};
 
 // ─── Embedded HTML ─────────────────────────────────────────────────────────────
 
@@ -26,6 +28,7 @@ pub struct WebViewServer {
     event_tx: broadcast::Sender<Event>,
     command_tx: Option<mpsc::UnboundedSender<String>>,
     config: Option<Arc<RwLock<Config>>>,
+    approvals: Option<Arc<WebApprovalBroker>>,
 }
 
 impl WebViewServer {
@@ -34,8 +37,9 @@ impl WebViewServer {
         event_tx: broadcast::Sender<Event>,
         command_tx: Option<mpsc::UnboundedSender<String>>,
         config: Option<Arc<RwLock<Config>>>,
+        approvals: Option<Arc<WebApprovalBroker>>,
     ) -> Self {
-        Self { addr, event_tx, command_tx, config }
+        Self { addr, event_tx, command_tx, config, approvals }
     }
 
     pub async fn serve(&self) -> anyhow::Result<()> {
@@ -54,11 +58,13 @@ impl WebViewServer {
             event_tx: event_tx.clone(),
             command_tx: self.command_tx.clone(),
             config: self.config.clone(),
+            approvals: self.approvals.clone(),
         });
 
         let app = Router::new()
             .route("/", get(|| async { Html(CONSOLE_HTML) }))
             .route("/run", post(run_task))
+            .route("/approval", post(resolve_approval))
             .route("/config", get(get_config).post(save_provider))
             .route("/ws", get(move |ws: WebSocketUpgrade, State(state): State<Arc<AppState>>| async move {
                 let rx = state.event_tx.subscribe();
@@ -79,6 +85,38 @@ struct AppState {
     event_tx: broadcast::Sender<Event>,
     command_tx: Option<mpsc::UnboundedSender<String>>,
     config: Option<Arc<RwLock<Config>>>,
+    approvals: Option<Arc<WebApprovalBroker>>,
+}
+
+#[derive(Default)]
+pub struct WebApprovalBroker {
+    pending: Mutex<HashMap<String, oneshot::Sender<Decision>>>,
+}
+
+impl WebApprovalBroker {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub async fn resolve(&self, id: &str, decision: Decision) -> bool {
+        let mut pending = self.pending.lock().await;
+        pending
+            .remove(id)
+            .map(|tx| tx.send(decision).is_ok())
+            .unwrap_or(false)
+    }
+}
+
+#[async_trait::async_trait]
+impl ApprovalHandler for WebApprovalBroker {
+    async fn request_approval(&self, request: ApprovalRequest) -> Decision {
+        let (tx, rx) = oneshot::channel();
+        {
+            let mut pending = self.pending.lock().await;
+            pending.insert(request.id, tx);
+        }
+        rx.await.unwrap_or(Decision::Deny)
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -90,6 +128,12 @@ struct RunRequest {
 struct RunResponse {
     ok: bool,
     message: String,
+}
+
+#[derive(serde::Deserialize)]
+struct ApprovalResponseRequest {
+    id: String,
+    decision: String,
 }
 
 #[derive(serde::Serialize)]
@@ -117,12 +161,17 @@ struct ConfigResponse {
 
 #[derive(serde::Deserialize)]
 struct ProviderRequest {
+    #[serde(default)]
     name: String,
+    #[serde(default)]
     adapter: String,
     base_url: Option<String>,
+    #[serde(default)]
     models: Vec<String>,
     api_key_env: Option<String>,
     api_key: Option<String>,
+    autonomy: Option<String>,
+    sandbox: Option<String>,
 }
 
 async fn run_task(
@@ -146,6 +195,39 @@ async fn run_task(
             ok: false,
             message: "console command channel unavailable".into(),
         }),
+    }
+}
+
+async fn resolve_approval(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    axum::extract::Json(req): axum::extract::Json<ApprovalResponseRequest>,
+) -> axum::extract::Json<RunResponse> {
+    let Some(approvals) = &state.approvals else {
+        return axum::extract::Json(RunResponse {
+            ok: false,
+            message: "approval channel unavailable".into(),
+        });
+    };
+    let decision = match req.decision.trim().to_lowercase().as_str() {
+        "allow" | "approve" | "approved" => Decision::Allow,
+        "deny" | "reject" | "rejected" => Decision::Deny,
+        _ => {
+            return axum::extract::Json(RunResponse {
+                ok: false,
+                message: "decision must be approve or deny".into(),
+            });
+        }
+    };
+    if approvals.resolve(req.id.trim(), decision).await {
+        axum::extract::Json(RunResponse {
+            ok: true,
+            message: "approval resolved".into(),
+        })
+    } else {
+        axum::extract::Json(RunResponse {
+            ok: false,
+            message: "approval not found or already resolved".into(),
+        })
     }
 }
 
@@ -273,15 +355,35 @@ async fn save_provider(
         });
     };
 
+    let mut cfg = shared.write().expect("config lock poisoned");
+    if let Some(level) = parse_autonomy(req.autonomy.as_deref()) {
+        cfg.defaults.autonomy = level;
+    }
+    if let Some(sandbox) = req
+        .sandbox
+        .as_ref()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+    {
+        cfg.defaults.sandbox = sandbox;
+    }
+
     let name = req.name.trim().to_lowercase();
     if name.is_empty() {
+        let saved = cfg.clone();
+        let store = FsConfigStore::new(saved.config_dir.clone());
+        if let Err(err) = store.save(&saved) {
+            return axum::extract::Json(RunResponse {
+                ok: false,
+                message: format!("config save failed: {}", err),
+            });
+        }
         return axum::extract::Json(RunResponse {
-            ok: false,
-            message: "provider name required".into(),
+            ok: true,
+            message: "runtime preferences saved".into(),
         });
     }
 
-    let mut cfg = shared.write().expect("config lock poisoned");
     let raw_api_key_env = req
         .api_key_env
         .as_ref()
@@ -343,6 +445,15 @@ async fn save_provider(
         ok: true,
         message: format!("provider '{}' saved", name),
     })
+}
+
+fn parse_autonomy(value: Option<&str>) -> Option<crate::event::AutonomyLevel> {
+    match value.map(|s| s.trim().to_lowercase()).as_deref() {
+        Some("supervised") => Some(crate::event::AutonomyLevel::Supervised),
+        Some("trusted") => Some(crate::event::AutonomyLevel::Trusted),
+        Some("autonomous") => Some(crate::event::AutonomyLevel::Autonomous),
+        _ => None,
+    }
 }
 
 async fn handle_ws(mut socket: axum::extract::ws::WebSocket, mut event_rx: tokio::sync::broadcast::Receiver<Event>) {

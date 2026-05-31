@@ -102,6 +102,16 @@
   .config-panel .close{position:absolute;top:10px;right:14px;cursor:pointer;color:var(--dim);font-size:16px}
   .overlay{display:none;position:fixed;inset:0;z-index:199;background:rgba(0,0,0,.7)}
   .overlay.show{display:block}
+  .token-meter{display:inline-flex;gap:10px;align-items:center;margin:3px 0 5px 18px;color:var(--dim);font-size:11px}
+  .token-meter b{font-weight:600;color:var(--steel);font-variant-numeric:tabular-nums}
+  .token-meter .in b{color:var(--brand)}
+  .token-meter .out b{color:var(--add)}
+  .token-meter.pulse b{animation:tokpulse .44s ease-out}
+  @keyframes tokpulse{0%{filter:brightness(1);transform:translateY(0)}35%{filter:brightness(1.7);transform:translateY(-1px)}100%{filter:brightness(1);transform:translateY(0)}}
+  .approval-actions{display:flex;gap:8px;margin:7px 0 10px 18px}
+  .approval-actions button{font-family:inherit;font-size:11px;padding:5px 12px;border-radius:7px;cursor:pointer}
+  .approval-actions .approve{color:var(--add);background:rgba(116,194,88,.1);border:1px solid rgba(116,194,88,.35)}
+  .approval-actions .deny{color:var(--rem);background:rgba(217,106,99,.1);border:1px solid rgba(217,106,99,.35)}
 </style>
 </head>
 <body>
@@ -174,6 +184,22 @@
     <input type="password" id="apiKey" placeholder="paste key (never stored in HTML)">
     <span class="badge missing" id="credBadge">no key</span>
   </div>
+  <div class="row">
+    <label>autonomy</label>
+    <select id="autonomySelect">
+      <option value="supervised">supervised · ask before writes/exec</option>
+      <option value="trusted">trusted · checkpoint then act</option>
+      <option value="autonomous">autonomous · act within limits</option>
+    </select>
+  </div>
+  <div class="row">
+    <label>sandbox</label>
+    <select id="sandboxSelect">
+      <option value="local">local</option>
+      <option value="local-hardened">local-hardened</option>
+      <option value="docker">docker</option>
+    </select>
+  </div>
   <div class="tags" id="modelTags"></div>
   <div class="row" style="margin-top:12px">
     <button class="btn" id="saveConfig">save provider</button>
@@ -216,6 +242,7 @@ const term=document.getElementById('term');
 const $=id=>document.getElementById(id);
 let costV=0,tokV=0,tokInV=0,tokOutV=0,sessionTok=0,sessionCost=0;
 let actualInV=0,actualOutV=0,estInV=0,estOutV=0;
+let tokenMeter=null,tokenMeterTimer=null;
 
 function line(html,cls=''){const d=document.createElement('div');d.className='ln '+cls;d.innerHTML=html;term.appendChild(d);term.scrollTop=term.scrollHeight;return d;}
 
@@ -228,6 +255,7 @@ function setCost(c){
   sessionCost+=next-costV;
   costV=next;
   $('cost').textContent='$'+costV.toFixed(4);
+  if(tokenMeter)updateTokenMeter();
   updateSession();
 }
 function refreshTokens(){
@@ -236,6 +264,7 @@ function refreshTokens(){
   sessionTok+=tokV-prev;
   $('tokIn').textContent=tokInV.toLocaleString();$('tokOut').textContent=tokOutV.toLocaleString();
   $('tok').textContent=tokV.toLocaleString();updateSession();
+  updateTokenMeter();
   ['tokIn','tokOut','tok'].forEach(id=>{$(id).classList.add('up');setTimeout(()=>$(id).classList.remove('up'),400)});
 }
 function addTokEstimate(input=0,output=0){estInV+=input||0;estOutV+=output||0;refreshTokens();}
@@ -247,6 +276,20 @@ function addTokActual(input=0,output=0){
 function resetRunMetrics(){
   costV=0;tokV=0;tokInV=0;tokOutV=0;actualInV=0;actualOutV=0;estInV=0;estOutV=0;
   $('cost').textContent='$0.000';$('tokIn').textContent='0';$('tokOut').textContent='0';$('tok').textContent='0';
+  tokenMeter=null;
+}
+function ensureTokenMeter(){
+  if(tokenMeter)return tokenMeter;
+  tokenMeter=line('<span class="token-meter"><span class="in">sent <b data-tok-in>0</b> tok</span><span class="out">recv <b data-tok-out>0</b> tok</span><span class="cost">live $0.0000</span></span>');
+  return tokenMeter;
+}
+function updateTokenMeter(){
+  const row=ensureTokenMeter().querySelector('.token-meter');
+  row.querySelector('[data-tok-in]').textContent=tokInV.toLocaleString();
+  row.querySelector('[data-tok-out]').textContent=tokOutV.toLocaleString();
+  row.querySelector('.cost').textContent='live $'+costV.toFixed(4);
+  row.classList.remove('pulse');void row.offsetWidth;row.classList.add('pulse');
+  clearTimeout(tokenMeterTimer);tokenMeterTimer=setTimeout(()=>row.classList.remove('pulse'),460);
 }
 function setAuto(level){
   const map={supervised:'--sup',trusted:'--tru',autonomous:'--aut'};
@@ -269,7 +312,7 @@ connect();
 
 function handleEvent(ev){
   switch(ev.type){
-    case 'RunStarted':line(`<span class="acc">▸ started:</span> <span class="cmd">analyse de la requête</span>`);resetRunMetrics();break;
+    case 'RunStarted':line(`<span class="acc">▸ started:</span> <span class="cmd">analyse de la requête</span>`);resetRunMetrics();ensureTokenMeter();break;
     case 'RouteSelected':setRoute(ev.chain.join(' → '));line(`<span class="muted">↳ route: <span class="planner">${esc(ev.chain.join(' → '))}</span></span>`);break;
     case 'ModelSwitched':line(`<span class="warn">↳ switch: ${esc(ev.from)} → ${esc(ev.to)} (${esc(ev.reason)})</span>`);break;
     case 'Message':
@@ -278,6 +321,11 @@ function handleEvent(ev){
       break;
     case 'ThinkingDelta':line(`<span class="cmd">${esc(ev.text)}</span>`);break;
     case 'ToolUseProposed':line(`<span class="muted">◆ <span style="color:var(--steel)">${esc(ev.name)}</span></span>`);break;
+    case 'ApprovalRequested':
+      line(`<span class="warn">◌ approval required · ${esc(ev.summary)}</span>`);
+      line(`<span class="approval-actions" data-approval="${escAttr(ev.id)}"><button class="approve" onclick="resolveApproval('${escAttr(ev.id)}','approve',this)">approve</button><button class="deny" onclick="resolveApproval('${escAttr(ev.id)}','deny',this)">deny</button></span>`);
+      break;
+    case 'ApprovalResolved':line(`<span class="muted">↳ approval: <span class="planner">${esc(ev.decision)}</span></span>`);break;
     case 'AgentSpawned':line(`<span class="${roleCls(ev.role)}">◆ ${esc(ev.role)} spawned (${esc(ev.model)})</span>`);break;
     case 'AgentStatus':line(`<span class="${roleCls(ev.role)}">${icon(ev.status)} ${esc(ev.role)} — ${esc(ev.note)}</span>`);break;
     case 'CheckpointCreated':line(`<span class="acc">● checkpoint:</span> <span class="muted">${esc(ev.label)}</span>`);break;
@@ -337,6 +385,17 @@ async function runTask(){
   }catch(e){line(`<span class="err">Error: ${esc(e.message)}</span>`)}
 }
 
+async function resolveApproval(id,decision,btn){
+  const wrap=btn.closest('.approval-actions');
+  [...wrap.querySelectorAll('button')].forEach(b=>b.disabled=true);
+  try{
+    const r=await fetch('/approval',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,decision})});
+    const j=await r.json();
+    if(j.ok){wrap.innerHTML=`<span class="${decision==='approve'?'ok':'warn'}">${decision==='approve'?'approved':'denied'}</span>`}
+    else{wrap.innerHTML=`<span class="err">${esc(j.message)}</span>`}
+  }catch(e){wrap.innerHTML=`<span class="err">${esc(e.message)}</span>`}
+}
+
 // ─── CONFIG panel ────────────────────────────────────────────────────
 $('cfgBtn').addEventListener('click',()=>{$('overlay').classList.add('show');$('configPanel').classList.add('show');loadConfig()});
 $('closeConfig').addEventListener('click',()=>{$('overlay').classList.remove('show');$('configPanel').classList.remove('show')});
@@ -348,6 +407,9 @@ async function loadConfig(){
     const r=await fetch('/config');const j=await r.json();
     if(!j.ok)return;
     providers=j.providers||[];
+    if(j.autonomy){$('autonomySelect').value=j.autonomy.toLowerCase();}
+    if(j.sandbox){$('sandboxSelect').value=j.sandbox;}
+    setAuto(($('autonomySelect').value||'trusted').toLowerCase());
     const sel=$('provSelect');sel.innerHTML='<option value="">— choose provider —</option>'+providers.map(p=>`<option value="${escAttr(p.name)}">${esc(p.label||p.name)} (${esc(p.adapter)}) ${p.has_credential?'✓':p.configured?'•':''}</option>`).join('');
     sel.onchange=()=>selectProvider(sel.value);
     const badge=$('credBadge');
@@ -372,20 +434,22 @@ function selectProvider(name){
 }
 
 $('saveConfig').addEventListener('click',async()=>{
-  const name=$('provSelect').value;if(!name)return;
+  const name=$('provSelect').value;
   const p=providers.find(p=>p.name===name);
   const body={
     name,adapter:p?.adapter||'openai-compatible',base_url:p?.base_url||null,
     models:[$('modelSelect').value].filter(m=>m),
     api_key_env:$('apiKey').placeholder.startsWith('env:')?$('apiKey').placeholder.slice(5):null,
     api_key:$('apiKey').value.trim()||null,
+    autonomy:$('autonomySelect').value,
+    sandbox:$('sandboxSelect').value,
   };
   try{
     const r=await fetch('/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const j=await r.json();
     $('saveMsg').textContent=j.ok?'saved ✓':'error: '+j.message;
     $('saveMsg').style.color=j.ok?'var(--add)':'var(--rem)';
-    if(j.ok){$('apiKey').value='';await loadConfig();selectProvider(name)}
+    if(j.ok){$('apiKey').value='';await loadConfig();if(name)selectProvider(name);setAuto(($('autonomySelect').value||'trusted').toLowerCase())}
   }catch(e){$('saveMsg').textContent='error: '+e.message;$('saveMsg').style.color='var(--rem)'}
 });
 
