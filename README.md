@@ -9,6 +9,7 @@
 
 <p>
   <img alt="Sparrow mascot" src="assets/brand/sparrow-mascot.svg" width="128">
+  <img alt="Sparrow cockpit mark" src="assets/brand/sparrow-cockpit.svg" width="48">
 </p>
 
 Sparrow is an experimental single-binary CLI agent written in Rust. It is built around one event stream that can be rendered by a terminal UI, a WebView console, JSON output, or gateway surfaces. Its main design goal is simple: route each task to the cheapest capable model, keep the user in control, and make every run replayable.
@@ -48,9 +49,10 @@ See [docs/AUDIT.md](docs/AUDIT.md) for module-by-module proof.
 
 The WebView console mirrors Sparrow's brand demo instead of exposing raw runtime noise:
 
+- the visible logo uses the canonical `sparrow-logo.html` mascot/cockpit mark across GitHub, WebView, presentation, and terminal-native ASCII fallback;
 - local model failures are presented as `modèle local indisponible -> routage modèle cloud`;
 - token and cost counters update live from the event stream;
-- boot lines, route changes, tool activity, skill learning, and the Sparrow mascot use the same motion language as the presentation HTML;
+- boot lines, route changes, tool activity, skill learning, swarm lanes, and the Sparrow mascot use the same motion language as the presentation HTML;
 - learned skills are pattern-based names such as `write-and-fix-tests`, not copied user prompts.
 
 Skill learning is intentionally conservative. Sparrow only proposes reusable workflow patterns after concrete evidence such as tests, fixes, diffs, refactors, or code changes, and it skips repository-specific prompts, URLs, file names, dates, versions, and duplicate skill names.

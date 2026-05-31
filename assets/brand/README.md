@@ -55,9 +55,11 @@ Wordmark: 700 weight, letter-spacing ~3px, amber→coral gradient.
 
 **Web/HTML:** Use `<symbol id="sparrow">` or `<symbol id="sparrow-cockpit">` from `sparrow-logo.html`.
 
-**Terminal:** Use `sparrow-ascii.txt` verbatim.
+**Terminal:** Use `sparrow-ascii.txt` verbatim. This is the CLI/TUI rendering of the same pirate-builder mascot when SVG is not available.
 
 **App icon:** Use `sparrow-mascot.svg` or `sparrow-cockpit.svg`.
+
+**WebView and presentation:** Keep the cockpit mark visible in the permanent cockpit bar and reserve the ASCII variant for the terminal transcript area.
 
 ## Voice
 
