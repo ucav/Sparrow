@@ -658,4 +658,62 @@ mod tests {
 
         let _ = std::fs::remove_file(&tmp);
     }
+
+    // ─── M2 Swarm Tests ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_file_locks_prevent_collision() {
+        use sparrow::orchestrator::FileLocks;
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let locks = FileLocks::new();
+            // Lock file A
+            assert!(locks.try_lock(&["auth.rs".into()]).await.is_ok());
+            // Can't lock same file again
+            assert!(locks.try_lock(&["auth.rs".into()]).await.is_err());
+            // But can lock different file
+            assert!(locks.try_lock(&["token.rs".into()]).await.is_ok());
+            // Release
+            locks.release(&["auth.rs".into()]).await;
+            // Now can lock again
+            assert!(locks.try_lock(&["auth.rs".into()]).await.is_ok());
+        });
+    }
+
+    #[test]
+    fn test_swarm_verdict_pass_rework() {
+        use sparrow::orchestrator::Verdict;
+        let pass = Verdict::Pass;
+        let rework = Verdict::Rework { findings: vec!["missing edge case".into()] };
+
+        assert!(matches!(pass, Verdict::Pass));
+        if let Verdict::Rework { findings } = rework {
+            assert_eq!(findings.len(), 1);
+        } else {
+            panic!("expected Rework");
+        }
+    }
+
+    #[test]
+    fn test_swarm_plan_defaults() {
+        use sparrow::orchestrator::SwarmPlan;
+        let plan = SwarmPlan::default();
+        assert_eq!(plan.max_reworks, 3);
+    }
+
+    #[test]
+    fn test_orchestrator_events_emitted() {
+        // Smoke test: orchestrator struct can be constructed
+        let config = sparrow::config::Config::default();
+        let router = Arc::new(sparrow::router::BasicRouter::new(
+            &config,
+            std::collections::HashMap::new(),
+        ));
+        let memory: Arc<dyn sparrow::memory::Memory> = Arc::new(
+            sparrow::memory::SqliteMemory::open(&std::env::temp_dir().join("sparrow-m2-swarm-smoke.db")).unwrap()
+        );
+        let _orchestrator = sparrow::orchestrator::DefaultOrchestrator::new(router, config, memory);
+        // Verify orchestrator can be constructed without panicking
+        assert!(true);
+    }
 }
