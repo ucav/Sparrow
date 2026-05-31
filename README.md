@@ -115,28 +115,28 @@ sparrow --json run "task"                  # NDJSON for CI
 |---|---|
 | Specification | ✅ Complete |
 | Branding & Visual Identity | ✅ Complete |
-| Rust Kernel (M0) | ✅ Builds, 41 tests pass |
-| CLI Grammar | ✅ All commands defined |
-| Provider Registry | ✅ 35 providers |
+| Rust Kernel (M0) | ✅ 54 tests, cargo build --release OK |
+| CLI Grammar | ✅ 25+ subcommands |
+| Provider Registry | ✅ 35 providers (Hermes Agent parity) |
 | Native Ollama Adapter | ✅ /api/chat + NDJSON streaming |
-| Authentication | ✅ Env + encrypted file + keychain |
-| Routing Engine | ✅ Model scoring + fallback chains |
+| Routing Engine | ✅ Scoring + fallback + budget-aware |
 | Autonomy Gate | ✅ 15-combination matrix tested |
 | Checkpoint/Rewind | ✅ Git-based, rewind restores cleanly |
 | Memory (SQLite 4-tier) | ✅ FTS5 + redaction + persistence |
-| Agent SOUL Files | ✅ Persistent, survives sessions |
-| TUI (ratatui) | ✅ Cockpit, scroll, ASCII mascot |
-| WebView Console | ✅ HTTP + WebSocket + JS client |
-| Swarm Orchestrator | ✅ Planner→Coder→Verifier + REWORK |
-| Skills + Curator | ✅ Self-improving loop |
-| Scheduler | ✅ Cron jobs + persistence |
-| Recorder/Replayer | ✅ Transcript format |
-| Gateway (Telegram/Discord/Slack) | ✅ 11 transport stubs |
-| `sparrow chat` interactive | ✅ Multi-turn chat mode |
-| `--json` NDJSON output | ✅ CI/hook friendly |
-| Install script | ✅ `install.sh` |
-| Cross-compilation | ⬜ Linux musl, macOS, Windows |
-| M6 Polish | ⬜ IBM Plex Mono, signed releases |
+| Agent SOUL Files | ✅ 5 agents (planner, coder, verifier, researcher, debugger) |
+| TUI (ratatui) | ✅ Cockpit, scroll, ASCII mascot, autocomplete |
+| WebView Console | ✅ HTTP + WebSocket + JS client + config panel |
+| Swarm Orchestrator | ✅ Planner→Coder→Verifier + REWORK + file locks |
+| Skills + Curator | ✅ 11 default skills + self-improving loop |
+| Scheduler | ✅ Cron + persistence |
+| Recorder/Replayer | ✅ Transcripts + golden replay |
+| Gateway | ✅ 11 transports (Telegram, Discord, Slack, ...) |
+| Reasoning Layer | ✅ Anti-simulation + hallucination guard + self-critique |
+| Hooks System | ✅ 12 lifecycle events, blocking/non-blocking |
+| Builder Tools | ✅ test, apply_patch, git PR, fetch_docs, LSP, REPL |
+| Phase 1 (M0-M6) | ✅ Complete |
+| Phase 2 (WS1-WS7) | ✅ Complete |
+| Cross-compilation | ⬜ Linux musl, macOS, Windows (CI configured) |
 
 ---
 
