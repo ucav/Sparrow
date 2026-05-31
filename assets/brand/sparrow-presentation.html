@@ -26,7 +26,7 @@
   .ember{position:fixed;bottom:-10px;width:3px;height:3px;border-radius:50%;opacity:0;z-index:1;filter:blur(.4px);animation:drift linear infinite}
   @keyframes drift{0%{transform:translateY(0)}12%{opacity:.5}88%{opacity:.35}100%{transform:translateY(-106vh) translateX(36px);opacity:0}}
 
-  .win{width:min(960px,100%);background:linear-gradient(180deg,#14110c,#0f0c09);
+  .win{width:min(1040px,100%);background:linear-gradient(180deg,#14110c,#0f0c09);
     border:1px solid var(--line);border-radius:14px;overflow:hidden;
     box-shadow:0 44px 130px -34px rgba(0,0,0,.86),0 0 0 1px rgba(242,169,60,.04),inset 0 1px 0 rgba(255,255,255,.03);
     animation:rise .7s cubic-bezier(.2,.8,.2,1) both}
@@ -47,8 +47,19 @@
   .cockpit{display:flex;align-items:center;flex-wrap:wrap;gap:0;padding:9px 16px;
     border-bottom:1px solid var(--line);background:linear-gradient(180deg,#1b150d,#161108);font-size:12px}
   .cmark{display:flex;align-items:center;gap:8px;padding-right:16px;border-right:1px solid var(--line)}
-  .cmark .w{font-weight:700;letter-spacing:2.5px;font-size:13px;
-    background:linear-gradient(90deg,var(--brand),var(--coral));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .cmark svg{flex:0 0 auto}
+  .cmark .w,.word{font-weight:700;letter-spacing:11px;font-size:13px;
+    background:linear-gradient(90deg,#f2a93c,#f0674a,#f2a93c);background-size:220% 100%;
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    animation:wordin .6s ease 1.0s both,shimmer 3.2s linear 1.6s infinite}
+  .bird path.stroke{stroke-dasharray:520;stroke-dashoffset:520;animation:draw 1.15s cubic-bezier(.5,0,.2,1) .15s forwards}
+  @keyframes draw{to{stroke-dashoffset:0}}
+  .bird path.fill{opacity:0;animation:fillin .7s ease 1.05s forwards}
+  @keyframes fillin{to{opacity:1}}
+  .bird g.wings{transform-origin:50px 48px;animation:flap 2.6s ease-in-out 1.4s infinite}
+  @keyframes flap{0%,100%{transform:scaleX(1) scaleY(1)}50%{transform:scaleX(.9) scaleY(1.04)}}
+  @keyframes shimmer{to{background-position:220% 0}}
+  @keyframes wordin{from{opacity:0;letter-spacing:24px;filter:blur(6px)}to{opacity:1;letter-spacing:11px;filter:none}}
   .stat{display:flex;align-items:center;gap:7px;padding:0 15px;border-right:1px solid var(--line);color:var(--dim)}
   .stat:last-child{border-right:none}
   .stat .k{color:var(--dimmer);font-size:10px;letter-spacing:.7px;text-transform:uppercase}
@@ -58,9 +69,29 @@
   .pill{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:10.5px;
     font-weight:600;letter-spacing:.5px;transition:.3s}
   .pill .led{width:6px;height:6px;border-radius:50%}
+  .swarm-cockpit{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,#17120d,#120f0b);font-size:12px}
+  .lane{display:grid;grid-template-columns:82px 78px 1fr;align-items:center;gap:9px;padding:9px 14px;border-right:1px solid var(--line);
+    min-width:0;animation:lanein .45s ease both}
+  .lane:last-child{border-right:none}
+  .lane .who{font-weight:700;letter-spacing:.4px}
+  .lane.planner .who{color:var(--planner)}.lane.coder .who{color:var(--agent)}.lane.verifier .who{color:var(--verifier)}
+  .lane .st{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--dim);white-space:nowrap}
+  .lane .msg{color:var(--dim);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .lane .msg b{color:var(--fg);font-weight:500}
+  .lane.working .st{color:var(--agent)}.lane.done .st{color:var(--add)}.lane.idle .st{color:var(--dimmer)}.lane.error .st{color:var(--rem)}
+  .lane .led-mini{width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 9px currentColor}
+  .lane.working .led-mini{animation:pulse 1.3s ease-in-out infinite}
+  @keyframes lanein{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+  @media(max-width:820px){
+    body{padding:12px 8px}
+    .swarm-cockpit{grid-template-columns:1fr}
+    .lane{border-right:none;border-bottom:1px solid var(--line)}
+    .lane:last-child{border-bottom:none}
+  }
 
   /* terminal */
-  #term{height:60vh;min-height:360px;overflow-y:auto;padding:16px 18px 22px;font-size:13px;line-height:1.62;scroll-behavior:smooth}
+  #term{height:52vh;min-height:320px;overflow-y:auto;padding:16px 18px 22px;font-size:13px;line-height:1.62;scroll-behavior:smooth}
   #term::-webkit-scrollbar{width:9px}#term::-webkit-scrollbar-thumb{background:#2c2419;border-radius:6px}
   .ln{white-space:pre-wrap;word-break:break-word;animation:in .18s ease}
   @keyframes in{from{opacity:0;transform:translateY(3px)}to{opacity:1}}
@@ -71,16 +102,25 @@
   .tg{color:var(--planner)} .b{color:var(--fg);font-weight:500}
   .cur,.cur2{display:inline-block;width:8px;height:15px;background:var(--brand);vertical-align:-2px;animation:bl 1s steps(1) infinite}
   .cur2{background:var(--fg)}
+  .caret{display:inline-block;width:7px;height:13px;background:var(--agent);margin-left:2px;vertical-align:-2px;animation:bl 1.05s steps(1) infinite}
   @keyframes bl{50%{opacity:0}}
   .sp{display:inline-block;color:var(--brand)}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .spin-star{display:inline-block;animation:spin 1s steps(8) infinite;color:var(--brand)}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.35;transform:scale(.7)}}
+  .led-pulse{display:inline-block;width:7px;height:7px;border-radius:50%;animation:pulse 1.3s ease-in-out infinite;background:var(--agent)}
+  .verb{display:inline-block;color:var(--brand);min-width:68px;margin-left:4px}
 
   /* ascii bird */
-  .bird{line-height:1.18;font-size:14px;margin:4px 0 6px}
+  .bird{line-height:1.18;font-size:14px;margin:4px auto 6px;width:max-content;max-width:100%;position:relative}
+  .bird-ghost{color:var(--brand);opacity:0;filter:blur(8px);transform:translateX(-11px);pointer-events:none}
+  .bird-ghost.go{animation:ghostin 1s ease 1.25s forwards}
+  @keyframes ghostin{0%{opacity:0}40%{opacity:.22}100%{opacity:0}}
   .bird .fr{color:var(--brand)} .bird .eye{color:#fff} .bird .patch{color:#1c150c;background:#1c150c;border-radius:2px}
   .bird .beak{color:var(--coral)} .bird .tool{color:var(--steel)} .bird .gold{color:var(--gold)} .bird .belly{color:#f7d089}
   .bird .brow{color:#5a4326} .bird .cheek{color:#f0674a}
   .tagline{color:var(--dim);font-size:12px;letter-spacing:1px;margin-bottom:10px}
-  .tagline b{background:linear-gradient(90deg,var(--brand),var(--coral));-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:700;letter-spacing:2px}
+  .tagline b{background:linear-gradient(90deg,#f2a93c,#f0674a,#f2a93c);background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:700;letter-spacing:11px;animation:wordin .6s ease 1.0s both,shimmer 3.2s linear 1.6s infinite}
 
   /* diff */
   .diff{border:1px solid var(--line);border-radius:8px;margin:7px 0;background:var(--panel);overflow:hidden}
@@ -101,6 +141,10 @@
   .cap .c{color:var(--add)} .cap b{color:var(--fg);font-weight:600}
   .sec{color:var(--dimmer);font-size:10.5px;letter-spacing:2px;text-transform:uppercase;margin:14px 0 4px}
   .tg-bubble{border-left:2px solid var(--planner);padding-left:10px;margin:2px 0;color:var(--dim)}
+  .learn-toast{animation:learnpop 4.2s ease}
+  @keyframes learnpop{0%{opacity:0;transform:translateY(5px)}10%{opacity:1;transform:none}82%{opacity:1}100%{opacity:0;transform:translateY(-5px)}}
+  .boot-line{opacity:0;animation:fin .35s ease forwards}
+  @keyframes fin{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 </style>
 </head>
 <body>
@@ -165,11 +209,29 @@
     </div>
 
     <div class="cockpit">
-      <div class="cmark"><svg width="26" height="26" aria-label="Sparrow" style="filter:drop-shadow(0 0 6px rgba(242,169,60,.5))"><use href="#sparrow-cockpit"/></svg><span class="w">SPARROW</span></div>
+      <div class="cmark"><svg width="32" height="32" aria-label="Sparrow cockpit mark" style="filter:drop-shadow(0 0 8px rgba(242,169,60,.52))"><use href="#sparrow-cockpit"/></svg><span class="w word">SPARROW</span></div>
       <div class="stat"><span class="k">route</span><span class="route" id="route">idle</span></div>
       <div class="stat"><span class="k">cost</span><span class="cost" id="cost">$0.000</span></div>
       <div class="stat"><span class="k">tokens</span><span class="tok" id="tok">0</span></div>
       <div class="stat"><span class="k">autonomy</span><span class="pill" id="auto"><span class="led"></span><span id="autotxt">—</span></span></div>
+    </div>
+
+    <div class="swarm-cockpit" aria-label="Sparrow swarm cockpit">
+      <div class="lane planner idle" id="swarm-planner">
+        <span class="who">planner</span>
+        <span class="st"><span class="led-mini"></span><span data-role-state>idle</span></span>
+        <span class="msg" data-role-msg>waiting for task decomposition</span>
+      </div>
+      <div class="lane coder idle" id="swarm-coder">
+        <span class="who">coder</span>
+        <span class="st"><span class="led-mini"></span><span data-role-state>idle</span></span>
+        <span class="msg" data-role-msg>ready to edit with checkpoints</span>
+      </div>
+      <div class="lane verifier idle" id="swarm-verifier">
+        <span class="who">verifier</span>
+        <span class="st"><span class="led-mini"></span><span data-role-state>idle</span></span>
+        <span class="msg" data-role-msg>standing by for adversarial review</span>
+      </div>
     </div>
 
     <div id="term"></div>
@@ -180,6 +242,49 @@ const term=document.getElementById('term');
 const $=id=>document.getElementById(id);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 let RUN=0; // run token to allow restart
+const FLIGHT_VERBS=['Soaring','Gliding','Diving','Scouting','Perching','Foraging','Wheeling'];
+let _vi=0;
+function startVerbCycle(elId){
+  const el=document.getElementById(elId);
+  if(!el)return;
+  setInterval(()=>{el.textContent=FLIGHT_VERBS[_vi++%FLIGHT_VERBS.length]},2200);
+}
+setInterval(()=>{document.querySelectorAll('.verb').forEach(v=>{v.textContent=FLIGHT_VERBS[_vi++%FLIGHT_VERBS.length]})},2200);
+const LEARNED_SKILLS=['fix_revoked_token','run_auth_suite','patch_session','audit_emit','write-and-fix-tests','refactor-safely','debug-systematically'];
+let _si=0;
+function pulseLearnToast(elId){
+  const el=document.getElementById(elId);
+  if(!el)return;
+  function pulse(){
+    el.querySelector('b').textContent=LEARNED_SKILLS[_si++%LEARNED_SKILLS.length];
+    el.classList.remove('learn-toast');void el.offsetWidth;el.classList.add('learn-toast');
+  }
+  setTimeout(()=>{pulse();setInterval(pulse,9000)},5500);
+}
+function setSwarm(role,state,msg){
+  const lane=$('swarm-'+role);
+  if(!lane)return;
+  const cleanState=String(state||'idle').toLowerCase();
+  lane.classList.remove('idle','working','done','error');
+  lane.classList.add(cleanState.includes('error')?'error':cleanState.includes('done')?'done':cleanState.includes('work')||cleanState.includes('think')?'working':'idle');
+  lane.querySelector('[data-role-state]').textContent=cleanState.includes('think')?'thinking':cleanState.includes('work')?'working':cleanState.includes('done')?'done':cleanState.includes('error')?'error':'idle';
+  lane.querySelector('[data-role-msg]').innerHTML=msg;
+  lane.style.animation='none';void lane.offsetWidth;lane.style.animation='';
+}
+function resetSwarm(){
+  setSwarm('planner','idle','waiting for task decomposition');
+  setSwarm('coder','idle','ready to edit with checkpoints');
+  setSwarm('verifier','idle','standing by for adversarial review');
+}
+function addBootLine(parent,html,index){
+  const d=document.createElement('div');
+  d.className='ln boot-line';
+  d.innerHTML=html;
+  d.style.animationDelay=(index*250)+'ms';
+  parent.appendChild(d);
+  term.scrollTop=term.scrollHeight;
+  return d;
+}
 
 function line(html,cls=''){const d=document.createElement('div');d.className='ln '+cls;d.innerHTML=html;term.appendChild(d);term.scrollTop=term.scrollHeight;return d;}
 function gap(){line('&nbsp;');}
@@ -191,10 +296,8 @@ async function typeCmd(text,tok){
   cur.remove();return d;
 }
 async function spin(label,ms,doneHtml,tok){
-  const d=line('<span class="sp">⠋</span> <span class="muted">'+label+'</span>');
-  const sp=d.querySelector('.sp');const fr=['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'];let i=0;
-  const iv=setInterval(()=>sp.textContent=fr[i++%fr.length],80);
-  await sleep(ms);clearInterval(iv);if(tok!==RUN)return d;
+  const d=line('<span class="spin-star">✦</span> <span class="verb">Soaring</span> <span class="muted">'+label+'</span>');
+  await sleep(ms);if(tok!==RUN)return d;
   if(doneHtml){d.className='ln';d.innerHTML=doneHtml;}return d;
 }
 
@@ -212,16 +315,16 @@ function setAuto(level){
 }
 
 const BIRD=
-'<svg width="132" height="132" viewBox="0 0 240 240" aria-label="Sparrow" style="display:block;margin:4px auto 6px;filter:drop-shadow(0 0 26px rgba(242,169,60,.45));animation:birdbob 3.4s ease-in-out infinite">'+
-'<style>@keyframes birdbob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}'+
-'@keyframes blink{0%,94%,100%{opacity:1}95%,97%{opacity:0}}'+
-'.sp-eye{animation:blink 4.4s ease-in-out infinite}'+
-'.sp-key{animation:spkey 4.4s ease-in-out infinite;transform-origin:180px 100px}'+
-'@keyframes spkey{0%,100%{transform:rotate(-15deg)}50%{transform:rotate(-22deg)}}'+
-'.sp-glow{animation:spglow 3s ease-in-out infinite}'+
-'@keyframes spglow{0%,100%{opacity:.45}50%{opacity:.7}}'+
-'</style>'+
-'<use href="#sparrow"/></svg>';
+'<span class="fr">        ^^</span>\n'+
+'<span class="fr">      .-~~~-.</span>\n'+
+'<span class="fr">     /</span><span class="brow">__</span><span class="fr">     \\</span>\n'+
+'<span class="fr">    | </span><span class="eye">o</span><span class="fr">   </span><span class="patch">██</span><span class="fr">  |</span>\n'+
+'<span class="fr">    |    </span><span class="beak">v</span><span class="fr">    |</span>\n'+
+'<span class="fr">    | </span><span class="cheek">.</span><span class="fr">       |</span>\n'+
+'<span class="fr">     \\ </span><span class="belly">\\__/</span><span class="fr">  /</span>\n'+
+'<span class="fr">      \'-..-\'</span>\n'+
+'<span class="fr">      /|  |\\</span>  <span class="tool">╤━</span><span class="gold">o</span>\n'+
+'<span class="fr">     \'_|  |_\'</span>';
 
 function diff(){
   const d=line('');d.className='ln';
@@ -239,12 +342,18 @@ function diff(){
 
 async function run(){
   const tok=++RUN;term.innerHTML='';costV=0;tokV=0;$('cost').textContent='$0.000';$('tok').textContent='0';setRoute('idle');setAuto('supervised');
+  resetSwarm();
   const T=()=>tok!==RUN;
 
   // ---- BOOT ----
+  line(BIRD,'bird bird-ghost');
   line(BIRD,'bird');
-  line('<span class="tagline"><b>SPARROW</b>  v0.1.0 — one cli · grows with you · pirate &amp; builder</span>');
-  await sleep(700);if(T())return;
+  line('<span class="tagline"><b class="word">SPARROW</b>  v0.1.0 — one cli · grows with you · pirate &amp; builder</span>');
+  addBootLine(term,'<span id="learn-toast">✦ skill learned · <b>write-and-fix-tests</b></span>',0);
+  setTimeout(()=>{const ghost=document.querySelector('.bird-ghost');if(ghost)ghost.classList.add('go')},1300);
+  pulseLearnToast('learn-toast');
+  startVerbCycle('verb');
+  await sleep(1100);if(T())return;
   const boot=[
     ['router  ','5 providers online','planner'],
     ['surfaces','cli · telegram · discord · slack','planner'],
@@ -253,52 +362,81 @@ async function run(){
     ['memory  ','4 tiers · knows you across 7 sessions','ok'],
     ['autonomy','dial: supervised → trusted → autonomous','acc'],
   ];
-  for(const b of boot){line('<span class="dimd">'+b[0]+'</span>  <span class="'+b[2]+'">'+b[1]+'</span>');await sleep(300);if(T())return;}
+  for(const [i,b] of boot.entries()){addBootLine(term,'<span class="dimd">'+b[0]+'</span>  <span class="'+b[2]+'">'+b[1]+'</span>',i+1);await sleep(420);if(T())return;}
   line('<span class="ok">✓ ready</span>  <span class="muted">one binary. no dependencies. no other CLI to install.</span>');
-  await sleep(800);if(T())return;gap();
+  await sleep(1100);if(T())return;gap();
 
   // ---- DEMO 1 : the swarm builds a feature ----
   line('<span class="sec">— one task, the whole swarm —</span>');
   await typeCmd('run "add token revocation to the auth service"',tok);if(T())return;
-  await sleep(400);
+  await sleep(700);
   setRoute('opus → nemotron'); 
   line('<span class="muted">↳ router: feature/medium → plan on <span class="acc">opus</span>, code on <span class="acc">nemotron (free)</span></span>');
-  await sleep(600);if(T())return;
-  await spin('planner · analyzing repository…',1700,'<span class="planner">◆ planner</span>  <span class="muted">spec ready · 3 steps · constraints locked</span>',tok);addTok(2400);addCost(0.006);if(T())return;
-  await spin('coder · reading auth/session.rs, auth/token.rs…',1500,'<span class="coder">◆ coder</span>    <span class="muted">context loaded · 2 files</span>',tok);addTok(3100);if(T())return;
-  await spin('coder · drafting patch…',1700,'<span class="coder">◆ coder</span>    <span class="muted">proposed change:</span>',tok);addTok(2200);addCost(0.004);if(T())return;
-  diff();await sleep(900);if(T())return;
+  await sleep(900);if(T())return;
+  setSwarm('planner','thinking','analyzing repository and constraints');
+  await spin('planner · analyzing repository…',1700,'<span class="planner">◆ planner</span>  <span class="muted">spec ready · 3 steps · constraints locked</span>',tok);setSwarm('planner','done','spec ready · <b>3 steps</b>, constraints locked');addTok(2400);addCost(0.006);if(T())return;
+  setSwarm('coder','working','reading <b>auth/session.rs</b> and <b>auth/token.rs</b>');
+  await spin('coder · reading auth/session.rs, auth/token.rs…',1600,'<span class="coder">◆ coder</span>    <span class="muted">context loaded · 2 files</span><span class="caret"></span>',tok);addTok(3100);if(T())return;
+  setSwarm('coder','working','drafting patch with checkpoint protection');
+  await spin('coder · drafting patch…',1800,'<span class="coder">◆ coder</span>    <span class="muted">proposed change:</span><span class="caret"></span>',tok);addTok(2200);addCost(0.004);if(T())return;
+  diff();await sleep(1100);if(T())return;
   await spin('sandbox · running test suite…',1900,'<span class="warn">⚠ tests</span>   <span class="muted">12 passed · <span class="err">1 failed</span> — revocation not persisted</span>',tok);if(T())return;
-  await spin('verifier · adversarial review…',1700,'<span class="verifier">◆ verifier</span> <span class="muted">caught it. <span class="warn">⟳ REWORK → coder</span></span>',tok);addTok(1800);if(T())return;
-  await spin('coder · persisting revocation to store…',1600,'<span class="coder">◆ coder</span>    <span class="muted">patched · re-running…</span>',tok);addTok(1900);addCost(0.003);if(T())return;
-  await spin('verifier · re-review…',1500,'<span class="verifier">◆ verifier</span> <span class="ok">✓ PASS · 13 passed · no regressions</span>',tok);if(T())return;
-  line('<span class="acc">● checkpoint</span>  <span class="muted">snapshot #4 saved — rewind anytime with <span class="b">←</span></span>');await sleep(500);if(T())return;
-  line('<span class="acc">✦ skill learned</span>  <span class="muted">"persist_revocation" → added to library (now 53)</span>');await sleep(500);if(T())return;
+  setSwarm('verifier','working','adversarial review of proposed diff');
+  await spin('verifier · adversarial review…',1700,'<span class="verifier">◆ verifier</span> <span class="muted">caught it. <span class="warn">⟳ REWORK → coder</span></span>',tok);setSwarm('verifier','error','caught missing persistence · rework requested');addTok(1800);if(T())return;
+  setSwarm('coder','working','persisting revocation to store and re-running tests');
+  await spin('coder · persisting revocation to store…',1700,'<span class="coder">◆ coder</span>    <span class="muted">patched · re-running…</span><span class="caret"></span>',tok);setSwarm('coder','done','patch ready · tests rerun');addTok(1900);addCost(0.003);if(T())return;
+  setSwarm('verifier','working','re-reviewing patched diff');
+  await spin('verifier · re-review…',1500,'<span class="verifier">◆ verifier</span> <span class="ok">✓ PASS · 13 passed · no regressions</span>',tok);setSwarm('verifier','done','PASS · <b>13 passed</b> · no regressions');if(T())return;
+  line('<span class="acc">● checkpoint</span>  <span class="muted">snapshot #4 saved — rewind anytime with <span class="b">←</span></span>');await sleep(800);if(T())return;
+  line('<span class="acc learn-toast">✦ skill learned</span>  <span class="muted"><b>write-and-fix-tests</b> → added to library (now 53)</span>');await sleep(800);if(T())return;
   line('<span class="ok">✓ done</span>  <span class="muted">11.4s · cost <span class="cost">$0.013</span> · <span class="ok">96% served free / local</span></span>');
-  await sleep(1100);if(T())return;gap();
+  await sleep(1300);if(T())return;gap();
 
   // ---- DEMO 2 : routing + free/local ----
   line('<span class="sec">— any model, no lock-in, free-first —</span>');
   await typeCmd('run "summarize today\'s git log" --local',tok);if(T())return;
-  setRoute('ollama (local)');await sleep(400);
+  setRoute('ollama (local)');await sleep(600);
   await spin('routing offline → ollama · qwen3.5 on RTX…',1500,'<span class="muted">↳ <span class="acc">ollama (local)</span> · <span class="ok">$0.00</span> · works on a plane</span>',tok);if(T())return;
-  line('<span class="coder">◆ coder</span>    <span class="muted">14 commits summarized → <span class="b">CHANGELOG.md</span></span>');
-  addTok(900);await sleep(1000);if(T())return;gap();
+  line('<span class="coder">◆ coder</span>    <span class="muted">14 commits summarized → <span class="b">CHANGELOG.md</span></span><span class="caret"></span>');
+  addTok(900);await sleep(1200);if(T())return;gap();
 
   // ---- DEMO 3 : autonomy + scheduling + remote ----
   line('<span class="sec">— set it loose, safely —</span>');
   await typeCmd('schedule "update deps, run tests, open PR" --autonomy autonomous --cron "0 2 * * *"',tok);if(T())return;
-  setAuto('autonomous');await sleep(500);
-  line('<span class="ok">✓ scheduled</span>  <span class="muted">runs unattended via gateway · auto-rollback on failure</span>');await sleep(700);if(T())return;
-  line('<span class="muted">… time passes …</span>');await sleep(1100);if(T())return;
+  setAuto('autonomous');await sleep(700);
+  line('<span class="ok">✓ scheduled</span>  <span class="muted">runs unattended via gateway · auto-rollback on failure</span>');await sleep(1000);if(T())return;
+  line('<span class="muted">… time passes …</span>');await sleep(1300);if(T())return;
   line('<span class="tg">[telegram]</span> <span class="dimd">02:00</span>  <span class="muted">Sparrow: deps updated · <span class="ok">248 tests green</span> · PR <span class="b">#91</span> opened ✓</span>');
-  await sleep(1200);if(T())return;gap();
+  await sleep(1400);if(T())return;gap();
+
+  // ---- DEMO MCP ----
+  line('<span class="sec">— mcp connectors — any tool, no rebuilding —</span>');
+  await typeCmd('mcp add github-mcp',tok);if(T())return;
+  await spin('connecting to mcp server…',1400,'<span class="ok">✓ connected</span>  <span class="muted">12 tools available · <span class="b">create_pr · list_issues · get_file…</span></span>',tok);if(T())return;
+  line('<span class="muted">↳ tools added to toolset · usable in any run without recompiling</span>');
+  await sleep(900);if(T())return;gap();
+
+  // ---- DEMO LOCAL ----
+  line('<span class="sec">— fully local · $0.00 · no account —</span>');
+  await typeCmd('run "summarize the error in this log" --local --autonomy supervised',tok);if(T())return;
+  setRoute('ollama (local)');await sleep(400);
+  line('<span class="muted">↳ routing offline → ollama · qwen2.5:7b · <span class="ok">$0.00</span> · works on a plane</span>');
+  await spin('reading error.log…',1200,'<span class="coder">◆ coder</span>    <span class="muted">null pointer at line 42 · missing nil check before dereferencing</span><span class="caret"></span>',tok);
+  addTok(640);await sleep(1000);if(T())return;gap();
+
+  // ---- DEMO REPLAY ----
+  line('<span class="sec">— every run is replayable —</span>');
+  await typeCmd('replay run_a3f7',tok);if(T())return;
+  await spin('loading transcript…',1000,'<span class="muted">↳ re-rendering <span class="b">run_a3f7</span> · 18 events · different model? <span class="b">sparrow replay run_a3f7 --model opus</span></span>',tok);
+  await sleep(800);if(T())return;
+  line('<span class="ok">✓ reproducible</span>  <span class="muted">any run = an auditable transcript you can share, diff, or re-run</span>');
+  await sleep(1100);if(T())return;gap();
 
   // ---- DEMO 4 : continue anywhere ----
   line('<span class="sec">— it lives where you do —</span>');
-  line('<div class="tg-bubble"><span class="tg">[telegram]</span> <span class="b">you:</span> refactor the rate limiter</div>');await sleep(800);if(T())return;
+  line('<div class="tg-bubble"><span class="tg">[telegram]</span> <span class="b">you:</span> refactor the rate limiter</div>');await sleep(1100);if(T())return;
   line('<div class="tg-bubble"><span class="tg">[telegram]</span> Sparrow: on it — coder + verifier on the cloud VM. <span class="dimd">same session · same memory · different surface.</span></div>');
-  setAuto('trusted');await sleep(1300);if(T())return;gap();
+  setAuto('trusted');await sleep(1600);if(T())return;gap();
 
   // ---- OUTRO : capabilities recap ----
   line('<span class="sec">— why sparrow —</span>');
