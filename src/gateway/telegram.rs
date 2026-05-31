@@ -124,6 +124,9 @@ impl GatewayTransport for TelegramTransport {
                                             .as_i64()
                                             .map(|i| i.to_string())
                                             .unwrap_or_default();
+                                        if !allowed.is_empty() && !allowed.contains(&user_id) {
+                                            continue;
+                                        }
                                         let text = msg["text"]
                                             .as_str()
                                             .unwrap_or("")

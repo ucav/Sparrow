@@ -1,6 +1,4 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::broadcast;
 
 use crate::event::Event;
 
@@ -11,8 +9,6 @@ use crate::event::Event;
 pub struct EventBus {
     /// Global broadcast channel for all events
     tx: broadcast::Sender<Event>,
-    /// Active subscriptions by filter key
-    subscriptions: RwLock<HashMap<String, Vec<broadcast::Sender<Event>>>>,
 }
 
 impl EventBus {
@@ -20,7 +16,6 @@ impl EventBus {
         let (tx, _) = broadcast::channel(capacity);
         Self {
             tx,
-            subscriptions: RwLock::new(HashMap::new()),
         }
     }
 
@@ -42,7 +37,7 @@ impl EventBus {
     }
 
     /// Create a filtered subscription by run_id
-    pub fn subscribe_run(&self, run_id: &crate::event::RunId) -> broadcast::Receiver<Event> {
+    pub fn subscribe_run(&self, _run_id: &crate::event::RunId) -> broadcast::Receiver<Event> {
         self.tx.subscribe()
         // Note: actual filtering is done by the receiver checking event.run field
     }
@@ -63,7 +58,6 @@ impl Clone for EventBus {
     fn clone(&self) -> Self {
         Self {
             tx: self.tx.clone(),
-            subscriptions: RwLock::new(HashMap::new()),
         }
     }
 }

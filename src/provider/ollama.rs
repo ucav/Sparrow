@@ -56,7 +56,7 @@ impl OllamaAdapter {
                     ContentBlock::Text { text } => {
                         content.push_str(text);
                     }
-                    ContentBlock::ToolUse { id, name, input } => {
+                    ContentBlock::ToolUse { id: _, name, input } => {
                         tool_calls.push(json!({
                             "function": {
                                 "name": name,
@@ -64,7 +64,7 @@ impl OllamaAdapter {
                             }
                         }));
                     }
-                    ContentBlock::ToolResult { tool_use_id, content: blocks, is_error } => {
+                    ContentBlock::ToolResult { tool_use_id, content: blocks, is_error: _ } => {
                         let text: String = blocks.iter()
                             .filter_map(|b| match b {
                                 ContentBlock::Text { text } => Some(text.as_str()),

@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::provider::{LatencyClass, ModelCaps};
+
 /// Provider + model registry aligned with Hermes Agent (NousResearch/hermes-agent).
 /// Source: https://github.com/NousResearch/hermes-agent/tree/main/plugins/model-providers
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -436,6 +438,48 @@ pub fn find_provider(id: &str) -> Option<ProviderDef> {
 
 pub fn find_model(provider_id: &str, model_name: &str) -> Option<ModelDef> {
     find_provider(provider_id).and_then(|p| p.models.into_iter().find(|m| m.name == model_name))
+}
+
+pub fn default_models(provider_id: &str) -> Vec<String> {
+    find_provider(provider_id)
+        .map(|p| {
+            let recommended: Vec<String> = p
+                .models
+                .iter()
+                .filter(|m| m.recommended)
+                .map(|m| m.name.clone())
+                .collect();
+            if recommended.is_empty() {
+                p.models.into_iter().map(|m| m.name).collect()
+            } else {
+                recommended
+            }
+        })
+        .unwrap_or_default()
+}
+
+pub fn model_caps(provider_id: &str, model_name: &str) -> ModelCaps {
+    let Some(model) = find_model(provider_id, model_name) else {
+        return ModelCaps::default();
+    };
+
+    let latency = if model.tags.iter().any(|t| t == "fast") {
+        LatencyClass::Fast
+    } else if model.tags.iter().any(|t| t == "strong" || t == "reasoning") {
+        LatencyClass::Slow
+    } else {
+        LatencyClass::Medium
+    };
+
+    ModelCaps {
+        context_window: model.context_window,
+        max_output: model.context_window.min(32_000).max(4_096),
+        tools: model.tags.iter().any(|t| t == "tool_support" || t == "code"),
+        vision: model.tags.iter().any(|t| t == "vision"),
+        cost_input_per_mtok: model.cost_input_per_mtok,
+        cost_output_per_mtok: model.cost_output_per_mtok,
+        latency,
+    }
 }
 
 pub fn onboarding_providers() -> Vec<ProviderDef> {

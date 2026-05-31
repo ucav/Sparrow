@@ -1,4 +1,3 @@
-use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 // ─── Additional tools for Hermes-parity (§15) ──────────────────────────────────
@@ -104,7 +103,7 @@ impl Tool for VisionInput {
         let mime = mime_guess::from_path(&full_path)
             .first_or_octet_stream()
             .to_string();
-        let b64 = base64_encode(&data);
+        let _b64 = base64_encode(&data);
 
         Ok(ToolResult::ok(vec![
             Block::Text(format!(
@@ -120,7 +119,6 @@ impl Tool for VisionInput {
 }
 
 fn base64_encode(data: &[u8]) -> String {
-    use std::fmt::Write;
     const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     let mut result = String::new();
     for chunk in data.chunks(3) {

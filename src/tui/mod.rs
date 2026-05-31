@@ -24,18 +24,17 @@ type CrosstermTerminal = ratatui::Terminal<ratatui::backend::CrosstermBackend<io
 struct LogLine { text: String, style: LogStyle, indent: u16 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum LogStyle { Normal, Dim, Dimmer, Brand, Coral, Agent, Planner, Verifier, Add, Rem, Steel, Gold, Prompt, Cmd, Ok, Warn, Err, Accent, Cur }
+enum LogStyle { Normal, Dim, Brand, Agent, Planner, Verifier, Rem, Steel, Gold, Prompt, Cmd, Ok, Warn, Err, Accent }
 
 impl LogStyle {
     fn color(&self, theme: &Theme) -> Color {
         match self {
-            LogStyle::Normal => theme.fg, LogStyle::Dim => theme.dim, LogStyle::Dimmer => theme.dimmer,
-            LogStyle::Brand => theme.brand, LogStyle::Coral => theme.coral, LogStyle::Agent => theme.agent,
-            LogStyle::Planner => theme.planner, LogStyle::Verifier => theme.verifier, LogStyle::Add => theme.add,
+            LogStyle::Normal => theme.fg, LogStyle::Dim => theme.dim,
+            LogStyle::Brand => theme.brand, LogStyle::Agent => theme.agent,
+            LogStyle::Planner => theme.planner, LogStyle::Verifier => theme.verifier,
             LogStyle::Rem => theme.rem, LogStyle::Steel => theme.steel, LogStyle::Gold => theme.gold,
             LogStyle::Prompt => theme.brand, LogStyle::Cmd => theme.fg, LogStyle::Ok => theme.add,
             LogStyle::Warn => theme.verifier, LogStyle::Err => theme.rem, LogStyle::Accent => theme.brand,
-            LogStyle::Cur => theme.brand,
         }
     }
 }

@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use sparrow::autonomy::{
-        ApprovalPolicy, AutonomyContract, AutonomyLevel, Budget, HardStop, ProposedAction,
+        AutonomyContract, AutonomyLevel, HardStop, ProposedAction,
     };
     use sparrow::event::{Decision, RiskLevel};
     use sparrow::router::{BasicRouter, BudgetState, Router, RoutingNeed, TaskTier};
@@ -10,7 +10,6 @@ mod tests {
     use sparrow::redaction::RedactionFilter;
     use sparrow::config::Config;
     use std::sync::Arc;
-    use std::path::PathBuf;
 
     // ─── Autonomy Matrix Tests (§12) ──────────────────────────────────────────
 
@@ -103,7 +102,7 @@ mod tests {
 
     // ─── Router Simulation Tests (§12) ────────────────────────────────────────
 
-    use sparrow::provider::{Brain, BrainError, BrainEvent, BrainRequest, BrainStream, ModelCaps, LatencyClass};
+    use sparrow::provider::{Brain, BrainError, BrainRequest, BrainStream, ModelCaps, LatencyClass};
     use async_trait::async_trait;
     use futures::stream;
 
@@ -251,6 +250,55 @@ mod tests {
         let chain = router.select(&need, &budget);
         assert_eq!(chain[0].id(), "qwen3.5:32b");
         assert_eq!(chain[1].id(), "nvidia/nemotron");
+    }
+
+    #[test]
+    fn test_router_vision_penalizes_non_vision_models() {
+        let mut config = Config::default();
+        config.routing.policy.insert("vision".into(), "cloud".into());
+
+        let mut providers = std::collections::HashMap::new();
+        providers.insert("cloud".into(), vec![Arc::new(MockBrain {
+            id: "text-only".into(),
+            caps: ModelCaps {
+                context_window: 128_000,
+                max_output: 16_000,
+                tools: true,
+                vision: false,
+                cost_input_per_mtok: 0.0,
+                cost_output_per_mtok: 0.0,
+                latency: LatencyClass::Fast,
+            },
+        }) as Arc<dyn Brain>]);
+        providers.insert("vision".into(), vec![Arc::new(MockBrain {
+            id: "vision-model".into(),
+            caps: ModelCaps {
+                context_window: 128_000,
+                max_output: 16_000,
+                tools: true,
+                vision: true,
+                cost_input_per_mtok: 5.0,
+                cost_output_per_mtok: 15.0,
+                latency: LatencyClass::Medium,
+            },
+        }) as Arc<dyn Brain>]);
+
+        let router = BasicRouter::new(&config, providers);
+        let need = RoutingNeed {
+            tier: TaskTier::Vision,
+            required_tools: false,
+            required_vision: true,
+            prefer_local: false,
+        };
+        let budget = BudgetState {
+            daily_limit_usd: 100.0,
+            daily_spent_usd: 0.0,
+            session_limit_usd: 10.0,
+            session_spent_usd: 0.0,
+        };
+
+        let chain = router.select(&need, &budget);
+        assert_eq!(chain[0].id(), "vision-model");
     }
 
     #[test]
@@ -504,6 +552,24 @@ mod tests {
     }
 
     #[test]
+    fn test_provider_registry_caps_feed_router() {
+        let nvidia = sparrow::config::providers::model_caps(
+            "nvidia",
+            "nvidia/nemotron-3-super-120b-a12b",
+        );
+        assert_eq!(nvidia.cost_input_per_mtok, 0.0);
+        assert!(nvidia.tools);
+        assert!(nvidia.context_window >= 100_000);
+
+        let anthropic = sparrow::config::providers::model_caps(
+            "anthropic",
+            "claude-sonnet-4-6",
+        );
+        assert!(anthropic.vision);
+        assert!(anthropic.cost_input_per_mtok > 0.0);
+    }
+
+    #[test]
     fn test_onboarding_providers() {
         let providers = sparrow::config::providers::onboarding_providers();
         // Should return top recommended ones
@@ -611,7 +677,6 @@ mod tests {
                     AutonomyLevel::Supervised => AutonomyContract::supervised(),
                     AutonomyLevel::Trusted => AutonomyContract::trusted(),
                     AutonomyLevel::Autonomous => AutonomyContract::autonomous(),
-                    _ => unreachable!(),
                 };
                 let action = ProposedAction {
                     tool_name: "test".into(),
@@ -926,7 +991,7 @@ mod tests {
 
     #[test]
     fn test_gateway_message_router_commands() {
-        use sparrow::gateway::{GatewayMessage, GatewayResponse};
+        use sparrow::gateway::GatewayMessage;
         // Test that command parsing works for /help
         let msg = GatewayMessage {
             surface: "telegram".into(), user_id: "123".into(),
@@ -955,7 +1020,7 @@ mod tests {
     fn test_gateway_response_buttons() {
         use sparrow::gateway::GatewayResponse;
         let resp = GatewayResponse {
-            chat_id: "123".into(), text: "Approve?".into(),
+            surface: "telegram".into(), chat_id: "123".into(), text: "Approve?".into(),
             reply_to: None, buttons: vec![vec!["/approve".into(), "/deny".into()]],
         };
         assert_eq!(resp.buttons.len(), 1);
@@ -973,7 +1038,7 @@ mod tests {
 
             bridge.set_surface("telegram").await;
             bridge.add_approval(sparrow::gateway::GatewayResponse {
-                chat_id: "123".into(), text: "Approve?".into(), reply_to: None, buttons: vec![],
+                surface: "telegram".into(), chat_id: "123".into(), text: "Approve?".into(), reply_to: None, buttons: vec![],
             }).await;
             let approvals = bridge.drain_approvals().await;
             assert_eq!(approvals.len(), 1);
@@ -1090,7 +1155,7 @@ mod tests {
     #[test]
     fn test_crash_recovery_transcript_persistence() {
         use sparrow::runtime::recorder::{FsRecorder, Recorder, Replayer, RunInputs};
-        use sparrow::event::{Event, RunId, OutcomeSummary, TokenUsage};
+        use sparrow::event::{Event, RunId};
         let tmp = std::env::temp_dir().join("sparrow-ws16-crash");
         let _ = std::fs::remove_dir_all(&tmp);
 
@@ -1222,7 +1287,7 @@ mod tests {
         let mut config = sparrow::config::Config::default();
         config.budget.session_usd = 0.0; // Zero budget
         let router = Arc::new(sparrow::router::BasicRouter::new(&config, std::collections::HashMap::new()));
-        let engine = sparrow::engine::Engine::new(router, config);
+        let _engine = sparrow::engine::Engine::new(router, config);
         // Engine with zero budget should still construct
         // The budget enforcement happens in the drive loop
         assert!(true);

@@ -3,17 +3,17 @@ use tokio::sync::mpsc;
 
 use super::{GatewayMessage, GatewayResponse, GatewayTransport};
 
-// ─── WhatsApp (via twilio/baileys stub) ───────────────────────────────────────
+// ─── WhatsApp (Meta Business API webhook mode) ────────────────────────────────
 
 pub struct WhatsAppTransport {
     phone_number_id: String,
     access_token: String,
-    allowed_users: Vec<String>,
+    _allowed_users: Vec<String>,
 }
 
 impl WhatsAppTransport {
     pub fn new(phone_number_id: String, access_token: String, allowed_users: Vec<String>) -> Self {
-        Self { phone_number_id, access_token, allowed_users }
+        Self { phone_number_id, access_token, _allowed_users: allowed_users }
     }
 
     async fn send_text(&self, to: &str, text: &str) -> anyhow::Result<()> {
@@ -45,12 +45,12 @@ impl GatewayTransport for WhatsAppTransport {
     async fn stop(&self) -> anyhow::Result<()> { Ok(()) }
 }
 
-// ─── Signal (via signal-cli stub) ─────────────────────────────────────────────
+// ─── Signal (requires an external signal-cli bridge) ──────────────────────────
 
-pub struct SignalTransport { allowed_users: Vec<String> }
+pub struct SignalTransport { _allowed_users: Vec<String> }
 
 impl SignalTransport {
-    pub fn new(allowed_users: Vec<String>) -> Self { Self { allowed_users } }
+    pub fn new(allowed_users: Vec<String>) -> Self { Self { _allowed_users: allowed_users } }
 }
 
 #[async_trait]
@@ -61,25 +61,25 @@ impl GatewayTransport for SignalTransport {
         Ok(())
     }
     async fn send(&self, _response: GatewayResponse) -> anyhow::Result<()> {
-        Ok(())
+        anyhow::bail!("Signal transport requires a configured signal-cli bridge")
     }
     async fn stop(&self) -> anyhow::Result<()> { Ok(()) }
 }
 
-// ─── Email (SMTP + IMAP stub) ─────────────────────────────────────────────────
+// ─── Email (Mailgun-compatible sending; inbound polling not wired) ────────────
 
 pub struct EmailTransport {
     smtp_host: String,
-    smtp_port: u16,
-    username: String,
+    _smtp_port: u16,
+    _username: String,
     password: String,
     from_addr: String,
-    allowed_users: Vec<String>,
+    _allowed_users: Vec<String>,
 }
 
 impl EmailTransport {
     pub fn new(smtp_host: String, smtp_port: u16, username: String, password: String, from_addr: String, allowed_users: Vec<String>) -> Self {
-        Self { smtp_host, smtp_port, username, password, from_addr, allowed_users }
+        Self { smtp_host, _smtp_port: smtp_port, _username: username, password, from_addr, _allowed_users: allowed_users }
     }
 }
 
@@ -110,11 +110,11 @@ impl GatewayTransport for EmailTransport {
 
 // ─── Feishu/Lark ───────────────────────────────────────────────────────────────
 
-pub struct FeishuTransport { app_id: String, app_secret: String, allowed_users: Vec<String> }
+pub struct FeishuTransport { _app_id: String, app_secret: String, _allowed_users: Vec<String> }
 
 impl FeishuTransport {
     pub fn new(app_id: String, app_secret: String, allowed_users: Vec<String>) -> Self {
-        Self { app_id, app_secret, allowed_users }
+        Self { _app_id: app_id, app_secret, _allowed_users: allowed_users }
     }
 }
 
@@ -143,11 +143,11 @@ impl GatewayTransport for FeishuTransport {
 
 // ─── WeCom ─────────────────────────────────────────────────────────────────────
 
-pub struct WeComTransport { corp_id: String, secret: String, allowed_users: Vec<String> }
+pub struct WeComTransport { _corp_id: String, _secret: String, _allowed_users: Vec<String> }
 
 impl WeComTransport {
     pub fn new(corp_id: String, secret: String, allowed_users: Vec<String>) -> Self {
-        Self { corp_id, secret, allowed_users }
+        Self { _corp_id: corp_id, _secret: secret, _allowed_users: allowed_users }
     }
 }
 
@@ -158,17 +158,19 @@ impl GatewayTransport for WeComTransport {
         tracing::info!("WeCom gateway ready (configure bot in WeCom admin)");
         Ok(())
     }
-    async fn send(&self, _response: GatewayResponse) -> anyhow::Result<()> { Ok(()) }
+    async fn send(&self, _response: GatewayResponse) -> anyhow::Result<()> {
+        anyhow::bail!("WeCom transport requires access-token exchange and message API wiring")
+    }
     async fn stop(&self) -> anyhow::Result<()> { Ok(()) }
 }
 
 // ─── QQBot ─────────────────────────────────────────────────────────────────────
 
-pub struct QQBotTransport { app_id: String, token: String, allowed_users: Vec<String> }
+pub struct QQBotTransport { _app_id: String, _token: String, _allowed_users: Vec<String> }
 
 impl QQBotTransport {
     pub fn new(app_id: String, token: String, allowed_users: Vec<String>) -> Self {
-        Self { app_id, token, allowed_users }
+        Self { _app_id: app_id, _token: token, _allowed_users: allowed_users }
     }
 }
 
@@ -179,17 +181,19 @@ impl GatewayTransport for QQBotTransport {
         tracing::info!("QQBot gateway ready (configure in QQ Open Platform)");
         Ok(())
     }
-    async fn send(&self, _response: GatewayResponse) -> anyhow::Result<()> { Ok(()) }
+    async fn send(&self, _response: GatewayResponse) -> anyhow::Result<()> {
+        anyhow::bail!("QQBot transport requires QQ Open Platform send API wiring")
+    }
     async fn stop(&self) -> anyhow::Result<()> { Ok(()) }
 }
 
 // ─── Microsoft Teams ────────────────────────────────────────────────────────────
 
-pub struct TeamsTransport { app_id: String, app_password: String, allowed_users: Vec<String> }
+pub struct TeamsTransport { _app_id: String, _app_password: String, _allowed_users: Vec<String> }
 
 impl TeamsTransport {
     pub fn new(app_id: String, app_password: String, allowed_users: Vec<String>) -> Self {
-        Self { app_id, app_password, allowed_users }
+        Self { _app_id: app_id, _app_password: app_password, _allowed_users: allowed_users }
     }
 }
 
@@ -200,6 +204,8 @@ impl GatewayTransport for TeamsTransport {
         tracing::info!("Teams gateway ready (configure bot in Azure Bot Service)");
         Ok(())
     }
-    async fn send(&self, _response: GatewayResponse) -> anyhow::Result<()> { Ok(()) }
+    async fn send(&self, _response: GatewayResponse) -> anyhow::Result<()> {
+        anyhow::bail!("Teams transport requires Azure Bot Framework adapter wiring")
+    }
     async fn stop(&self) -> anyhow::Result<()> { Ok(()) }
 }

@@ -1,5 +1,4 @@
 use crate::event::Event;
-use secrecy::{ExposeSecret, SecretString};
 use std::collections::HashSet;
 
 // ─── Redaction filter ───────────────────────────────────────────────────────────
@@ -130,8 +129,7 @@ impl Default for RedactionFilter {
 
 // ─── Context Manager ────────────────────────────────────────────────────────────
 
-use crate::engine::Identity;
-use crate::memory::{Fact, RepoMap};
+use crate::memory::RepoMap;
 use crate::provider::Msg;
 
 /// Manages context window by summarizing/compacting when approaching limits.

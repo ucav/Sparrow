@@ -4,8 +4,8 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use super::{Tool, ToolCtx, ToolResult};
-use crate::event::{Block, Event, RiskLevel, RunId};
-use crate::engine::{Engine, Identity, Task};
+use crate::event::{Block, Event, RiskLevel};
+use crate::engine::{Engine, Task};
 
 // ─── Subagent spawn ─────────────────────────────────────────────────────────────
 
@@ -46,7 +46,7 @@ impl Tool for SubagentSpawn {
     async fn call(
         &self,
         args: serde_json::Value,
-        ctx: &ToolCtx,
+        _ctx: &ToolCtx,
     ) -> anyhow::Result<ToolResult> {
         let task_desc = args["task"].as_str().unwrap_or("");
         let role = args["role"].as_str().unwrap_or("helper");
@@ -59,7 +59,6 @@ impl Tool for SubagentSpawn {
         };
 
         let engine = self.engine.clone();
-        let task_clone = task_desc.to_string();
 
         let handle = tokio::spawn(async move {
             match engine.drive(task, tx).await {
@@ -161,7 +160,7 @@ impl Tool for PythonRpc {
 
         loop {
             match child.try_wait()? {
-                Some(status) => {
+                Some(_status) => {
                     let output = child.wait_with_output()?;
                     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
                     let stderr = String::from_utf8_lossy(&output.stderr).to_string();

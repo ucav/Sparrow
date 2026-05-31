@@ -1,4 +1,4 @@
-use chrono::{DateTime, TimeZone, Timelike, Utc};
+use chrono::{DateTime, Timelike, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 

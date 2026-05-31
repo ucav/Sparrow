@@ -8,8 +8,8 @@ use tokio::sync::mpsc;
 use crate::autonomy::{AutonomyContract, Checkpoints, GitCheckpoints};
 use crate::capabilities::{Curator, SkillLibrary};
 use crate::config::Config;
-use crate::reasoning::{AntiSimulationGuard, HallucinationGuard, ReasoningEngine};
-use crate::hooks::{HookEvent, HookRegistry};
+use crate::reasoning::ReasoningEngine;
+use crate::hooks::HookRegistry;
 use crate::agent::AgentStore;
 use crate::event::{
     AgentStatus, AutonomyLevel, Block, Decision, Event, OutcomeSummary, RiskLevel, RunId,
@@ -360,6 +360,23 @@ impl Engine {
         matches!(tier, TaskTier::Medium | TaskTier::Hard | TaskTier::Vision)
     }
 
+    fn requires_vision(&self, task: &str, tier: &TaskTier) -> bool {
+        let lower = task.to_lowercase();
+        matches!(tier, TaskTier::Vision)
+            || [
+                "image",
+                "screenshot",
+                "capture",
+                "photo",
+                "vision",
+                "logo",
+                "visuel",
+                "interface graphique",
+            ]
+            .iter()
+            .any(|kw| lower.contains(kw))
+    }
+
     fn routing_explanation(
         &self,
         tier: &TaskTier,
@@ -407,10 +424,11 @@ impl Engine {
         };
 
         let required_tools = self.requires_tools(&task.description, &tier);
+        let required_vision = self.requires_vision(&task.description, &tier);
         let need = crate::router::RoutingNeed {
             tier: tier.clone(),
             required_tools,
-            required_vision: false,
+            required_vision,
             prefer_local: false,
         };
 
@@ -590,7 +608,7 @@ impl Engine {
         let mut tool_results_pending: Vec<(String, String, serde_json::Value, String, bool)> =
             Vec::new();
         let budget_session = self.config.budget.session_usd;
-        let budget_daily = self.config.budget.daily_usd;
+        let _budget_daily = self.config.budget.daily_usd;
         let redaction = &self.redaction;
         let mut had_error = false;
         let mut last_error: Option<String> = None;
@@ -617,7 +635,7 @@ impl Engine {
                 last_error = Some("budget exceeded".into());
                 break;
             }
-            if let Some(approval_handler) = &self.approval_handler {
+            if let Some(_approval_handler) = &self.approval_handler {
                 if waiting_for_approval {
                     // Route to approval handler (e.g., Telegram inline buttons)
                     // The handler will resolve and we continue
@@ -626,7 +644,7 @@ impl Engine {
 
             // ─── Anti-simulation / hallucination guard ───────────────────
             // Check if the assistant's last turn contains unverified claims
-            let last_assistant_msgs: Vec<&Msg> = messages.iter()
+            let _last_assistant_msgs: Vec<&Msg> = messages.iter()
                 .filter(|m| m.role == "assistant")
                 .collect();
             let has_tool_output = !tool_results_pending.is_empty();

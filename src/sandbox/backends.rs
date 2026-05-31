@@ -1,6 +1,5 @@
 use std::process::Command as StdCommand;
 use std::path::{Path, PathBuf};
-use std::collections::HashMap;
 
 use super::{Command, ExecResult, FsNetPolicy, Limits, Sandbox};
 

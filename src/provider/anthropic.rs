@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use futures::stream::{self, StreamExt};
 use reqwest::Client;
 use serde_json::json;
+use std::collections::HashMap;
 
 use super::{
     Brain, BrainEvent, BrainRequest, BrainStream, ContentBlock, LatencyClass, ModelCaps,
@@ -203,9 +204,9 @@ impl Brain for AnthropicAdapter {
         let model = self.model.clone();
 
         let event_stream = stream
-            .map(move |chunk| {
+            .scan(HashMap::<u64, String>::new(), move |tool_ids, chunk| {
                 let _model = model.clone();
-                match chunk {
+                let events = match chunk {
                     Ok(bytes) => {
                         let text = String::from_utf8_lossy(&bytes);
                         let mut events = Vec::new();
@@ -224,6 +225,7 @@ impl Brain for AnthropicAdapter {
                             let event_type = event["type"].as_str().unwrap_or("");
                             match event_type {
                                 "content_block_start" => {
+                                    let index = event["index"].as_u64().unwrap_or(0);
                                     let content_type =
                                         event["content_block"]["type"].as_str().unwrap_or("");
                                     if content_type == "tool_use" {
@@ -235,6 +237,9 @@ impl Brain for AnthropicAdapter {
                                             .as_str()
                                             .unwrap_or("")
                                             .to_string();
+                                        if !id.is_empty() {
+                                            tool_ids.insert(index, id.clone());
+                                        }
                                         events.push(BrainEvent::ToolUseStart { id, name });
                                     }
                                 }
@@ -253,19 +258,20 @@ impl Brain for AnthropicAdapter {
                                             .as_str()
                                             .unwrap_or("")
                                             .to_string();
-                                        let id = event["index"]
-                                            .as_u64()
-                                            .map(|i| i.to_string())
-                                            .unwrap_or_default();
+                                        let index = event["index"].as_u64().unwrap_or(0);
+                                        let id = tool_ids
+                                            .get(&index)
+                                            .cloned()
+                                            .unwrap_or_else(|| index.to_string());
                                         events
                                             .push(BrainEvent::ToolUseDelta { id, json: partial });
                                     }
                                 }
                                 "content_block_stop" => {
-                                    let id = event["index"]
-                                        .as_u64()
-                                        .map(|i| i.to_string())
-                                        .unwrap_or_default();
+                                    let index = event["index"].as_u64().unwrap_or(0);
+                                    let id = tool_ids
+                                        .remove(&index)
+                                        .unwrap_or_else(|| index.to_string());
                                     events.push(BrainEvent::ToolUseEnd { id });
                                 }
                                 "message_delta" => {
@@ -301,9 +307,10 @@ impl Brain for AnthropicAdapter {
                     Err(e) => {
                         vec![BrainEvent::Error(format!("stream error: {}", e))]
                     }
-                }
+                };
+                futures::future::ready(Some(stream::iter(events)))
             })
-            .flat_map(|events| stream::iter(events));
+            .flatten();
 
         Ok(Box::pin(event_stream))
     }

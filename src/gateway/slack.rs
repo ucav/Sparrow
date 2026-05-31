@@ -114,7 +114,6 @@ impl GatewayTransport for SlackTransport {
         &self,
         tx: mpsc::UnboundedSender<GatewayMessage>,
     ) -> anyhow::Result<()> {
-        let bot_token = self.bot_token.clone();
         let allowed = self.allowed_users.clone();
 
         tracing::info!("Slack gateway starting (Socket Mode)");
@@ -155,6 +154,10 @@ impl GatewayTransport for SlackTransport {
                                         let ts = event["ts"]
                                             .as_str()
                                             .map(|s| s.to_string());
+
+                                        if !allowed.is_empty() && !allowed.contains(&user) {
+                                            continue;
+                                        }
 
                                         if !text.is_empty() {
                                             let _ = tx.send(GatewayMessage {
