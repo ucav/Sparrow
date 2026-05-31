@@ -152,6 +152,15 @@ pub enum Commands {
         action: GatewayAction,
     },
 
+    /// Interactive tutorial
+    Learn,
+
+    /// Manage persistent memory
+    Memory {
+        #[command(subcommand)]
+        action: MemoryAction,
+    },
+
     /// Profile management
     Profile {
         #[command(subcommand)]
@@ -233,4 +242,11 @@ pub enum ProfileAction {
 #[derive(Subcommand)]
 pub enum ImportSource {
     Openclaw { path: Option<PathBuf> },
+}
+
+#[derive(Subcommand)]
+pub enum MemoryAction {
+    List,
+    Forget { id: String },
+    Add { key: String, value: String },
 }

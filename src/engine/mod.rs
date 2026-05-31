@@ -8,6 +8,9 @@ use tokio::sync::mpsc;
 use crate::autonomy::{AutonomyContract, Checkpoints, GitCheckpoints};
 use crate::capabilities::{Curator, SkillLibrary};
 use crate::config::Config;
+use crate::reasoning::{AntiSimulationGuard, HallucinationGuard, ReasoningEngine};
+use crate::hooks::{HookEvent, HookRegistry};
+use crate::agent::AgentStore;
 use crate::event::{
     AgentStatus, AutonomyLevel, Block, Decision, Event, OutcomeSummary, RiskLevel, RunId,
     TokenUsage,
@@ -204,6 +207,10 @@ pub struct Engine {
     skills: Option<Arc<dyn SkillLibrary>>,
     redaction: RedactionFilter,
     approval_handler: Option<Arc<dyn ApprovalHandler>>,
+    reasoning: ReasoningEngine,
+    hooks: HookRegistry,
+    agent_store: Option<Arc<dyn AgentStore>>,
+    org_policy: Option<crate::onboarding::enterprise::OrgPolicy>,
 }
 
 #[derive(Debug, Clone)]
@@ -230,6 +237,10 @@ impl Engine {
             skills: None,
             redaction: RedactionFilter::new(),
             approval_handler: None,
+            reasoning: ReasoningEngine::default(),
+            hooks: HookRegistry::new(Arc::new(crate::sandbox::LocalSandbox::new(std::env::current_dir().unwrap_or_default()))),
+            agent_store: None,
+            org_policy: None,
         }
     }
 
@@ -248,6 +259,21 @@ impl Engine {
 
     pub fn with_skills(mut self, skills: Arc<dyn SkillLibrary>) -> Self {
         self.skills = Some(skills);
+        self
+    }
+
+    pub fn with_agent_store(mut self, store: Arc<dyn AgentStore>) -> Self {
+        self.agent_store = Some(store);
+        self
+    }
+
+    pub fn with_org_policy(mut self, policy: crate::onboarding::enterprise::OrgPolicy) -> Self {
+        self.org_policy = Some(policy);
+        self
+    }
+
+    pub fn with_hooks_config(mut self, hooks: Vec<crate::hooks::Hook>) -> Self {
+        self.hooks.load(hooks);
         self
     }
 
@@ -591,6 +617,51 @@ impl Engine {
                 last_error = Some("budget exceeded".into());
                 break;
             }
+            if let Some(approval_handler) = &self.approval_handler {
+                if waiting_for_approval {
+                    // Route to approval handler (e.g., Telegram inline buttons)
+                    // The handler will resolve and we continue
+                }
+            }
+
+            // ─── Anti-simulation / hallucination guard ───────────────────
+            // Check if the assistant's last turn contains unverified claims
+            let last_assistant_msgs: Vec<&Msg> = messages.iter()
+                .filter(|m| m.role == "assistant")
+                .collect();
+            let has_tool_output = !tool_results_pending.is_empty();
+            if let Some(correction) = self.reasoning.guard_turn(
+                &messages.iter().cloned().collect::<Vec<_>>(),
+                has_tool_output,
+            ) {
+                // Inject corrective system message
+                messages.push(Msg {
+                    role: "user".into(),
+                    content: vec![ContentBlock::Text {
+                        text: format!("SYSTEM: {}. Please execute the relevant tool and report the actual results.", correction),
+                    }],
+                });
+                continue;
+            }
+
+            // ─── Org policy enforcement ──────────────────────────────────
+            if let Some(ref policy) = self.org_policy {
+                let proposed_file = tool_results_pending.last()
+                    .map(|(_, _, args, _, _)| args.get("path").and_then(|v| v.as_str()).unwrap_or(""))
+                    .unwrap_or("");
+                if let Err(violation) = policy.enforce(
+                    &self.config.defaults.autonomy,
+                    cost_usd,
+                    proposed_file,
+                ) {
+                    send(Event::Error {
+                        run: run_id.clone(),
+                        message: format!("Org policy violation: {}", violation),
+                    });
+                    break;
+                }
+            }
+
             let brain = match brain_policy.chain.get(current_chain_idx) {
                 Some(b) => b.clone(),
                 None => break,

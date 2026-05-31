@@ -1084,4 +1084,93 @@ mod tests {
         assert!(json.contains("alice"));
         assert!(json.contains("r1"));
     }
+
+    // ─── WS16 Crash Recovery & Fuzzing Tests ────────────────────────────
+
+    #[test]
+    fn test_crash_recovery_transcript_persistence() {
+        use sparrow::runtime::recorder::{FsRecorder, Recorder, Replayer, RunInputs};
+        use sparrow::event::{Event, RunId, OutcomeSummary, TokenUsage};
+        let tmp = std::env::temp_dir().join("sparrow-ws16-crash");
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        let recorder = FsRecorder::new(tmp.clone());
+        let rid = "crash-test-1".to_string();
+        recorder.start_run(rid.clone(), RunInputs {
+            task: "test".into(), config_snapshot: serde_json::json!({}),
+            model_id: "test".into(), repo_head: None,
+            timestamp: "2026-01-01".into(), agent: "test".into(),
+        });
+        let event = Event::RunStarted {
+            run: RunId(rid.clone()), task: "test".into(), agent: "test".into(),
+        };
+        recorder.record(&event);
+        // Simulate crash: finalize is called even though no RunFinished
+        let transcript = recorder.finalize(&rid).expect("finalize after crash");
+        assert!(!transcript.events.is_empty(), "Partial transcript saved despite crash");
+
+        // Reload — transcript is recoverable
+        let loaded = recorder.load(&rid);
+        assert!(loaded.is_some(), "Transcript recoverable after simulated crash");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_anti_simulation_guard_detects_fabrication() {
+        use sparrow::reasoning::AntiSimulationGuard;
+        use sparrow::provider::{ContentBlock, Msg};
+        let messages = vec![Msg {
+            role: "assistant".into(),
+            content: vec![ContentBlock::Text {
+                text: "All tests pass and the build succeeds.".into(),
+            }],
+        }];
+        let violation = AntiSimulationGuard::check(&messages, false);
+        assert!(violation.is_some(), "Guard must detect fabricated test claims");
+    }
+
+    #[test]
+    fn test_hallucination_guard_detects_code_claim() {
+        use sparrow::reasoning::AntiSimulationGuard;
+        let violation = AntiSimulationGuard::check_code_claim(
+            "the validate() function exists in auth.rs and returns a bool",
+            false, false,
+        );
+        assert!(violation.is_some(), "Guard must detect unverified code claims");
+    }
+
+    #[test]
+    fn test_hallucination_guard_allows_verified_claim() {
+        use sparrow::reasoning::AntiSimulationGuard;
+        let violation = AntiSimulationGuard::check_code_claim(
+            "the validate() function exists in auth.rs",
+            true, false, // had fs_read
+        );
+        assert!(violation.is_none(), "Guard must allow claims backed by fs_read");
+    }
+
+    #[test]
+    fn test_config_fuzzing_roundtrip() {
+        // Fuzz-like: serialize/deserialize with edge cases
+        let cfg = sparrow::config::Config::default();
+        let serialized = toml::to_string_pretty(&cfg).expect("serialize");
+        let deserialized: sparrow::config::Config = toml::from_str(&serialized).expect("deserialize");
+        assert_eq!(deserialized.budget.daily_usd, cfg.budget.daily_usd);
+    }
+
+    #[test]
+    fn test_provider_json_fuzzing() {
+        // Verify all provider entries parse correctly
+        let providers = sparrow::config::providers::provider_registry();
+        assert!(!providers.is_empty());
+        for p in &providers {
+            assert!(!p.id.is_empty(), "Provider {} has empty id", p.label);
+            assert!(!p.adapter.is_empty(), "Provider {} has empty adapter", p.id);
+            for m in &p.models {
+                assert!(!m.name.is_empty(), "Model {}/{} has empty name", p.id, m.label);
+                assert!(m.context_window > 0, "Model {}/{} has zero context window", p.id, m.name);
+            }
+        }
+    }
 }

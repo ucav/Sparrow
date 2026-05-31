@@ -295,6 +295,15 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Setup) => {
             handle_setup(&config).await?;
         }
+        Some(Commands::Learn) => {
+            sparrow::onboarding::Onboarding::default().run_interactive()?;
+        }
+        Some(Commands::Memory { action }) => {
+            handle_memory(action, &(memory.clone() as Arc<dyn Memory>))?;
+        }
+        Some(Commands::Import { source }) => {
+            handle_full_import(source)?;
+        }
         Some(Commands::Config { edit }) => {
             if edit {
                 let config_path = config.config_dir.join("config.toml");
@@ -1266,6 +1275,56 @@ fn handle_profile(
 }
 
 // ─── Import command ─────────────────────────────────────────────────────────────
+
+fn handle_memory(
+    action: sparrow::cli::MemoryAction,
+    memory: &Arc<dyn Memory>,
+) -> anyhow::Result<()> {
+    match action {
+        sparrow::cli::MemoryAction::List => {
+            let facts = memory.all_facts();
+            if facts.is_empty() {
+                println!("No facts stored. Facts are auto-distilled from successful runs.");
+            } else {
+                println!("Stored facts ({}):", facts.len());
+                for f in &facts {
+                    println!("  {}  {}: {}", f.id, f.key, f.value);
+                }
+            }
+        }
+        sparrow::cli::MemoryAction::Forget { id } => {
+            memory.forget(&id)?;
+            println!("Fact '{}' forgotten.", id);
+        }
+        sparrow::cli::MemoryAction::Add { key, value } => {
+            let fact = sparrow::memory::Fact {
+                id: uuid::Uuid::new_v4().to_string(),
+                key,
+                value,
+                created_at: chrono::Utc::now().format("%Y-%m-%d").to_string(),
+                updated_at: chrono::Utc::now().format("%Y-%m-%d").to_string(),
+            };
+            memory.remember(fact)?;
+            println!("Fact added.");
+        }
+    }
+    Ok(())
+}
+
+fn handle_full_import(source: sparrow::cli::ImportSource) -> anyhow::Result<()> {
+    use sparrow::onboarding::migration::Migration;
+    match source {
+        sparrow::cli::ImportSource::Openclaw { path } => {
+            let src = path.unwrap_or_else(|| {
+                dirs::home_dir().unwrap_or_default().join(".openclaw")
+            });
+            let result = Migration::import_openclaw(&src)?;
+            println!("Imported from OpenClaw: {} agents, {} skills, {} cron jobs",
+                result.agents, result.skills, result.cron_jobs);
+        }
+    }
+    Ok(())
+}
 
 fn handle_import(source: sparrow::cli::ImportSource) -> anyhow::Result<()> {
     match source {
