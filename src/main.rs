@@ -13,7 +13,7 @@ use clap::Parser;
 use sparrow::agent::{AgentStore, FsAgentStore, Soul};
 use sparrow::auth::{AuthStore, Credential};
 use sparrow::autonomy::{Checkpoints, GitCheckpoints};
-use sparrow::capabilities::mcp::{BasicMcpClient, McpClient, Transport};
+use sparrow::capabilities::mcp::{BasicMcpClient, McpClient, McpServer, Transport};
 use sparrow::capabilities::{FsSkillLibrary, SkillLibrary};
 use sparrow::cli::{Cli, Commands};
 use sparrow::config::{ConfigStore, FsConfigStore, ProviderConfig};
@@ -25,8 +25,10 @@ use sparrow::gateway::telegram::TelegramTransport;
 use sparrow::gateway::ws::WebSocketApi;
 use sparrow::gateway::{GatewayMessage, GatewayResponse, GatewayTransport, MessageRouter};
 use sparrow::memory::{Memory, SqliteMemory};
+use sparrow::runtime::event_bus::EventBus;
 use sparrow::runtime::recorder::{FsRecorder, Recorder, Replayer, RunInputs};
 use sparrow::runtime::scheduler::{Job, MemoryScheduler, Scheduler};
+use sparrow::runtime::{Runtime, SparrowRuntime};
 use sparrow::tui::Tui;
 use std::sync::Arc;
 
@@ -48,7 +50,18 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("sparrow");
 
-    let config_store = FsConfigStore::new(config_dir.clone());
+    let active_profile = cli.profile.clone().or_else(|| {
+        std::fs::read_to_string(config_dir.join("active_profile"))
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+    });
+    let active_config_dir = active_profile
+        .as_ref()
+        .map(|name| config_dir.join("profiles").join(name))
+        .unwrap_or_else(|| config_dir.clone());
+
+    let config_store = FsConfigStore::new(active_config_dir.clone());
     let mut config = config_store.load().unwrap_or_else(|e| {
         eprintln!("Warning: could not load config: {}. Using defaults.", e);
         sparrow::config::Config {
@@ -59,10 +72,12 @@ async fn main() -> anyhow::Result<()> {
             surfaces: Default::default(),
             skills: Default::default(),
             theme: "captain".into(),
-            config_dir: config_dir.clone(),
+            config_dir: active_config_dir.clone(),
             state_dir: state_dir.clone(),
         }
     });
+    config.config_dir = active_config_dir.clone();
+    config.state_dir = state_dir.clone();
     migrate_inline_provider_keys(&mut config, &config_store);
     apply_cli_overrides(&mut config, &cli);
 
@@ -96,8 +111,7 @@ async fn main() -> anyhow::Result<()> {
     match cli.command {
         None => {
             if cli.tui {
-                let mut tui = Tui::new();
-                tui.run()?;
+                run_tui(&config, memory.clone(), skill_library.clone()).await?;
             } else if cli.web {
                 handle_webview(
                     &config,
@@ -108,16 +122,24 @@ async fn main() -> anyhow::Result<()> {
                 )
                 .await?;
             } else {
-                let mut tui = Tui::new();
-                tui.run()?;
+                run_tui(&config, memory.clone(), skill_library.clone()).await?;
             }
         }
         Some(Commands::Tui) => {
-            let mut tui = Tui::new();
-            tui.run()?;
+            run_tui(&config, memory.clone(), skill_library.clone()).await?;
         }
         Some(Commands::Console) => {
             handle_webview(
+                &config,
+                memory.clone(),
+                scheduler.clone(),
+                recorder.clone(),
+                skill_library.clone(),
+            )
+            .await?;
+        }
+        Some(Commands::Daemon) => {
+            handle_daemon(
                 &config,
                 memory.clone(),
                 scheduler.clone(),
@@ -140,11 +162,11 @@ async fn main() -> anyhow::Result<()> {
             } else {
                 run_task(
                     task,
-                    &cli,
                     &config,
                     memory.clone(),
-                    agent_store.clone(),
                     skill_library.clone(),
+                    recorder.clone(),
+                    None,
                 )
                 .await?;
             }
@@ -153,7 +175,15 @@ async fn main() -> anyhow::Result<()> {
             handle_chat(&config, memory.clone()).await?;
         }
         Some(Commands::Agent { action }) => {
-            handle_agent(action, &agent_store)?;
+            handle_agent(
+                action,
+                &agent_store,
+                &config,
+                memory.clone(),
+                skill_library.clone(),
+                recorder.clone(),
+            )
+            .await?;
         }
         Some(Commands::Swarm { task }) => {
             run_swarm(&task, &config, memory.clone()).await?;
@@ -221,11 +251,41 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
                 sparrow::cli::AuthAction::Add { provider } => {
-                    println!("Add credentials for: {}", provider);
-                    println!(
-                        "Set {}_API_KEY env variable or use 'sparrow config edit'",
-                        provider.to_uppercase()
-                    );
+                    let provider_def = sparrow::config::providers::onboarding_providers()
+                        .into_iter()
+                        .find(|p| p.id == provider || p.label.eq_ignore_ascii_case(&provider));
+                    let (provider_id, label, env_var) = provider_def
+                        .map(|p| {
+                            (
+                                p.id,
+                                p.label,
+                                p.api_key_env.unwrap_or_else(|| {
+                                    format!("{}_API_KEY", provider.to_uppercase())
+                                }),
+                            )
+                        })
+                        .unwrap_or_else(|| {
+                            (
+                                provider.clone(),
+                                provider.clone(),
+                                format!("{}_API_KEY", provider.to_uppercase()),
+                            )
+                        });
+                    println!("Add credentials for: {} ({})", label, provider_id);
+                    println!("Paste API key for {}:", env_var);
+                    let key = rpassword::read_password()
+                        .or_else(|_| {
+                            let mut key = String::new();
+                            std::io::stdin().read_line(&mut key)?;
+                            Ok::<_, std::io::Error>(key)
+                        })?
+                        .trim()
+                        .to_string();
+                    if key.is_empty() {
+                        anyhow::bail!("Empty API key; nothing stored.");
+                    }
+                    auth.set(&provider_id, Credential::api_key(key))?;
+                    println!("Stored credential for {}.", provider_id);
                 }
                 sparrow::cli::AuthAction::Rm { provider } => {
                     auth.remove(&provider)?;
@@ -369,9 +429,13 @@ async fn main() -> anyhow::Result<()> {
 
 // ─── Agent commands ─────────────────────────────────────────────────────────────
 
-fn handle_agent(
+async fn handle_agent(
     action: sparrow::cli::AgentAction,
     store: &Arc<dyn AgentStore>,
+    config: &sparrow::config::Config,
+    memory: Arc<dyn Memory>,
+    skills: Arc<dyn SkillLibrary>,
+    recorder: Arc<FsRecorder>,
 ) -> anyhow::Result<()> {
     match action {
         sparrow::cli::AgentAction::Create { name } => {
@@ -420,10 +484,9 @@ fn handle_agent(
             println!("Agent '{}' removed.", name);
         }
         sparrow::cli::AgentAction::Run { name, task } => {
-            println!("Run task as agent '{}': {}", name, task);
             if let Some(soul) = store.get(&name) {
-                println!("Agent identity: {} ({})", soul.name, soul.role);
-                println!("(Agent-aware run via 'sparrow run')");
+                println!("Running as agent '{}': {}", soul.name, task);
+                run_task(&task, config, memory, skills, recorder, Some(soul)).await?;
             } else {
                 anyhow::bail!("Agent '{}' not found.", name);
             }
@@ -716,13 +779,85 @@ fn build_provider_brains(
     providers
 }
 
-async fn run_task(
-    task: &str,
-    _cli: &Cli,
+async fn run_tui(
     config: &sparrow::config::Config,
     memory: Arc<dyn Memory>,
-    _agent_store: Arc<dyn AgentStore>,
     skills: Arc<dyn SkillLibrary>,
+) -> anyhow::Result<()> {
+    use sparrow::engine::{Engine, Task};
+    use sparrow::router::BasicRouter;
+
+    let providers = build_provider_brains(config, true);
+    let router = Arc::new(BasicRouter::new(config, providers));
+    let engine = Arc::new(
+        Engine::new(router, config.clone())
+            .with_memory(memory)
+            .with_skills(skills),
+    );
+
+    let (task_tx, mut task_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
+
+    tokio::spawn(async move {
+        while let Some(description) = task_rx.recv().await {
+            let task = Task {
+                description,
+                context: vec![],
+            };
+            if let Err(err) = engine.drive(task, event_tx.clone()).await {
+                let _ = event_tx.send(sparrow::event::Event::Error {
+                    run: sparrow::event::RunId("tui".into()),
+                    message: err.to_string(),
+                });
+            }
+        }
+    });
+
+    let mut tui = Tui::new().with_channels(task_tx, event_rx);
+    tokio::task::spawn_blocking(move || tui.run()).await??;
+    Ok(())
+}
+
+async fn handle_daemon(
+    config: &sparrow::config::Config,
+    memory: Arc<dyn Memory>,
+    scheduler: Arc<MemoryScheduler>,
+    recorder: Arc<FsRecorder>,
+    skills: Arc<dyn SkillLibrary>,
+) -> anyhow::Result<()> {
+    use sparrow::engine::Engine;
+    use sparrow::router::BasicRouter;
+
+    let providers = build_provider_brains(config, true);
+    let router = Arc::new(BasicRouter::new(config, providers));
+    let engine = Arc::new(
+        Engine::new(router, config.clone())
+            .with_memory(memory.clone())
+            .with_skills(skills),
+    );
+    let event_bus = EventBus::new(256);
+    let runtime = SparrowRuntime::new(
+        engine,
+        scheduler,
+        recorder,
+        event_bus,
+        memory,
+        config.clone(),
+    );
+    runtime.start().await?;
+    println!("Sparrow daemon running. API on 127.0.0.1:9337. Ctrl+C to stop.");
+    tokio::signal::ctrl_c().await?;
+    runtime.stop().await?;
+    Ok(())
+}
+
+async fn run_task(
+    task: &str,
+    config: &sparrow::config::Config,
+    memory: Arc<dyn Memory>,
+    skills: Arc<dyn SkillLibrary>,
+    recorder: Arc<FsRecorder>,
+    soul: Option<Soul>,
 ) -> anyhow::Result<()> {
     use sparrow::engine::Engine;
     use sparrow::router::BasicRouter;
@@ -731,9 +866,12 @@ async fn run_task(
     let providers = build_provider_brains(config, true);
 
     let router = Arc::new(BasicRouter::new(config, providers));
-    let engine = Engine::new(router, config.clone())
+    let mut engine = Engine::new(router, config.clone())
         .with_memory(memory.clone())
         .with_skills(skills);
+    if let Some(soul) = &soul {
+        engine = engine.with_identity(soul.to_identity());
+    }
 
     let task_obj = sparrow::engine::Task {
         description: task.to_string(),
@@ -742,8 +880,28 @@ async fn run_task(
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
+    let task_for_recording = task.to_string();
+    let config_snapshot = redacted_config_snapshot(config);
+    let repo_head = current_repo_head();
     let print_handle = tokio::spawn(async move {
         while let Some(event) = rx.recv().await {
+            if let sparrow::event::Event::RunStarted { run, agent, .. } = &event {
+                recorder.start_run(
+                    run.0.clone(),
+                    RunInputs {
+                        task: task_for_recording.clone(),
+                        config_snapshot: config_snapshot.clone(),
+                        model_id: "router-selected".into(),
+                        repo_head: repo_head.clone(),
+                        timestamp: chrono::Utc::now().to_rfc3339(),
+                        agent: agent.clone(),
+                    },
+                );
+            }
+            recorder.record(&event);
+            if let sparrow::event::Event::RunFinished { run, .. } = &event {
+                let _ = recorder.finalize(&run.0);
+            }
             match &event {
                 sparrow::event::Event::ThinkingDelta { text, .. } => {
                     print!("{}", text);
@@ -990,14 +1148,41 @@ async fn handle_mcp(
                 }
             }
         }
-        sparrow::cli::McpAction::Add { server } => {
-            println!("Adding MCP server: {}", server);
-            println!("For now, edit ~/.config/sparrow/mcp/mcp_servers.json manually");
-            println!("Example:");
-            println!(
-                r#"  {{"name":"{}","transport":"stdio","command":"npx","args":["-y","@modelcontextprotocol/server-filesystem","/path"],"allow_tools":[]}}"#,
-                server
-            );
+        sparrow::cli::McpAction::Add {
+            server,
+            command,
+            args,
+            transport,
+        } => {
+            if let Some(command) = command {
+                let transport = match transport.as_deref().unwrap_or("stdio") {
+                    "stdio" => Transport::Stdio,
+                    "sse" => Transport::Sse,
+                    "url" => Transport::Url,
+                    other => anyhow::bail!("Unsupported MCP transport: {}", other),
+                };
+                client.add_server(McpServer {
+                    name: server.clone(),
+                    transport,
+                    command: Some(command),
+                    args,
+                    url: None,
+                    env: Default::default(),
+                    allow_tools: vec![],
+                })?;
+                println!("Added MCP server: {}", server);
+            } else {
+                println!("Adding MCP server: {}", server);
+                println!(
+                    "Usage: sparrow mcp add {} --command <cmd> --args \"<args>\"",
+                    server
+                );
+                println!("Example:");
+                println!(
+                    r#"  sparrow mcp add {} --command npx --args "-y @modelcontextprotocol/server-filesystem C:\Sparrow""#,
+                    server
+                );
+            }
         }
         sparrow::cli::McpAction::Rm { server } => {
             client.remove_server(&server)?;
@@ -1158,7 +1343,7 @@ async fn handle_gateway(
     state_dir: &std::path::PathBuf,
     config: &sparrow::config::Config,
     memory: Arc<dyn Memory>,
-    _scheduler: Arc<MemoryScheduler>,
+    scheduler: Arc<MemoryScheduler>,
     recorder: Arc<FsRecorder>,
 ) -> anyhow::Result<()> {
     match action {
@@ -1173,6 +1358,7 @@ async fn handle_gateway(
 
             let router = Arc::new(BasicRouter::new(config, providers));
             let engine = Arc::new(Engine::new(router, config.clone()).with_memory(memory.clone()));
+            let _cron_handle = scheduler.start_cron_loop(engine.clone(), recorder.clone());
 
             // Event bus for pub/sub
             let (event_bus_tx, _) = tokio::sync::broadcast::channel::<sparrow::event::Event>(256);
@@ -1465,6 +1651,10 @@ fn handle_profile(
         }
         sparrow::cli::ProfileAction::List => {
             let profiles_dir = config_dir.join("profiles");
+            let active_profile = std::fs::read_to_string(config_dir.join("active_profile"))
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty());
             if !profiles_dir.exists() {
                 println!("No profiles yet. Create one with: sparrow profile create <name>");
                 return Ok(());
@@ -1474,7 +1664,12 @@ fn handle_profile(
                 for entry in entries.flatten() {
                     if entry.path().is_dir() {
                         if let Some(name) = entry.file_name().to_str() {
-                            println!("  - {}", name);
+                            let marker = if active_profile.as_deref() == Some(name) {
+                                "*"
+                            } else {
+                                " "
+                            };
+                            println!("{} {}", marker, name);
                         }
                     }
                 }
@@ -1485,8 +1680,9 @@ fn handle_profile(
             if !profile_config.exists() {
                 anyhow::bail!("Profile '{}' not found. Create it first.", name);
             }
-            println!("Switched to profile '{}'.", name);
-            println!("Set SPARROW_PROFILE={} or use --profile {}", name, name);
+            std::fs::write(config_dir.join("active_profile"), &name)?;
+            println!("Active profile is now '{}'.", name);
+            println!("Config: {}", profile_config.display());
         }
     }
     Ok(())

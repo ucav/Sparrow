@@ -69,6 +69,9 @@ pub enum Commands {
     /// Launch webview console (HTTP + WebSocket)
     Console,
 
+    /// Run headless Sparrow runtime daemon
+    Daemon,
+
     /// Manage persistent agents
     Agent {
         #[command(subcommand)]
@@ -221,9 +224,25 @@ pub enum SkillsAction {
 
 #[derive(Subcommand)]
 pub enum McpAction {
-    Add { server: String },
+    Add {
+        server: String,
+
+        /// Command to launch the MCP server
+        #[arg(long)]
+        command: Option<String>,
+
+        /// Command arguments, either repeated or space-delimited
+        #[arg(long, value_delimiter = ' ', allow_hyphen_values = true)]
+        args: Vec<String>,
+
+        /// Transport backend: stdio, sse, or url
+        #[arg(long)]
+        transport: Option<String>,
+    },
     List,
-    Rm { server: String },
+    Rm {
+        server: String,
+    },
 }
 
 #[derive(Subcommand)]

@@ -200,6 +200,7 @@ pub struct Task {
 pub struct Engine {
     router: Arc<dyn Router>,
     config: Config,
+    identity: Option<Identity>,
     memory: Option<Arc<dyn Memory>>,
     skills: Option<Arc<dyn SkillLibrary>>,
     redaction: RedactionFilter,
@@ -230,6 +231,7 @@ impl Engine {
         Self {
             router,
             config,
+            identity: None,
             memory: None,
             skills: None,
             redaction: RedactionFilter::new(),
@@ -258,6 +260,11 @@ impl Engine {
 
     pub fn with_skills(mut self, skills: Arc<dyn SkillLibrary>) -> Self {
         self.skills = Some(skills);
+        self
+    }
+
+    pub fn with_identity(mut self, identity: Identity) -> Self {
+        self.identity = Some(identity);
         self
     }
 
@@ -574,11 +581,11 @@ impl Engine {
             sandbox,
         };
 
-        let identity = Identity {
+        let identity = self.identity.clone().unwrap_or_else(|| Identity {
             name: "sparrow".into(),
             role: "senior software engineer".into(),
             personality: "concise, competent, direct".into(),
-        };
+        });
 
         let brain_policy = BrainPolicy {
             chain,

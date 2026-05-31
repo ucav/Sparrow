@@ -5,11 +5,17 @@ use tokio::sync::{Mutex, mpsc};
 
 use crate::config::Config;
 use crate::engine::{Identity, Workspace};
-use crate::event::{AgentStatus, Event, OutcomeSummary, RunId, TokenUsage};
+use crate::event::{AgentStatus, Block, Event, OutcomeSummary, RiskLevel, RunId, TokenUsage};
 use crate::memory::Memory;
 use crate::provider::{Brain, BrainRequest, ContentBlock, Msg};
 use crate::router::{BudgetState, Router, TaskTier};
 use crate::sandbox::LocalSandbox;
+use crate::tools::edit::{Edit, MultiEdit};
+use crate::tools::exec::Exec;
+use crate::tools::fs::{FsList, FsRead, FsWrite};
+use crate::tools::git::Git;
+use crate::tools::search_and_web::Search;
+use crate::tools::{ToolCtx, ToolRegistry};
 
 // ─── Swarm types ────────────────────────────────────────────────────────────────
 
@@ -111,6 +117,73 @@ pub struct FileLockGuard {
     _files: Vec<String>,
 }
 
+fn swarm_tool_registry(workspace: &Workspace, write_enabled: bool) -> Arc<ToolRegistry> {
+    let mut registry = ToolRegistry::new();
+    registry.register(Arc::new(FsRead));
+    registry.register(Arc::new(FsList));
+    if write_enabled {
+        registry.register(Arc::new(FsWrite));
+        registry.register(Arc::new(Edit));
+        registry.register(Arc::new(MultiEdit));
+        registry.register(Arc::new(Search));
+        registry.register(Arc::new(Git));
+        registry.register(Arc::new(Exec::new(workspace.sandbox.clone())));
+    }
+    Arc::new(registry)
+}
+
+fn tool_blocks_text(blocks: &[Block]) -> String {
+    blocks
+        .iter()
+        .map(|block| match block {
+            Block::Text(text) => text.clone(),
+            Block::Json(value) => value.to_string(),
+            Block::Image { mime, data } => format!("[image: {}, {} bytes]", mime, data.len()),
+            Block::Diff { file, patch } => format!("diff for {}\n{}", file, patch),
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn track_tool_diff(
+    diffs: &mut Vec<crate::event::FileDiff>,
+    tool_name: &str,
+    args: &serde_json::Value,
+    blocks: &[Block],
+) {
+    for block in blocks {
+        if let Block::Diff { file, patch } = block {
+            let plus = patch
+                .lines()
+                .filter(|line| line.starts_with('+') && !line.starts_with("+++"))
+                .count() as u32;
+            let minus = patch
+                .lines()
+                .filter(|line| line.starts_with('-') && !line.starts_with("---"))
+                .count() as u32;
+            if !diffs.iter().any(|diff| diff.file == *file) {
+                diffs.push(crate::event::FileDiff {
+                    file: file.clone(),
+                    plus,
+                    minus,
+                });
+            }
+        }
+    }
+
+    if matches!(tool_name, "fs_write" | "edit" | "multi_edit") {
+        if let Some(path) = args.get("path").and_then(|value| value.as_str()) {
+            if !diffs.iter().any(|diff| diff.file == path) {
+                diffs.push(crate::event::FileDiff {
+                    file: path.to_string(),
+                    plus: 0,
+                    minus: 0,
+                });
+            }
+        }
+    }
+}
+
 // ─── THE ORCHESTRATOR TRAIT ─────────────────────────────────────────────────────
 
 #[async_trait::async_trait]
@@ -192,7 +265,7 @@ impl DefaultOrchestrator {
     async fn run_planner(
         &self,
         task: &str,
-        _workspace: &Workspace,
+        workspace: &Workspace,
         brain: Arc<dyn Brain>,
         event_tx: &mpsc::UnboundedSender<Event>,
         parent_run: &RunId,
@@ -234,10 +307,12 @@ Output format:
             }],
         }];
 
+        let tools = swarm_tool_registry(workspace, false);
+
         let req = BrainRequest {
             system: Some(system),
             messages,
-            tools: vec![],
+            tools: tools.to_specs(),
             max_tokens: 4096,
             temperature: 0.0,
             stop: vec![],
@@ -345,19 +420,12 @@ Your job: implement the SPEC exactly. Use tools to read existing files and write
             file_list.join("\n"),
         );
 
-        let messages = vec![Msg {
+        let mut messages = vec![Msg {
             role: "user".into(),
             content: vec![ContentBlock::Text { text: context_msg }],
         }];
-
-        let req = BrainRequest {
-            system: Some(system),
-            messages,
-            tools: vec![],
-            max_tokens: 8192,
-            temperature: 0.0,
-            stop: vec![],
-        };
+        let tools = swarm_tool_registry(workspace, true);
+        let tool_specs = tools.to_specs();
 
         let _ = event_tx.send(Event::AgentStatus {
             run: parent_run.clone(),
@@ -366,51 +434,157 @@ Your job: implement the SPEC exactly. Use tools to read existing files and write
             note: format!("implementing with {}", brain.id()),
         });
 
-        let mut stream = brain.complete(req).await?;
         let mut output = String::new();
-
-        while let Some(ev) = futures::StreamExt::next(&mut stream).await {
-            match ev {
-                crate::provider::BrainEvent::TextDelta(text) => {
-                    output.push_str(&text);
-                    let _ = event_tx.send(Event::ThinkingDelta {
-                        run: parent_run.clone(),
-                        text,
-                    });
-                }
-                crate::provider::BrainEvent::Done(_) => break,
-                crate::provider::BrainEvent::Error(e) => {
-                    anyhow::bail!("Coder error: {}", e)
-                }
-                _ => {}
-            }
-        }
-
-        // Parse diffs from coder output (simplified — extracts file mentions)
         let mut diffs = Vec::new();
-        for line in output.lines() {
-            if let Some(file) = line.strip_prefix("Edited ") {
-                let file = file.trim().trim_end_matches(':');
-                diffs.push(crate::event::FileDiff {
-                    file: file.to_string(),
-                    plus: 1,
-                    minus: 1,
-                });
-            } else if line.contains("fs_write") || line.contains("edit") {
-                // Rough extraction
-                if let Some(start) = line.find('"') {
-                    if let Some(end) = line[start + 1..].find('"') {
-                        let path = &line[start + 1..start + 1 + end];
-                        if !diffs
-                            .iter()
-                            .any(|d: &crate::event::FileDiff| d.file == path)
-                        {
-                            diffs.push(crate::event::FileDiff {
-                                file: path.to_string(),
-                                plus: 1,
-                                minus: 0,
+
+        for _turn in 0..8 {
+            let req = BrainRequest {
+                system: Some(system.clone()),
+                messages: messages.clone(),
+                tools: tool_specs.clone(),
+                max_tokens: 8192,
+                temperature: 0.0,
+                stop: vec![],
+            };
+
+            let mut stream = brain.complete(req).await?;
+            let mut assistant_text = String::new();
+            let mut assistant_blocks = Vec::new();
+            let mut tool_result_blocks = Vec::new();
+            let mut current_tool_id = String::new();
+            let mut current_tool_name = String::new();
+            let mut current_tool_json = String::new();
+
+            while let Some(ev) = futures::StreamExt::next(&mut stream).await {
+                match ev {
+                    crate::provider::BrainEvent::TextDelta(text) => {
+                        output.push_str(&text);
+                        assistant_text.push_str(&text);
+                        let _ = event_tx.send(Event::ThinkingDelta {
+                            run: parent_run.clone(),
+                            text,
+                        });
+                    }
+                    crate::provider::BrainEvent::ToolUseStart { id, name } => {
+                        current_tool_id = id.clone();
+                        current_tool_name = name.clone();
+                        current_tool_json.clear();
+                        let risk = tools
+                            .get(&name)
+                            .map(|tool| tool.risk())
+                            .unwrap_or(RiskLevel::ReadOnly);
+                        let _ = event_tx.send(Event::ToolUseProposed {
+                            run: parent_run.clone(),
+                            id,
+                            name,
+                            args: serde_json::json!({}),
+                            risk,
+                        });
+                    }
+                    crate::provider::BrainEvent::ToolUseDelta { id: _, json } => {
+                        current_tool_json.push_str(&json);
+                    }
+                    crate::provider::BrainEvent::ToolUseEnd { id } => {
+                        let args = serde_json::from_str::<serde_json::Value>(&current_tool_json)
+                            .unwrap_or_else(|_| serde_json::json!({}));
+                        let tool_name = if current_tool_name.is_empty() {
+                            "unknown".to_string()
+                        } else {
+                            current_tool_name.clone()
+                        };
+                        assistant_blocks.push(ContentBlock::ToolUse {
+                            id: id.clone(),
+                            name: tool_name.clone(),
+                            input: args.clone(),
+                        });
+                        let _ = event_tx.send(Event::ToolUseStarted {
+                            run: parent_run.clone(),
+                            id: id.clone(),
+                        });
+                        let result = if let Some(tool) = tools.get(&tool_name) {
+                            let ctx = ToolCtx {
+                                workspace_root: workspace.root.clone(),
+                                run_id: parent_run.clone(),
+                            };
+                            match tool.call(args.clone(), &ctx).await {
+                                Ok(result) => result,
+                                Err(err) => crate::tools::ToolResult::error(format!(
+                                    "Tool {} failed: {}",
+                                    tool_name, err
+                                )),
+                            }
+                        } else {
+                            crate::tools::ToolResult::error(format!("Unknown tool: {}", tool_name))
+                        };
+                        track_tool_diff(&mut diffs, &tool_name, &args, &result.content);
+                        for diff in &diffs {
+                            let _ = event_tx.send(Event::DiffProposed {
+                                run: parent_run.clone(),
+                                file: diff.file.clone(),
+                                patch: String::new(),
+                                plus: diff.plus,
+                                minus: diff.minus,
                             });
                         }
+                        let blocks = result.content.clone();
+                        let text = tool_blocks_text(&blocks);
+                        let _ = event_tx.send(Event::ToolOutput {
+                            run: parent_run.clone(),
+                            id: id.clone(),
+                            blocks,
+                        });
+                        tool_result_blocks.push(ContentBlock::ToolResult {
+                            tool_use_id: id,
+                            content: vec![ContentBlock::Text { text }],
+                            is_error: Some(result.is_error),
+                        });
+                        current_tool_id.clear();
+                        current_tool_name.clear();
+                        current_tool_json.clear();
+                    }
+                    crate::provider::BrainEvent::Done(_) => break,
+                    crate::provider::BrainEvent::Error(e) => anyhow::bail!("Coder error: {}", e),
+                    crate::provider::BrainEvent::Usage(_) => {}
+                }
+            }
+
+            if !assistant_text.is_empty() {
+                assistant_blocks.insert(
+                    0,
+                    ContentBlock::Text {
+                        text: assistant_text,
+                    },
+                );
+            }
+            if tool_result_blocks.is_empty() {
+                break;
+            }
+            messages.push(Msg {
+                role: "assistant".into(),
+                content: assistant_blocks,
+            });
+            messages.push(Msg {
+                role: "user".into(),
+                content: tool_result_blocks,
+            });
+        }
+
+        if diffs.is_empty() {
+            for line in output.lines() {
+                if let Some(file) = line.strip_prefix("Edited ") {
+                    let file = file
+                        .trim()
+                        .split(':')
+                        .next()
+                        .unwrap_or("")
+                        .trim()
+                        .to_string();
+                    if !file.is_empty() && !diffs.iter().any(|d| d.file == file) {
+                        diffs.push(crate::event::FileDiff {
+                            file,
+                            plus: 1,
+                            minus: 1,
+                        });
                     }
                 }
             }
@@ -459,14 +633,25 @@ Your job: implement the SPEC exactly. Use tools to read existing files and write
             .collect::<Vec<_>>()
             .join("\n");
 
-        let files_to_check: Vec<String> = diffs
-            .iter()
-            .map(|d| {
-                let path = workspace.root.join(&d.file);
-                std::fs::read_to_string(&path)
-                    .unwrap_or_else(|_| format!("[cannot read {}]", d.file))
-            })
-            .collect();
+        let tools = swarm_tool_registry(workspace, false);
+        let read_tool = tools.get("fs_read");
+        let mut files_to_check = Vec::new();
+        for d in diffs {
+            let content = if let Some(tool) = &read_tool {
+                let ctx = ToolCtx {
+                    workspace_root: workspace.root.clone(),
+                    run_id: parent_run.clone(),
+                };
+                let args = serde_json::json!({ "path": d.file, "limit": 220 });
+                match tool.call(args, &ctx).await {
+                    Ok(result) => tool_blocks_text(&result.content),
+                    Err(_) => format!("[cannot read {}]", d.file),
+                }
+            } else {
+                format!("[cannot read {}]", d.file)
+            };
+            files_to_check.push(content);
+        }
 
         let files_context: String = diffs
             .iter()
@@ -523,7 +708,7 @@ or:
         let req = BrainRequest {
             system: Some(system),
             messages,
-            tools: vec![],
+            tools: tools.to_specs(),
             max_tokens: 4096,
             temperature: 0.0,
             stop: vec![],
