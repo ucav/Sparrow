@@ -46,8 +46,12 @@
   .cockpit{display:flex;align-items:center;flex-wrap:wrap;gap:0;padding:9px 16px;
     border-bottom:1px solid var(--line);background:linear-gradient(180deg,#1b150d,#161108);font-size:12px}
   .cmark{display:flex;align-items:center;gap:8px;padding-right:16px;border-right:1px solid var(--line)}
-  .cmark .w{font-weight:700;letter-spacing:2.5px;font-size:13px;
-    background:linear-gradient(90deg,var(--brand),var(--coral));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .cmark .w,.word{font-weight:700;letter-spacing:11px;font-size:13px;
+    background:linear-gradient(90deg,#f2a93c,#f0674a,#f2a93c);background-size:220% 100%;
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    animation:wordin .6s ease 1.0s both,shimmer 3.2s linear 1.6s infinite}
+  @keyframes shimmer{to{background-position:220% 0}}
+  @keyframes wordin{from{opacity:0;letter-spacing:24px;filter:blur(6px)}to{opacity:1;letter-spacing:11px;filter:none}}
   .stat{display:flex;align-items:center;gap:7px;padding:0 12px;border-right:1px solid var(--line);color:var(--dim)}
   .stat:last-child{border-right:none}
   .stat .k{color:var(--dimmer);font-size:10px;letter-spacing:.7px;text-transform:uppercase}
@@ -67,11 +71,18 @@
   .planner{color:var(--planner)}.coder{color:var(--agent)}.verifier{color:var(--verifier)}
   .tg{color:var(--planner)}.b{color:var(--fg);font-weight:500}
   .cur{display:inline-block;width:8px;height:15px;background:var(--brand);vertical-align:-2px;animation:bl 1s steps(1) infinite}
+  .caret{display:inline-block;width:7px;height:13px;background:var(--agent);margin-left:2px;vertical-align:-2px;animation:bl 1.05s steps(1) infinite}
   @keyframes bl{50%{opacity:0}}
   .sp{display:inline-block;color:var(--brand)}
+  .verb{display:inline-block;color:var(--brand);min-width:68px;margin-left:4px}
   .sec{color:var(--dimmer);font-size:10.5px;letter-spacing:2px;text-transform:uppercase;margin:14px 0 4px}
   .tagline{color:var(--dim);font-size:12px;letter-spacing:1px;margin-bottom:10px;text-align:center}
-  .tagline b{background:linear-gradient(90deg,var(--brand),var(--coral));-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:700;letter-spacing:2px}
+  .tagline b{background:linear-gradient(90deg,#f2a93c,#f0674a,#f2a93c);background-size:220% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:700;letter-spacing:11px;animation:wordin .6s ease 1.0s both,shimmer 3.2s linear 1.6s infinite}
+  .bird{line-height:1.18;font-size:14px;margin:4px 0 6px;text-align:left;width:max-content;max-width:100%;margin-left:auto;margin-right:auto;position:relative}
+  .bird-ghost{color:var(--brand);opacity:0;filter:blur(1px);transform:translateX(-6px);animation:ghostin 1s ease 1.25s forwards}
+  @keyframes ghostin{0%{opacity:0}40%{opacity:.22}100%{opacity:0}}
+  .bird .brow{color:#5a4326}.bird .cheek{color:#f0674a}.bird .belly{color:#f7d089}.bird .beak{color:#f0674a}
+  .bird .patch{color:#1c150c;background:#1c150c}.bird .eye{color:#fff}.bird .tool{color:var(--steel)}.bird .gold{color:var(--gold)}.bird .fr{color:var(--brand)}
   .status{position:fixed;bottom:12px;right:16px;font-size:10px;color:var(--dimmer);z-index:10}
   .status.on{color:var(--add)}.status.off{color:var(--rem)}
 
@@ -218,7 +229,7 @@
   </div>
 
   <div class="cockpit">
-    <div class="cmark"><svg width="26" height="26" style="filter:drop-shadow(0 0 6px rgba(242,169,60,.5))"><use href="#sparrow-cockpit"/></svg><span class="w">SPARROW</span></div>
+    <div class="cmark"><svg width="26" height="26" style="filter:drop-shadow(0 0 6px rgba(242,169,60,.5))"><use href="#sparrow-cockpit"/></svg><span class="w word">SPARROW</span></div>
     <div class="stat"><span class="k">route</span><span class="route" id="route">idle</span></div>
     <div class="stat"><span class="k">cost</span><span class="cost" id="cost">$0.000</span></div>
     <div class="stat"><span class="k">in</span><span class="tok" id="tokIn">0</span></div>
@@ -243,6 +254,9 @@ const $=id=>document.getElementById(id);
 let costV=0,tokV=0,tokInV=0,tokOutV=0,sessionTok=0,sessionCost=0;
 let actualInV=0,actualOutV=0,estInV=0,estOutV=0;
 let tokenMeter=null,tokenMeterTimer=null;
+const flightVerbs=['Soaring','Gliding','Diving','Scouting','Perching','Foraging','Wheeling'];
+let flightVerbIndex=0;
+setInterval(()=>{document.querySelectorAll('.verb').forEach(v=>{v.textContent=flightVerbs[flightVerbIndex++%flightVerbs.length]})},2200);
 
 function line(html,cls=''){const d=document.createElement('div');d.className='ln '+cls;d.innerHTML=html;term.appendChild(d);term.scrollTop=term.scrollHeight;return d;}
 
@@ -299,6 +313,23 @@ function setAuto(level){
   p.querySelector('.led').style.background=col;p.querySelector('.led').style.boxShadow='0 0 8px '+col;
   $('autotxt').textContent=level.toUpperCase();
 }
+function cleanModelReason(reason){
+  const text=String(reason||'');
+  if(text.includes('Ollama API error 404')&&text.includes('model')){
+    return 'modèle local indisponible';
+  }
+  if(text.toLowerCase().includes('ollama')){
+    return 'provider local indisponible';
+  }
+  return text;
+}
+function routeSwitchLabel(from,to,reason){
+  const clean=cleanModelReason(reason);
+  if(clean==='modèle local indisponible'||clean==='provider local indisponible'){
+    return `↳ modèle local indisponible → routage modèle cloud <span class="planner">${esc(to)}</span>`;
+  }
+  return `↳ fallback: ${esc(from)} → ${esc(to)} <span class="dimd">${esc(clean)}</span>`;
+}
 
 // ─── WebSocket ─────────────────────────────────────────────────────
 let ws;
@@ -314,20 +345,20 @@ function handleEvent(ev){
   switch(ev.type){
     case 'RunStarted':line(`<span class="acc">▸ started:</span> <span class="cmd">analyse de la requête</span>`);resetRunMetrics();ensureTokenMeter();break;
     case 'RouteSelected':setRoute(ev.chain.join(' → '));line(`<span class="muted">↳ route: <span class="planner">${esc(ev.chain.join(' → '))}</span></span>`);break;
-    case 'ModelSwitched':line(`<span class="warn">↳ switch: ${esc(ev.from)} → ${esc(ev.to)} (${esc(ev.reason)})</span>`);break;
+    case 'ModelSwitched':line(`<span class="warn">${routeSwitchLabel(ev.from,ev.to,ev.reason)}</span>`);break;
     case 'Message':
       if(ev.role==='router'){line(`<span class="muted">○ routing · <span class="planner">${esc(ev.text)}</span></span>`)}
       else{line(`<span class="muted">${esc(ev.role)}:</span> <span class="cmd">${esc(ev.text)}</span>`)}
       break;
     case 'ThinkingDelta':line(`<span class="cmd">${esc(ev.text)}</span>`);break;
-    case 'ToolUseProposed':line(`<span class="muted">◆ <span style="color:var(--steel)">${esc(ev.name)}</span></span>`);break;
+    case 'ToolUseProposed':line(`<span class="sp">⠋</span> <span class="verb">Soaring</span> <span class="muted">tool · <span style="color:var(--steel)">${esc(ev.name)}</span></span>`);break;
     case 'ApprovalRequested':
       line(`<span class="warn">◌ approval required · ${esc(ev.summary)}</span>`);
       line(`<span class="approval-actions" data-approval="${escAttr(ev.id)}"><button class="approve" onclick="resolveApproval('${escAttr(ev.id)}','approve',this)">approve</button><button class="deny" onclick="resolveApproval('${escAttr(ev.id)}','deny',this)">deny</button></span>`);
       break;
     case 'ApprovalResolved':line(`<span class="muted">↳ approval: <span class="planner">${esc(ev.decision)}</span></span>`);break;
     case 'AgentSpawned':line(`<span class="${roleCls(ev.role)}">◆ ${esc(ev.role)} spawned (${esc(ev.model)})</span>`);break;
-    case 'AgentStatus':line(`<span class="${roleCls(ev.role)}">${icon(ev.status)} ${esc(ev.role)} — ${esc(ev.note)}</span>`);break;
+    case 'AgentStatus':line(`<span class="${roleCls(ev.role)}">${icon(ev.status)} ${esc(ev.role)} — ${esc(ev.note)}${ev.role==='coder'&&(ev.status==='Working'||ev.status==='Thinking')?'<span class="caret"></span>':''}</span>`);break;
     case 'CheckpointCreated':line(`<span class="acc">● checkpoint:</span> <span class="muted">${esc(ev.label)}</span>`);break;
     case 'SkillLearned':line(`<span class="coder">✦ skill learned · ${esc(ev.name)}</span>`);break;
     case 'CostUpdate':setCost(ev.usd);break;
@@ -339,7 +370,9 @@ function handleEvent(ev){
       else{line(`<span class="ok">✓ tests ${ev.passed} passed</span>`)}break;
     case 'RunFinished':
       line(`<span class="ok">✓ done</span> <span class="muted">${esc(ev.outcome.status)} · cost <span class="cost">$${ev.outcome.cost_usd.toFixed(4)}</span></span>`);break;
-    case 'Error':line(`<span class="err">Error: ${esc(ev.message)}</span>`);break;
+    case 'Error':
+      if(!String(ev.message||'').includes('Ollama API error 404')){line(`<span class="err">Error: ${esc(ev.message)}</span>`)}
+      break;
     default:line(`<span class="dimd">${esc(JSON.stringify(ev))}</span>`);break;
   }
 }
@@ -350,22 +383,25 @@ function roleCls(r){return r==='planner'?'planner':r==='coder'?'coder':r==='veri
 function icon(s){const m={Done:'✓',Working:'●',Thinking:'○',Error:'✗'};return m[s]||'◌';}
 
 const BIRD=
-'<svg width="132" height="132" viewBox="0 0 240 240" aria-label="Sparrow" style="display:block;margin:4px auto 6px;filter:drop-shadow(0 0 26px rgba(242,169,60,.45));animation:birdbob 3.4s ease-in-out infinite">'+
-'<defs><linearGradient id="sp-body" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f8bf57"/><stop offset="1" stop-color="#ef9b2f"/></linearGradient><linearGradient id="sp-belly" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fde6bd"/><stop offset="1" stop-color="#f7d089"/></linearGradient><linearGradient id="sp-key" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#b9b0a3"/><stop offset="1" stop-color="#f2c94c"/></linearGradient></defs>'+
-'<style>@keyframes birdbob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}'+
-'@keyframes blink{0%,94%,100%{opacity:1}95%,97%{opacity:0}}'+
-'.sp-eye{animation:blink 4.4s ease-in-out infinite}'+
-'.sp-key{animation:spkey 4.4s ease-in-out infinite;transform-origin:180px 100px}'+
-'@keyframes spkey{0%,100%{transform:translate(172px,96px) rotate(-15deg)}50%{transform:translate(172px,96px) rotate(-22deg)}}'+
-'</style><ellipse cx="100" cy="140" rx="62" ry="54" fill="#ef9b2f"/><ellipse cx="108" cy="158" rx="34" ry="28" fill="#f7d089"/><use href="#sparrow"/></svg>';
+'<span class="fr">        ^^</span>\n'+
+'<span class="fr">      .-~~~-.</span>\n'+
+'<span class="fr">     /</span><span class="brow">__</span><span class="fr">     \\</span>\n'+
+'<span class="fr">    | </span><span class="eye">o</span><span class="fr">   </span><span class="patch">██</span><span class="fr">  |</span>\n'+
+'<span class="fr">    |    </span><span class="beak">v</span><span class="fr">    |</span>\n'+
+'<span class="fr">    | </span><span class="cheek">.</span><span class="fr">       |</span>\n'+
+'<span class="fr">     \\ </span><span class="belly">\\__/</span><span class="fr">  /</span>\n'+
+'<span class="fr">      \'-..-\'</span>\n'+
+'<span class="fr">      /|  |\\</span>  <span class="tool">╤━</span><span class="gold">o</span>\n'+
+'<span class="fr">     \'_|  |_\'</span>';
 
 function bootIntro(){
   if(term.childElementCount>0)return;
-  line(BIRD);
-  line('<div class="tagline"><b>SPARROW</b> · one cli · grows with you</div>');
+  line(BIRD,'bird bird-ghost');
+  line(BIRD,'bird');
+  line('<div class="tagline"><b class="word">SPARROW</b> · one cli · grows with you</div>');
   line('<span class="sec">— cockpit online —</span>');
   line('<span class="planner">○ router</span>  <span class="muted">provider catalog loaded · config ready</span>');
-  line('<span class="coder">○ tools</span>   <span class="muted">fs · edit · search · exec · git · web · todo</span>');
+  line('<span class="coder">○ tools</span>   <span class="muted">fs · edit · search · exec · git · web · todo</span><span class="caret"></span>');
   line('<span class="verifier">○ audit</span>   <span class="muted">tokens, cost, routing and checkpoints stream live</span>');
   line('<span class="prompt">sparrow ›</span> <span class="cur"></span>');
 }
