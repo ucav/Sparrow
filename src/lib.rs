@@ -22,3 +22,4 @@ pub mod console;
 pub mod reasoning;
 pub mod hooks;
 pub mod onboarding;
+pub mod completions;

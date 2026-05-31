@@ -1,0 +1,70 @@
+._ SPARROW(1)                General Commands Manual               SPARROW(1)
+
+._N_A_M_E
+     sparrow — one CLI · grows with you
+
+._S_Y_N_O_P_S_I_S
+     sparrow [--tui | --web] [--json] [--model id] [--local] [--budget usd]
+             [--autonomy level] [--sandbox backend] [--profile name]
+             [command] [args...]
+
+._D_E_S_C_R_I_P_T_I_O_N
+     Sparrow is a self-contained CLI for agentic coding. One binary, any
+     model, no other CLI required.
+
+     If no command is given, launches the terminal TUI.
+
+._C_O_M_M_A_N_D_S
+     run task        Execute a single agentic task.
+     chat            Interactive multi-turn chat.
+     swarm task      Run planner → coder → verifier pipeline.
+     schedule task   Schedule a recurring job with --cron expression.
+     model           Show or override model routing (--list, --set).
+     auth            Manage provider credentials (add, list, rm).
+     agent           Manage persistent agents (create, list, edit, rm, run).
+     skills          Manage skill library (list, create, prune).
+     mcp             Manage MCP connectors (add, list, rm).
+     checkpoint      List git-based checkpoints.
+     rewind id       Restore workspace to a checkpoint.
+     replay run-id   Replay a transcript from a previous run.
+     gateway         Start/stop the messaging daemon.
+     profile         Manage isolated config profiles (create, list, use).
+     import source   Migrate from another tool.
+     config          Edit config.toml (--edit).
+     update          Self-update to the latest version.
+     doctor          Run diagnostics.
+     setup           Interactive onboarding.
+     learn           Interactive tutorial (5 lessons).
+     memory          Manage persistent memory (list, forget, add).
+
+._F_L_A_G_S
+     --tui           Launch the terminal TUI.
+     --web           Launch the webview console (browser).
+     --json          Output events as NDJSON (for scripts/CI).
+     --model id      Force a specific model.
+     --local         Prefer local/Ollama models.
+     --budget usd    Session budget cap in USD.
+     --autonomy lvl  Override autonomy level (supervised|trusted|autonomous).
+     --sandbox bknd  Select sandbox backend.
+     --profile name  Use an isolated profile.
+     --agent name    Run as a named persistent agent.
+
+._E_N_V_I_R_O_N_M_E_N_T
+     SPARROW_DEFAULTS_AUTONOMY
+     SPARROW_DEFAULTS_SANDBOX
+     SPARROW_BUDGET_DAILY
+     SPARROW_BUDGET_SESSION
+     SPARROW_THEME
+     *_API_KEY           Provider-specific API keys.
+
+._F_I_L_E_S
+     ~/.config/sparrow/config.toml    Configuration file.
+     ~/.local/state/sparrow/          State (database, transcripts).
+
+._S_E_E _A_L_S_O
+     Full documentation: https://github.com/ucav/Sparrow
+
+._A_U_T_H_O_R
+     Sparrow contributors.
+
+Sparrow 0.1.0                    May 2026                        SPARROW(1)

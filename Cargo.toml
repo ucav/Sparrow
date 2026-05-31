@@ -45,6 +45,9 @@ tower = "0.5"
 # OS keychain
 keyring = { version = "3", optional = true }
 
+[dev-dependencies]
+criterion = "0.5"
+
 [features]
 default = ["keyring"]
 keyring-dep = ["keyring"]
@@ -54,3 +57,7 @@ opt-level = "z"
 lto = true
 strip = true
 codegen-units = 1
+
+[[bench]]
+name = "micro_bench"
+harness = false
