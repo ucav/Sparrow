@@ -29,6 +29,24 @@ impl AgentId {
     }
 }
 
+pub fn friendly_model_switch_reason(reason: &str) -> String {
+    let lower = reason.to_lowercase();
+    if lower.contains("ollama api error 404") && lower.contains("model") {
+        "modèle local indisponible".into()
+    } else if lower.contains("ollama") {
+        "provider local indisponible".into()
+    } else {
+        reason.to_string()
+    }
+}
+
+pub fn is_local_model_unavailable(reason: &str) -> bool {
+    matches!(
+        friendly_model_switch_reason(reason).as_str(),
+        "modèle local indisponible" | "provider local indisponible"
+    )
+}
+
 // ─── Content blocks ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

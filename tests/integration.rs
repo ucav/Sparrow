@@ -1213,6 +1213,29 @@ mod tests {
     }
 
     #[test]
+    fn test_local_model_404_is_presented_as_fallback_not_raw_error() {
+        use sparrow::event::{Event, RunId};
+        use sparrow::gateway::format_event;
+
+        let reason = r#"Ollama API error 404: {"error":"model 'qwen3.5:32b' not found"}"#;
+        assert_eq!(
+            sparrow::event::friendly_model_switch_reason(reason),
+            "modèle local indisponible"
+        );
+        assert!(sparrow::event::is_local_model_unavailable(reason));
+
+        let event = Event::ModelSwitched {
+            run: RunId("test".into()),
+            from: "qwen3.5:32b".into(),
+            to: "nvidia/nemotron-3-super-120b-a12b".into(),
+            reason: reason.into(),
+        };
+        let formatted = format_event(&event).unwrap();
+        assert!(formatted.contains("modèle local indisponible"));
+        assert!(!formatted.contains("Ollama API error 404"));
+    }
+
+    #[test]
     fn test_gateway_response_buttons() {
         use sparrow::gateway::GatewayResponse;
         let resp = GatewayResponse {

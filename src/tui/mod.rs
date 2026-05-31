@@ -112,11 +112,16 @@ impl Tui {
                 from, to, reason, ..
             } => {
                 self.route = to.clone();
-                self.add_line(
-                    &format!("↳ switch: {} → {} ({})", from, to, reason),
-                    LogStyle::Warn,
-                    1,
-                );
+                let clean = crate::event::friendly_model_switch_reason(reason);
+                let label = if crate::event::is_local_model_unavailable(reason) {
+                    format!(
+                        "↳ modèle local indisponible → routage modèle cloud ({})",
+                        to
+                    )
+                } else {
+                    format!("↳ fallback: {} → {} ({})", from, to, clean)
+                };
+                self.add_line(&label, LogStyle::Warn, 1);
             }
             Event::ThinkingDelta { text, .. } => self.add_line(text, LogStyle::Cmd, 1),
             Event::ToolUseProposed { name, .. } => {
@@ -206,7 +211,11 @@ impl Tui {
                 LogStyle::Ok,
                 0,
             ),
-            Event::Error { message, .. } => self.add_line(message, LogStyle::Err, 0),
+            Event::Error { message, .. } => {
+                if !crate::event::is_local_model_unavailable(message) {
+                    self.add_line(message, LogStyle::Err, 0);
+                }
+            }
             _ => {}
         }
     }
