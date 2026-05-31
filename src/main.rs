@@ -92,6 +92,24 @@ async fn main() -> anyhow::Result<()> {
             SqliteMemory::open(&std::path::PathBuf::from(":memory:")).unwrap()
         }),
     );
+    let memory_for_discovery: Arc<dyn Memory> = memory.clone();
+    if memory_for_discovery
+        .get_discovered_models("ollama")
+        .is_empty()
+    {
+        let ollama_base_url =
+            std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434/v1".into());
+        tokio::spawn(async move {
+            discover_and_cache_provider(
+                memory_for_discovery,
+                "ollama".to_string(),
+                "ollama".to_string(),
+                ollama_base_url,
+                String::new(),
+            )
+            .await;
+        });
+    }
 
     // Initialize agent store
     let agent_store: Arc<dyn AgentStore> =
@@ -230,6 +248,33 @@ async fn main() -> anyhow::Result<()> {
                     println!("  No providers configured.");
                     println!("  Run 'sparrow auth add <provider>' or set *_API_KEY env vars.");
                 }
+                println!("\nDiscovered models (from API, cached 24h):");
+                let mut any_discovered = false;
+                for def in sparrow::config::providers::provider_registry() {
+                    let discovered = memory.get_discovered_models(&def.id);
+                    let static_names: std::collections::HashSet<String> =
+                        sparrow::config::providers::default_models(&def.id)
+                            .into_iter()
+                            .collect();
+                    let extra: Vec<_> = discovered
+                        .iter()
+                        .filter(|model| !static_names.contains(*model))
+                        .collect();
+                    if extra.is_empty() {
+                        continue;
+                    }
+                    any_discovered = true;
+                    println!("  {} (+{} discovered):", def.id, extra.len());
+                    for model in extra.iter().take(10) {
+                        println!("    - {}", model);
+                    }
+                    if extra.len() > 10 {
+                        println!("    ... and {} more", extra.len() - 10);
+                    }
+                }
+                if !any_discovered {
+                    println!("  No extra discovered models cached yet.");
+                }
             }
             if let Some(route) = set {
                 println!("Model routing set to: {} (apply in config.toml)", route);
@@ -254,7 +299,8 @@ async fn main() -> anyhow::Result<()> {
                     let provider_def = sparrow::config::providers::onboarding_providers()
                         .into_iter()
                         .find(|p| p.id == provider || p.label.eq_ignore_ascii_case(&provider));
-                    let (provider_id, label, env_var) = provider_def
+                    let (provider_id, label, env_var, adapter, base_url) = provider_def
+                        .clone()
                         .map(|p| {
                             (
                                 p.id,
@@ -262,6 +308,8 @@ async fn main() -> anyhow::Result<()> {
                                 p.api_key_env.unwrap_or_else(|| {
                                     format!("{}_API_KEY", provider.to_uppercase())
                                 }),
+                                p.adapter,
+                                p.base_url,
                             )
                         })
                         .unwrap_or_else(|| {
@@ -269,6 +317,8 @@ async fn main() -> anyhow::Result<()> {
                                 provider.clone(),
                                 provider.clone(),
                                 format!("{}_API_KEY", provider.to_uppercase()),
+                                "openai-compatible".into(),
+                                "https://api.openai.com/v1".into(),
                             )
                         });
                     println!("Add credentials for: {} ({})", label, provider_id);
@@ -284,8 +334,17 @@ async fn main() -> anyhow::Result<()> {
                     if key.is_empty() {
                         anyhow::bail!("Empty API key; nothing stored.");
                     }
+                    let stored_key = key.clone();
                     auth.set(&provider_id, Credential::api_key(key))?;
                     println!("Stored credential for {}.", provider_id);
+                    discover_and_cache_provider(
+                        memory.clone(),
+                        provider_id,
+                        adapter,
+                        base_url,
+                        stored_key,
+                    )
+                    .await;
                 }
                 sparrow::cli::AuthAction::Rm { provider } => {
                     auth.remove(&provider)?;
@@ -362,6 +421,18 @@ async fn main() -> anyhow::Result<()> {
             }
             let skills = skill_library.all();
             println!("Skills     : {} in library", skills.len());
+            let static_models: usize = sparrow::config::providers::provider_registry()
+                .iter()
+                .map(|provider| provider.models.len())
+                .sum();
+            let total_discovered: usize = sparrow::config::providers::provider_registry()
+                .iter()
+                .map(|provider| memory.get_discovered_models(&provider.id).len())
+                .sum();
+            println!(
+                "Models     : {} static + {} discovered (cached 24h)",
+                static_models, total_discovered
+            );
             let transcripts = recorder.list_transcripts();
             println!("Transcripts: {} recorded", transcripts.len());
             let jobs = scheduler.list();
@@ -628,6 +699,7 @@ fn effective_provider_configs(
     config: &sparrow::config::Config,
 ) -> std::collections::HashMap<String, ProviderConfig> {
     let mut effective = config.providers.clone();
+    let auth = sparrow::auth::store::ChainedAuthStore::new(config.config_dir.clone());
 
     for (name, pconfig) in effective.iter_mut() {
         if pconfig.models.is_empty() {
@@ -653,8 +725,9 @@ fn effective_provider_configs(
                 }
             })
             .unwrap_or(def.adapter == "ollama");
+        let has_stored_credential = auth.get(&def.id).is_some();
 
-        if !has_env_credential {
+        if !has_env_credential && !has_stored_credential {
             continue;
         }
 
@@ -680,8 +753,33 @@ fn effective_provider_configs(
     effective
 }
 
+async fn discover_and_cache_provider(
+    memory: Arc<dyn Memory>,
+    provider_id: String,
+    adapter: String,
+    base_url: String,
+    api_key: String,
+) {
+    match sparrow::provider::discovery::discover_models(&adapter, &base_url, &api_key).await {
+        Ok(models) if !models.is_empty() => {
+            let count = models.len();
+            if let Err(err) = memory.cache_discovered_models(&provider_id, &models) {
+                eprintln!(
+                    "  Model discovery cache failed for {}: {}",
+                    provider_id, err
+                );
+            } else {
+                println!("  {} models discovered for {}.", count, provider_id);
+            }
+        }
+        Ok(_) => {}
+        Err(err) => eprintln!("  Model discovery skipped for {}: {}", provider_id, err),
+    }
+}
+
 fn build_provider_brains(
     config: &sparrow::config::Config,
+    memory: &Arc<dyn Memory>,
     warn: bool,
 ) -> std::collections::HashMap<String, Vec<Arc<dyn sparrow::provider::Brain>>> {
     let auth = sparrow::auth::store::ChainedAuthStore::new(config.config_dir.clone());
@@ -714,16 +812,24 @@ fn build_provider_brains(
             continue;
         }
 
+        let mut model_names = pconfig.models.clone();
+        for discovered in memory.get_discovered_models(&name) {
+            if !model_names.iter().any(|model| model == &discovered) {
+                model_names.push(discovered);
+            }
+        }
+
         let mut brains: Vec<Arc<dyn sparrow::provider::Brain>> = Vec::new();
         match pconfig.adapter.as_str() {
             "anthropic-messages" => {
-                for model in &pconfig.models {
+                for model in &model_names {
                     brains.push(Arc::new(
                         sparrow::provider::anthropic::AnthropicAdapter::new(
                             model,
                             api_key.clone(),
                             pconfig.base_url.as_deref(),
-                        ),
+                        )
+                        .with_caps(sparrow::config::providers::model_caps(&name, model)),
                     ));
                 }
             }
@@ -732,12 +838,13 @@ fn build_provider_brains(
                     .base_url
                     .clone()
                     .unwrap_or_else(|| "https://api.openai.com/v1".into());
-                for model in &pconfig.models {
+                for model in &model_names {
                     let adapter: Arc<dyn sparrow::provider::Brain> = if pconfig.adapter == "ollama"
                     {
-                        Arc::new(sparrow::provider::ollama::OllamaAdapter::new(
-                            model, &base_url,
-                        ))
+                        Arc::new(
+                            sparrow::provider::ollama::OllamaAdapter::new(model, &base_url)
+                                .with_caps(sparrow::config::providers::model_caps(&name, model)),
+                        )
                     } else {
                         Arc::new(
                             sparrow::provider::openai_compat::OpenAICompatAdapter::new(
@@ -787,7 +894,7 @@ async fn run_tui(
     use sparrow::engine::{Engine, Task};
     use sparrow::router::BasicRouter;
 
-    let providers = build_provider_brains(config, true);
+    let providers = build_provider_brains(config, &memory, true);
     let router = Arc::new(BasicRouter::new(config, providers));
     let engine = Arc::new(
         Engine::new(router, config.clone())
@@ -828,7 +935,7 @@ async fn handle_daemon(
     use sparrow::engine::Engine;
     use sparrow::router::BasicRouter;
 
-    let providers = build_provider_brains(config, true);
+    let providers = build_provider_brains(config, &memory, true);
     let router = Arc::new(BasicRouter::new(config, providers));
     let engine = Arc::new(
         Engine::new(router, config.clone())
@@ -863,7 +970,7 @@ async fn run_task(
     use sparrow::router::BasicRouter;
     use std::sync::Arc;
 
-    let providers = build_provider_brains(config, true);
+    let providers = build_provider_brains(config, &memory, true);
 
     let router = Arc::new(BasicRouter::new(config, providers));
     let mut engine = Engine::new(router, config.clone())
@@ -965,7 +1072,7 @@ async fn run_swarm(
     use sparrow::router::BasicRouter;
     use std::sync::Arc;
 
-    let providers = build_provider_brains(config, true);
+    let providers = build_provider_brains(config, &memory, true);
 
     if providers.is_empty() {
         anyhow::bail!("No providers configured. Set up at least one provider with an API key.");
@@ -1281,7 +1388,7 @@ async fn handle_replay(
             if input.trim().to_lowercase() == "y" {
                 use sparrow::engine::Engine;
                 use sparrow::router::BasicRouter;
-                let providers = build_provider_brains(config, true);
+                let providers = build_provider_brains(config, &memory, true);
                 let router = Arc::new(BasicRouter::new(config, providers));
                 let engine = Arc::new(Engine::new(router, config.clone()).with_memory(memory));
                 let re_executer = ReExecuter::new(engine);
@@ -1328,7 +1435,7 @@ async fn handle_chat(
     use sparrow::engine::Engine;
     use sparrow::router::BasicRouter;
 
-    let providers = build_provider_brains(config, true);
+    let providers = build_provider_brains(config, &memory, true);
 
     let router = Arc::new(BasicRouter::new(config, providers));
     let engine = Arc::new(Engine::new(router, config.clone()).with_memory(memory));
@@ -1354,7 +1461,7 @@ async fn handle_gateway(
             use sparrow::engine::Engine;
             use sparrow::router::BasicRouter;
 
-            let providers = build_provider_brains(config, true);
+            let providers = build_provider_brains(config, &memory, true);
 
             let router = Arc::new(BasicRouter::new(config, providers));
             let engine = Arc::new(Engine::new(router, config.clone()).with_memory(memory.clone()));
@@ -1988,7 +2095,7 @@ async fn run_task_json(
     use sparrow::engine::Engine;
     use sparrow::router::BasicRouter;
 
-    let providers = build_provider_brains(config, false);
+    let providers = build_provider_brains(config, &memory, false);
 
     let router = Arc::new(BasicRouter::new(config, providers));
     let engine = Engine::new(router, config.clone())
@@ -2074,7 +2181,7 @@ async fn handle_webview(
             let task_for_recording = task.clone();
             let config_snapshot = redacted_config_snapshot(&current_config);
             let repo_head = current_repo_head();
-            let providers = build_provider_brains(&current_config, false);
+            let providers = build_provider_brains(&current_config, &memory_for_runs, false);
             let router = Arc::new(BasicRouter::new(&current_config, providers));
             let engine = Engine::new(router, current_config)
                 .with_memory(memory_for_runs.clone())
