@@ -30,14 +30,15 @@ Wordmark: 700 weight, letter-spacing ~3px, amber→coral gradient.
 
 ## Mascot
 
-**Chubby pirate sparrow.** Props:
-- Two-feather crest
-- Thick dark eyebrow
+**Chubby pirate-builder sparrow.** Props:
+- Rounded amber body
+- Crest tufts
 - Open eye + pirate eye patch with strap
-- Downward coral beak
+- Coral beak
 - Pink cheek blush
 - Cream belly
-- Key held in wing ("unlocks, no lock-in")
+- Gold hoop earring
+- Wrench held in wing
 - Two feet
 
 ## Files
@@ -46,20 +47,20 @@ Wordmark: 700 weight, letter-spacing ~3px, amber→coral gradient.
 |---|---|
 | `sparrow-logo.html` | Canonical SVG symbols + preview page |
 | `sparrow-mascot.svg` | Full mascot (240×240) |
-| `sparrow-cockpit.svg` | Cockpit mark — head + patch only (28×28) |
+| `sparrow-cockpit.svg` | Compact export of the canonical logo for small UI slots |
 | `sparrow-ascii.txt` | Console-native ASCII variant |
 | `sparrow-identity.html` | Brand identity page (splash + console concept) |
 | `sparrow-presentation.html` | Live demo / concept presentation |
 
 ## Usage
 
-**Web/HTML:** Use `<symbol id="sparrow">` or `<symbol id="sparrow-cockpit">` from `sparrow-logo.html`.
+**Web/HTML:** Use `<symbol id="sparrow">` from `sparrow-logo.html`.
 
 **Terminal:** Use `sparrow-ascii.txt` verbatim. This is the CLI/TUI rendering of the same pirate-builder mascot when SVG is not available.
 
 **App icon:** Use `sparrow-mascot.svg` or `sparrow-cockpit.svg`.
 
-**WebView and presentation:** Keep the cockpit mark visible in the permanent cockpit bar and reserve the ASCII variant for the terminal transcript area.
+**WebView and presentation:** Keep the full canonical logo visible in the permanent cockpit bar and reserve the ASCII variant for the terminal transcript area.
 
 ## Voice
 
