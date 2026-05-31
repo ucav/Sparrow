@@ -14,6 +14,7 @@ pub mod todo;
 pub mod search_and_web;
 pub mod subagent;
 pub mod extras;
+pub mod builder_tools;
 
 // ─── Tool context ───────────────────────────────────────────────────────────────
 
