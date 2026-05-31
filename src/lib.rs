@@ -19,3 +19,5 @@ pub mod update;
 pub mod redaction;
 pub mod extras;
 pub mod console;
+pub mod reasoning;
+pub mod hooks;
