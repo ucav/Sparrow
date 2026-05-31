@@ -571,7 +571,7 @@ impl Engine {
         registry.register(Arc::new(crate::tools::search_and_web::WebSearch));
         registry.register(Arc::new(crate::tools::search_and_web::WebFetch));
         registry.register(Arc::new(crate::tools::git::Git));
-        registry.register(Arc::new(crate::tools::todo::Todo));
+        registry.register(Arc::new(crate::tools::todo::Todo::new()));
         registry.register(Arc::new(crate::tools::exec::Exec::new(sandbox.clone())));
         let tools = Arc::new(registry);
         let tool_specs: Vec<ToolSpec> = tools.to_specs();

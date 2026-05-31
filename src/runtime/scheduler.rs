@@ -37,58 +37,14 @@ impl Job {
         }
     }
 
-    /// Simple cron parsing: minute hour day-of-month month day-of-week
-    /// Returns next scheduled DateTime.
+    /// Uses the `cron` crate for full cron expression support.
     pub fn next_schedule(&self) -> Option<DateTime<Utc>> {
-        parse_cron(&self.cron)
+        use cron::Schedule;
+        use std::str::FromStr;
+        Schedule::from_str(&self.cron)
+            .ok()
+            .and_then(|s| s.upcoming(Utc).next())
     }
-}
-
-/// Very basic cron parser: "minute hour day month weekday"
-/// Supports `*` and `*/N` for minute and hour fields.
-fn parse_cron(expr: &str) -> Option<DateTime<Utc>> {
-    let parts: Vec<&str> = expr.split_whitespace().collect();
-    if parts.len() < 2 {
-        return None;
-    }
-
-    let now = Utc::now();
-    let minute = parse_field(parts[0], now.minute());
-    let hour = parse_field(parts[1], now.hour());
-
-    // Build next occurrence: if already past today, schedule for next hour/day
-    let mut next = now
-        .date_naive()
-        .and_hms_opt(hour as u32, minute as u32, 0)?
-        .and_local_timezone(Utc)
-        .single()?;
-
-    if next <= now {
-        // Schedule for next hour
-        next = now
-            .date_naive()
-            .and_hms_opt(now.hour() + 1, minute as u32, 0)
-            .or_else(|| {
-                now.date_naive()
-                    .succ_opt()?
-                    .and_hms_opt(0, minute as u32, 0)
-            })?
-            .and_local_timezone(Utc)
-            .single()?;
-    }
-
-    Some(next)
-}
-
-fn parse_field(field: &str, current: u32) -> u32 {
-    if field == "*" {
-        return current;
-    }
-    if let Some(step) = field.strip_prefix("*/") {
-        let step: u32 = step.parse().unwrap_or(1);
-        return ((current / step) + 1) * step;
-    }
-    field.parse().unwrap_or(current)
 }
 
 // ─── THE SCHEDULER TRAIT ────────────────────────────────────────────────────────

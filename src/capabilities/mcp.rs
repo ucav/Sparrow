@@ -90,37 +90,43 @@ struct McpToolDef {
     input_schema: Value,
 }
 
-// ─── MCP Tool wrapper ───────────────────────────────────────────────────────────
+// ─── MCP Tool wrapper (real JSON-RPC execution) ────────────────────────────────
 
-/// Wraps an MCP server tool so it implements our Tool trait.
+use tokio::sync::mpsc;
+
+/// Wraps an MCP server tool with real JSON-RPC stdio execution.
 struct McpToolWrapper {
     server_name: String,
     tool_def: McpToolDef,
-    /// Function to call the tool (closure or channel sender)
-    call_fn: Arc<dyn Fn(&str, Value) -> anyhow::Result<ToolResult> + Send + Sync>,
+    /// Channel to send JSON-RPC requests to the MCP server process
+    request_tx: mpsc::Sender<McpRequest>,
+}
+
+struct McpRequest {
+    tool_name: String,
+    args: Value,
+    response_tx: tokio::sync::oneshot::Sender<anyhow::Result<ToolResult>>,
 }
 
 #[async_trait]
 impl Tool for McpToolWrapper {
-    fn name(&self) -> &str {
-        &self.tool_def.name
-    }
-
-    fn description(&self) -> &str {
-        &self.tool_def.description
-    }
-
-    fn schema(&self) -> Value {
-        self.tool_def.input_schema.clone()
-    }
-
-    fn risk(&self) -> RiskLevel {
-        // MCP tools are conservatively marked as Exec
-        RiskLevel::Exec
-    }
+    fn name(&self) -> &str { &self.tool_def.name }
+    fn description(&self) -> &str { &self.tool_def.description }
+    fn schema(&self) -> Value { self.tool_def.input_schema.clone() }
+    fn risk(&self) -> RiskLevel { RiskLevel::Exec }
 
     async fn call(&self, args: Value, _ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
-        (self.call_fn)(&self.server_name, args)
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.request_tx.send(McpRequest {
+            tool_name: self.tool_def.name.clone(),
+            args,
+            response_tx: tx,
+        }).await.map_err(|_| anyhow::anyhow!("MCP server process has stopped"))?;
+
+        tokio::time::timeout(std::time::Duration::from_secs(30), rx)
+            .await
+            .map_err(|_| anyhow::anyhow!("MCP tool call timed out"))?
+            .map_err(|_| anyhow::anyhow!("MCP tool call channel closed"))?
     }
 }
 
@@ -276,6 +282,50 @@ impl BasicMcpClient {
         let mut tools_resp = String::new();
         reader.read_line(&mut tools_resp).await?;
 
+        // Spawn background task for JSON-RPC request handling
+        let (request_tx, mut request_rx) = mpsc::channel::<McpRequest>(32);
+
+        tokio::spawn(async move {
+            let mut call_id: u64 = 3; // Start after initialize(1) and tools/list(2)
+            while let Some(req) = request_rx.recv().await {
+                call_id += 1;
+                // Build JSON-RPC tools/call request
+                let call_req = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": call_id,
+                    "method": "tools/call",
+                    "params": {
+                        "name": req.tool_name,
+                        "arguments": req.args,
+                    }
+                });
+                let _ = writer.write_all((serde_json::to_string(&call_req).unwrap() + "\n").as_bytes()).await;
+                let _ = writer.flush().await;
+
+                let mut resp_line = String::new();
+                match reader.read_line(&mut resp_line).await {
+                    Ok(_) => {
+                        let result = if let Ok(resp) = serde_json::from_str::<JsonRpcResponse>(&resp_line) {
+                            if let Some(err) = resp.error {
+                                Ok(ToolResult::error(format!("MCP error {}: {}", err.code, err.message)))
+                            } else if let Some(val) = resp.result {
+                                Ok(ToolResult::text(val.to_string()))
+                            } else {
+                                Ok(ToolResult::text("(empty MCP response)"))
+                            }
+                        } else {
+                            Ok(ToolResult::text(resp_line))
+                        };
+                        let _ = req.response_tx.send(result);
+                    }
+                    Err(e) => {
+                        let _ = req.response_tx.send(Err(anyhow::anyhow!("MCP read error: {}", e)));
+                        break; // Process dead, stop handling
+                    }
+                }
+            }
+        });
+
         // Parse tools
         let server_name = server.name.clone();
         let allow_list = server.allow_tools.clone();
@@ -293,13 +343,7 @@ impl BasicMcpClient {
                                 Arc::new(McpToolWrapper {
                                     server_name: srv.clone(),
                                     tool_def: t,
-                                    call_fn: Arc::new(move |_, _args| {
-                                        // Stub: real call would use the process
-                                        Ok(ToolResult::text(format!(
-                                            "MCP tool '{}' from server '{}' — call via stdio",
-                                            tool_name, srv
-                                        )))
-                                    }),
+                                    request_tx: request_tx.clone(),
                                 }) as Arc<dyn Tool>
                             })
                             .collect()
