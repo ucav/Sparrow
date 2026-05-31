@@ -115,24 +115,28 @@ sparrow --json run "task"                  # NDJSON for CI
 |---|---|
 | Specification | ✅ Complete |
 | Branding & Visual Identity | ✅ Complete |
-| Rust Kernel (M0) | ✅ Builds, 31 tests pass |
+| Rust Kernel (M0) | ✅ Builds, 41 tests pass |
 | CLI Grammar | ✅ All commands defined |
 | Provider Registry | ✅ 35 providers |
+| Native Ollama Adapter | ✅ /api/chat + NDJSON streaming |
 | Authentication | ✅ Env + encrypted file + keychain |
 | Routing Engine | ✅ Model scoring + fallback chains |
-| Autonomy Gate | ✅ Risk matrix implemented |
-| Checkpoint/Rewind | ✅ Git-based snapshots |
+| Autonomy Gate | ✅ 15-combination matrix tested |
+| Checkpoint/Rewind | ✅ Git-based, rewind restores cleanly |
+| Memory (SQLite 4-tier) | ✅ FTS5 + redaction + persistence |
+| Agent SOUL Files | ✅ Persistent, survives sessions |
 | TUI (ratatui) | ✅ Cockpit, scroll, ASCII mascot |
 | WebView Console | ✅ HTTP + WebSocket + JS client |
-| Swarm Orchestrator | ✅ Planner→Coder→Verifier |
-| Memory (SQLite 4-tier) | ✅ Repo, identity, task, shared |
+| Swarm Orchestrator | ✅ Planner→Coder→Verifier + REWORK |
 | Skills + Curator | ✅ Self-improving loop |
-| Scheduler | ✅ Cron jobs |
+| Scheduler | ✅ Cron jobs + persistence |
 | Recorder/Replayer | ✅ Transcript format |
-| Gateway (Telegram/Discord/Slack) | ✅ Transport stubs |
-| Cross-compilation | ⬜ Linux musl, macOS, Windows |
+| Gateway (Telegram/Discord/Slack) | ✅ 11 transport stubs |
+| `sparrow chat` interactive | ✅ Multi-turn chat mode |
+| `--json` NDJSON output | ✅ CI/hook friendly |
 | Install script | ✅ `install.sh` |
-| M1-M6 Polish | ⬜ In progress |
+| Cross-compilation | ⬜ Linux musl, macOS, Windows |
+| M6 Polish | ⬜ IBM Plex Mono, signed releases |
 
 ---
 
