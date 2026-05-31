@@ -651,6 +651,7 @@ impl Engine {
         let mut last_error: Option<String> = None;
         let mut waiting_for_approval = false;
         let mut denied_by_approval = false;
+        let mut skill_evidence = String::new();
 
         // Helper to send redacted events
         let send = |event: Event| {
@@ -929,6 +930,8 @@ impl Engine {
                                         let blocks = result.content.clone();
                                         let text = tool_result_text(&blocks);
                                         let is_error = result.is_error;
+                                        skill_evidence.push_str(&text);
+                                        skill_evidence.push('\n');
                                         let _ = event_tx.send(Event::ToolOutput {
                                             run: run_id.clone(),
                                             id: id.clone(),
@@ -1023,6 +1026,8 @@ impl Engine {
                                             let blocks = result.content.clone();
                                             let text = tool_result_text(&blocks);
                                             let is_error = result.is_error;
+                                            skill_evidence.push_str(&text);
+                                            skill_evidence.push('\n');
                                             let _ = event_tx.send(Event::ToolOutput {
                                                 run: run_id.clone(),
                                                 id: approval_id.clone(),
@@ -1146,6 +1151,8 @@ impl Engine {
                                                 break;
                                             }
 
+                                            skill_evidence.push_str(&assistant_text);
+                                            skill_evidence.push('\n');
                                             messages.push(assistant_msg);
                                         }
                                     }
@@ -1265,15 +1272,17 @@ impl Engine {
 
         // Propose skill candidate from successful run
         if outcome.status == "completed" {
-            if let Some(candidate) = Curator::propose_skill(&task.description, &outcome.status) {
-                if let Some(skills) = &self.skills {
-                    if skills.get(&candidate.name).is_none() {
-                        let _ = event_tx.send(Event::SkillLearned {
-                            run: run_id.clone(),
-                            name: candidate.name.clone(),
-                        });
-                        let _ = skills.add(candidate);
-                    }
+            if let Some(skills) = &self.skills {
+                if let Some(candidate) = Curator::propose_skill_if_missing(
+                    &task.description,
+                    &skill_evidence,
+                    skills.as_ref(),
+                ) {
+                    let _ = event_tx.send(Event::SkillLearned {
+                        run: run_id.clone(),
+                        name: candidate.name.clone(),
+                    });
+                    let _ = skills.add(candidate);
                 }
             }
 
