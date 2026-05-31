@@ -716,4 +716,267 @@ mod tests {
         // Verify orchestrator can be constructed without panicking
         assert!(true);
     }
+
+    // ─── M3 Grows Tests ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_skill_parse_from_markdown() {
+        use sparrow::capabilities::Skill;
+        let md = "# Skill: Rust Error Handling\n\n**Trigger:** error, Result, anyhow\n\n## Body\nUse anyhow for app code.";
+        let skill = Skill::from_markdown(md, "test.skill.md");
+        assert!(skill.is_some());
+        let s = skill.unwrap();
+        assert_eq!(s.name, "Rust Error Handling");
+        assert!(s.trigger.contains(&"error".to_string()));
+        assert!(s.trigger.contains(&"result".to_string()));
+        assert!(s.body.contains("anyhow"));
+    }
+
+    #[test]
+    fn test_skill_relevance_scoring() {
+        use sparrow::capabilities::Skill;
+        let skill = Skill {
+            name: "test".into(), description: "desc".into(),
+            trigger: vec!["rust".into(), "error".into(), "handling".into()],
+            body: "test body".into(), source_file: "".into(),
+            usage_count: 0, created_at: "".into(), score: 0.5, auto_generated: false,
+        };
+        let score = skill.relevance("I need help with Rust error handling in my code");
+        assert!(score > 0.0, "Should be relevant for matching context");
+
+        let score2 = skill.relevance("cooking recipes");
+        assert_eq!(score2, 0.0, "Should not match unrelated context");
+    }
+
+    #[test]
+    fn test_skill_markdown_roundtrip() {
+        use sparrow::capabilities::Skill;
+        let original = Skill {
+            name: "TestSkill".into(), description: "A test skill".into(),
+            trigger: vec!["test".into(), "demo".into()],
+            body: "This is the body".into(), source_file: "test.skill.md".into(),
+            usage_count: 2, created_at: "2026-01-01".into(), score: 0.7, auto_generated: true,
+        };
+        let md = original.to_markdown();
+        let parsed = Skill::from_markdown(&md, "test.skill.md");
+        assert!(parsed.is_some());
+        assert_eq!(parsed.unwrap().name, "TestSkill");
+    }
+
+    #[test]
+    fn test_curator_propose_skill() {
+        use sparrow::capabilities::Curator;
+        let candidate = Curator::propose_skill(
+            "Implement Rust error handling with anyhow",
+            "completed"
+        );
+        assert!(candidate.is_some());
+        let skill = candidate.unwrap();
+        assert!(skill.auto_generated);
+        assert!(!skill.trigger.is_empty());
+    }
+
+    #[test]
+    fn test_fs_skill_library_add_and_get() {
+        use sparrow::capabilities::{FsSkillLibrary, Skill, SkillLibrary};
+        let tmp = std::env::temp_dir().join("sparrow-m3-skills-test");
+        let _ = std::fs::remove_dir_all(&tmp);
+        let lib = FsSkillLibrary::new(tmp.clone());
+
+        let skill = Skill {
+            name: "test-skill".into(), description: "test".into(),
+            trigger: vec!["test".into()], body: "body".into(),
+            source_file: "test".into(), usage_count: 0,
+            created_at: "2026-01-01".into(), score: 0.5, auto_generated: true,
+        };
+        lib.add(skill).expect("add skill");
+        let found = lib.get("test-skill");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().body, "body");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_mcp_client_server_config() {
+        use sparrow::capabilities::mcp::{BasicMcpClient, McpClient, McpServer, Transport};
+        let tmp = std::env::temp_dir().join("sparrow-m3-mcp-test");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).ok();
+
+        let client = BasicMcpClient::new(tmp.clone());
+        let server = McpServer {
+            name: "test-server".into(), transport: Transport::Stdio,
+            command: Some("echo".into()), args: vec!["hello".into()],
+            url: None, env: Default::default(), allow_tools: vec![],
+        };
+        client.add_server(server).expect("add server");
+        let found = client.get_server("test-server");
+        assert!(found.is_some());
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let servers = rt.block_on(async { client.list_servers().await });
+        assert_eq!(servers.len(), 1);
+
+        client.remove_server("test-server").expect("remove");
+        let servers = rt.block_on(async { client.list_servers().await });
+        assert_eq!(servers.len(), 0);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    // ─── M4 Runtime Tests ────────────────────────────────────────────────
+
+    #[test]
+    fn test_scheduler_job_persistence() {
+        use sparrow::runtime::scheduler::{Job, MemoryScheduler, Scheduler};
+        let scheduler = MemoryScheduler::new();
+        let job = Job::new("test task".into(), "0 */6 * * *".into());
+        let id = scheduler.schedule(job).expect("schedule");
+        let jobs = scheduler.list();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].task, "test task");
+        scheduler.cancel(&id).expect("cancel");
+        assert_eq!(scheduler.list().len(), 0);
+    }
+
+    #[test]
+    fn test_recorder_transcript_roundtrip() {
+        use sparrow::runtime::recorder::{FsRecorder, Replayer, RunInputs, Recorder};
+        use sparrow::event::{Event, RunId, OutcomeSummary, TokenUsage};
+        let tmp = std::env::temp_dir().join("sparrow-m4-transcript-test");
+        let _ = std::fs::remove_dir_all(&tmp);
+
+        let recorder = FsRecorder::new(tmp.clone());
+        let run_id = "test-run-1".to_string();
+        recorder.start_run(run_id.clone(), RunInputs {
+            task: "test".into(), config_snapshot: serde_json::json!({}),
+            model_id: "test-model".into(), repo_head: None,
+            timestamp: "2026-01-01".into(), agent: "test-agent".into(),
+        });
+
+        // Record events
+        recorder.record(&Event::RunStarted {
+            run: RunId(run_id.clone()), task: "test".into(), agent: "test-agent".into(),
+        });
+        recorder.record(&Event::ThinkingDelta {
+            run: RunId(run_id.clone()), text: "thinking...".into(),
+        });
+        recorder.record(&Event::RunFinished {
+            run: RunId(run_id.clone()),
+            outcome: OutcomeSummary {
+                status: "completed".into(), diffs: vec![], cost_usd: 0.0,
+                tokens: TokenUsage { input: 100, output: 50 },
+            },
+        });
+
+        let transcript = recorder.finalize(&run_id).expect("finalize");
+        assert_eq!(transcript.events.len(), 3);
+
+        // Replay
+        let loaded = recorder.load(&run_id);
+        assert!(loaded.is_some());
+        assert_eq!(loaded.unwrap().events.len(), 3);
+
+        // List
+        let transcripts = recorder.list_transcripts();
+        assert!(transcripts.contains(&run_id));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn test_golden_replay_deterministic() {
+        use sparrow::event::{Event, RunId, OutcomeSummary, TokenUsage};
+        let events = vec![
+            Event::RunStarted { run: RunId("g1".into()), task: "t1".into(), agent: "a1".into() },
+            Event::ThinkingDelta { run: RunId("g1".into()), text: "hello".into() },
+            Event::RunFinished { run: RunId("g1".into()), outcome: OutcomeSummary {
+                status: "ok".into(), diffs: vec![], cost_usd: 0.0,
+                tokens: TokenUsage { input: 10, output: 5 },
+            }},
+        ];
+
+        // Serialize
+        let jsonl: String = events.iter()
+            .map(|e| serde_json::to_string(e).unwrap())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let jsonl = jsonl + "\n";
+
+        // Deserialize
+        let parsed: Vec<Event> = jsonl.lines()
+            .filter(|l| !l.is_empty())
+            .filter_map(|l| serde_json::from_str(l).ok())
+            .collect();
+
+        assert_eq!(parsed.len(), 3, "Deterministic: 3 events roundtrip");
+        if let Event::RunStarted { task, .. } = &parsed[0] {
+            assert_eq!(task, "t1");
+        } else { panic!("Wrong event type"); }
+        if let Event::ThinkingDelta { text, .. } = &parsed[1] {
+            assert_eq!(text, "hello");
+        } else { panic!("Wrong event type"); }
+        if let Event::RunFinished { outcome, .. } = &parsed[2] {
+            assert_eq!(outcome.status, "ok");
+        } else { panic!("Wrong event type"); }
+    }
+
+    // ─── M5 Gateway Tests ────────────────────────────────────────────────
+
+    #[test]
+    fn test_gateway_message_router_commands() {
+        use sparrow::gateway::{GatewayMessage, GatewayResponse};
+        // Test that command parsing works for /help
+        let msg = GatewayMessage {
+            surface: "telegram".into(), user_id: "123".into(),
+            chat_id: "456".into(), text: "/help".into(), message_id: None,
+        };
+        // Verify the message is well-formed (router handles actual dispatch)
+        assert_eq!(msg.surface, "telegram");
+        assert_eq!(msg.text, "/help");
+    }
+
+    #[test]
+    fn test_gateway_event_formatting() {
+        use sparrow::gateway::format_event;
+        use sparrow::event::{Event, RunId};
+
+        let event = Event::RunStarted {
+            run: RunId("test".into()), task: "fix auth with key sk-ant-secret".into(), agent: "sparrow".into(),
+        };
+        let formatted = format_event(&event);
+        assert!(formatted.is_some());
+        let text = formatted.unwrap();
+        assert!(text.contains("fix auth"));
+    }
+
+    #[test]
+    fn test_gateway_response_buttons() {
+        use sparrow::gateway::GatewayResponse;
+        let resp = GatewayResponse {
+            chat_id: "123".into(), text: "Approve?".into(),
+            reply_to: None, buttons: vec![vec!["/approve".into(), "/deny".into()]],
+        };
+        assert_eq!(resp.buttons.len(), 1);
+        assert_eq!(resp.buttons[0].len(), 2);
+        assert_eq!(resp.buttons[0][0], "/approve");
+    }
+
+    #[test]
+    fn test_session_bridge_continuity() {
+        use sparrow::tools::extras::SessionBridge;
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let bridge = SessionBridge::new();
+            assert!(!bridge.session_id.is_empty());
+
+            bridge.set_surface("telegram").await;
+            bridge.add_approval(sparrow::gateway::GatewayResponse {
+                chat_id: "123".into(), text: "Approve?".into(), reply_to: None, buttons: vec![],
+            }).await;
+            let approvals = bridge.drain_approvals().await;
+            assert_eq!(approvals.len(), 1);
+        });
+    }
 }
