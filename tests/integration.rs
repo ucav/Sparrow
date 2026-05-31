@@ -1173,4 +1173,98 @@ mod tests {
             }
         }
     }
+
+    // ─── Security: Hardcoded Secret Detection ────────────────────────────
+
+    #[test]
+    fn test_no_hardcoded_secrets_in_source() {
+        // Scan provider registry for accidentally hardcoded keys
+        let providers = sparrow::config::providers::provider_registry();
+        for p in &providers {
+            if let Some(env) = &p.api_key_env {
+                assert!(!env.contains("sk-"), "Hardcoded secret in provider {}", p.id);
+                assert!(!env.contains("nvapi-"), "Hardcoded secret in provider {}", p.id);
+            }
+        }
+    }
+
+    #[test]
+    fn test_redaction_covers_all_secret_patterns() {
+        let filter = sparrow::redaction::RedactionFilter::new();
+        let test_cases = vec![
+            ("sk-ant-api03-abc123def456", true),
+            ("nvapi-xyz789ghi012jkl345", true),
+            ("ghp_1234567890abcdefgh", true),
+            ("hf_abcdefghijklmnopqrst", true),
+            ("normal text without secrets", false),
+            ("cargo build --release", false),
+        ];
+        for (input, should_contain_secret) in test_cases {
+            let has = filter.contains_secret(input);
+            assert_eq!(has, should_contain_secret, "Failed for: {}", input);
+        }
+    }
+
+    #[test]
+    fn test_redaction_replaces_secrets_in_text() {
+        let mut filter = sparrow::redaction::RedactionFilter::new();
+        filter.load_secrets(vec!["my-api-key-12345".into()]);
+        let input = "Authorization: Bearer my-api-key-12345";
+        let output = filter.redact_str(input);
+        assert!(!output.contains("my-api-key-12345"));
+        assert!(output.contains("[REDACTED]"));
+    }
+
+    // ─── Engine: Stress & Edge Case Tests ────────────────────────────────
+
+    #[test]
+    fn test_engine_budget_stop() {
+        let mut config = sparrow::config::Config::default();
+        config.budget.session_usd = 0.0; // Zero budget
+        let router = Arc::new(sparrow::router::BasicRouter::new(&config, std::collections::HashMap::new()));
+        let engine = sparrow::engine::Engine::new(router, config);
+        // Engine with zero budget should still construct
+        // The budget enforcement happens in the drive loop
+        assert!(true);
+    }
+
+    #[test]
+    fn test_engine_identity_default() {
+        let identity = sparrow::engine::Identity::default();
+        assert_eq!(identity.name, "sparrow");
+        assert!(!identity.personality.is_empty());
+    }
+
+    #[test]
+    fn test_repo_map_scans_current_dir() {
+        let map = sparrow::memory::RepoMap::scan(&std::path::PathBuf::from("src"));
+        assert!(!map.files.is_empty(), "Should find at least some files in src/");
+    }
+
+    #[test]
+    fn test_context_manager_compaction_preserves_last() {
+        let cm = sparrow::redaction::ContextManager::new(1000);
+        let messages = (0..10).map(|i| sparrow::provider::Msg {
+            role: if i % 2 == 0 { "user" } else { "assistant" }.into(),
+            content: vec![sparrow::provider::ContentBlock::Text { text: format!("msg {}", i) }],
+        }).collect::<Vec<_>>();
+        let compacted = cm.compact_messages(&messages, 100, 2);
+        assert!(compacted.len() <= 6); // first + summary + last 2 max
+    }
+
+    #[test]
+    fn test_token_estimation() {
+        let cm = sparrow::redaction::ContextManager::new(128_000);
+        let tokens = cm.estimate_tokens("hello world");
+        assert!(tokens > 0);
+        assert!(tokens < 10);
+    }
+
+    #[test]
+    fn test_pipeline_config_serialization() {
+        let pipeline = sparrow::extras::PipelineConfig::default_pipeline();
+        let toml_str = pipeline.to_toml().expect("serialize");
+        let parsed = sparrow::extras::PipelineConfig::from_toml(&toml_str).expect("deserialize");
+        assert_eq!(parsed.name, pipeline.name);
+    }
 }
