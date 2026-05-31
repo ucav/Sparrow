@@ -6,6 +6,10 @@ on:
     branches: [master, main]
     paths: ['Cargo.toml', 'Cargo.lock']
 
+permissions:
+  contents: read
+  checks: write
+
 jobs:
   audit:
     runs-on: ubuntu-latest
