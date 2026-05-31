@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            artifact: sparrow-linux-x86_64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+            artifact: sparrow-linux-aarch64
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact: sparrow-macos-x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            artifact: sparrow-macos-arm64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: sparrow-windows-x86_64.exe
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: "${{ matrix.target }}" }
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Generate checksums
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          sha256sum sparrow* > ${{ matrix.target }}.sha256
+          cat ${{ matrix.target }}.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            target/${{ matrix.target }}/release/sparrow*
+            target/${{ matrix.target }}/release/*.sha256
+
+  publish:
+    name: Publish Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: artifacts }
+      - name: Create release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/**/*
+          generate_release_notes: true
