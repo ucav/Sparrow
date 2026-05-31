@@ -16,7 +16,7 @@ impl Distiller {
     pub async fn distill(
         memory: &Arc<dyn Memory>,
         events: &[Event],
-        task_description: &str,
+        _task_description: &str,
     ) {
         let mut facts = Vec::new();
 
@@ -363,8 +363,6 @@ impl ChatSession {
 }
 
 // ─── Configurable pipeline ──────────────────────────────────────────────────────
-
-use crate::orchestrator::SwarmPlan;
 
 /// Allow users to define custom swarm pipeline graphs.
 /// §3.11: "Configurable: number of agents, which model per role, pipeline graph."

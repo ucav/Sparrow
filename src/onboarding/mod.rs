@@ -83,7 +83,7 @@ fn default_lessons() -> Vec<Lesson> {
 impl Onboarding {
     /// Run interactive tutorial
     pub fn run_interactive(&self) -> anyhow::Result<()> {
-        use std::io::{self, Write, BufRead};
+        use std::io::{self, BufRead};
 
         println!("═══ SPARROW LEARN ═══");
         println!("5 interactive lessons to master Sparrow.\n");

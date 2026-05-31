@@ -13,7 +13,7 @@ pub struct EncryptedFileStore {
 
 impl EncryptedFileStore {
     pub fn new(path: PathBuf) -> Self {
-        let mut store = Self {
+        let store = Self {
             path,
             cache: RwLock::new(HashMap::new()),
         };

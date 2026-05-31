@@ -97,7 +97,7 @@ impl FileLocks {
             locked.insert(f.clone());
         }
         Ok(FileLockGuard {
-            files: files.to_vec(),
+            _files: files.to_vec(),
         })
     }
 
@@ -110,7 +110,7 @@ impl FileLocks {
 }
 
 pub struct FileLockGuard {
-    files: Vec<String>,
+    _files: Vec<String>,
 }
 
 // ─── THE ORCHESTRATOR TRAIT ─────────────────────────────────────────────────────

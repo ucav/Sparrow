@@ -61,9 +61,6 @@ impl GatewayTransport for DiscordTransport {
             match connect_async(&gateway_url).await {
                 Ok((mut ws_stream, _)) => {
                     // Wait for Hello (opcode 10)
-                    let mut heartbeat_interval: u64 = 41250;
-                    let mut seq: Option<u64> = None;
-
                     while let Some(Ok(msg)) = ws_stream.next().await {
                         match msg {
                             WsMessage::Text(text) => {
@@ -74,10 +71,10 @@ impl GatewayTransport for DiscordTransport {
 
                                     match op {
                                         10 => {
-                                            // Hello: start heartbeat
-                                            heartbeat_interval = payload["d"]["heartbeat_interval"]
+                                            let heartbeat_interval = payload["d"]["heartbeat_interval"]
                                                 .as_u64()
                                                 .unwrap_or(41250);
+                                            tracing::debug!("Discord heartbeat interval: {} ms", heartbeat_interval);
 
                                             // Send Identify
                                             let identify = serde_json::json!({
@@ -103,7 +100,8 @@ impl GatewayTransport for DiscordTransport {
                                         }
                                         0 => {
                                             // Dispatch
-                                            seq = payload["s"].as_u64();
+                                            let seq = payload["s"].as_u64();
+                                            tracing::trace!("Discord sequence: {:?}", seq);
                                             let event_type = payload["t"]
                                                 .as_str()
                                                 .unwrap_or("");
@@ -126,6 +124,10 @@ impl GatewayTransport for DiscordTransport {
                                                     .map(|s| s.to_string());
 
                                                 // Ignore bot's own messages
+                                                if !allowed.is_empty() && !allowed.contains(&author_id) {
+                                                    continue;
+                                                }
+
                                                 if !content.is_empty() && author_id != token {
                                                     let _ = tx.send(GatewayMessage {
                                                         surface: "discord".into(),

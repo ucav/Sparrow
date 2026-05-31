@@ -124,11 +124,19 @@ impl BasicRouter {
         let mut score: f64 = 0.0;
 
         // Capability fit
-        if need.required_tools && caps.tools {
-            score += 50.0;
+        if need.required_tools {
+            if caps.tools {
+                score += 50.0;
+            } else {
+                score -= 250.0;
+            }
         }
-        if need.required_vision && caps.vision {
-            score += 50.0;
+        if need.required_vision {
+            if caps.vision {
+                score += 50.0;
+            } else {
+                score -= 300.0;
+            }
         }
 
         // Cost preference: prefer cheaper/free models

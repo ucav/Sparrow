@@ -13,7 +13,7 @@ pub mod recorder;
 
 use event_bus::EventBus;
 use recorder::{FsRecorder, Recorder, RunInputs};
-use scheduler::{Job, MemoryScheduler, Scheduler};
+use scheduler::{MemoryScheduler, Scheduler};
 
 // ─── Run request ────────────────────────────────────────────────────────────────
 
@@ -44,8 +44,8 @@ pub struct SparrowRuntime {
     scheduler: Arc<MemoryScheduler>,
     recorder: Arc<FsRecorder>,
     event_bus: EventBus,
-    memory: Arc<dyn Memory>,
-    config: Config,
+    _memory: Arc<dyn Memory>,
+    _config: Config,
     running: std::sync::atomic::AtomicBool,
     // Running tasks
     active_runs: tokio::sync::Mutex<
@@ -67,8 +67,8 @@ impl SparrowRuntime {
             scheduler,
             recorder,
             event_bus,
-            memory,
-            config,
+            _memory: memory,
+            _config: config,
             running: std::sync::atomic::AtomicBool::new(false),
             active_runs: tokio::sync::Mutex::new(std::collections::HashMap::new()),
         }

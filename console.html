@@ -397,9 +397,12 @@ async function resolveApproval(id,decision,btn){
 }
 
 // ─── CONFIG panel ────────────────────────────────────────────────────
-$('cfgBtn').addEventListener('click',()=>{$('overlay').classList.add('show');$('configPanel').classList.add('show');loadConfig()});
-$('closeConfig').addEventListener('click',()=>{$('overlay').classList.remove('show');$('configPanel').classList.remove('show')});
-$('overlay').addEventListener('click',()=>{$('overlay').classList.remove('show');$('configPanel').classList.remove('show')});
+function openConfig(){$('overlay').classList.add('show');$('configPanel').classList.add('show');loadConfig();setTimeout(()=>$('provSelect').focus(),60)}
+function closeConfig(){$('overlay').classList.remove('show');$('configPanel').classList.remove('show');$('taskInput').focus()}
+$('cfgBtn').addEventListener('click',openConfig);
+$('closeConfig').addEventListener('click',closeConfig);
+$('overlay').addEventListener('click',closeConfig);
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('configPanel').classList.contains('show'))closeConfig()});
 
 let providers=[];
 async function loadConfig(){
@@ -449,7 +452,7 @@ $('saveConfig').addEventListener('click',async()=>{
     const j=await r.json();
     $('saveMsg').textContent=j.ok?'saved ✓':'error: '+j.message;
     $('saveMsg').style.color=j.ok?'var(--add)':'var(--rem)';
-    if(j.ok){$('apiKey').value='';await loadConfig();if(name)selectProvider(name);setAuto(($('autonomySelect').value||'trusted').toLowerCase())}
+    if(j.ok){$('apiKey').value='';await loadConfig();if(name)selectProvider(name);setAuto(($('autonomySelect').value||'trusted').toLowerCase());setTimeout(closeConfig,450)}
   }catch(e){$('saveMsg').textContent='error: '+e.message;$('saveMsg').style.color='var(--rem)'}
 });
 

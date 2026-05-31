@@ -291,7 +291,7 @@ impl Tool for Repl {
     async fn call(&self, args: serde_json::Value, _ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
         let lang = args["language"].as_str().unwrap_or("python");
         let code = args["code"].as_str().unwrap_or("");
-        let timeout_ms = args["timeout_ms"].as_u64().unwrap_or(30_000);
+        let _timeout_ms = args["timeout_ms"].as_u64().unwrap_or(30_000);
 
         let program = match lang { "node" => "node", _ => "python3" };
         let flag = match lang { "node" => "-e", _ => "-c" };

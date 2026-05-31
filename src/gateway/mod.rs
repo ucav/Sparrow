@@ -24,6 +24,7 @@ pub struct GatewayMessage {
 
 #[derive(Debug, Clone)]
 pub struct GatewayResponse {
+    pub surface: String,
     pub chat_id: String,
     pub text: String,
     pub reply_to: Option<String>,
@@ -78,6 +79,7 @@ impl MessageRouter {
             && !self.allowed_users.contains(&msg.user_id)
         {
             let _ = responses.send(GatewayResponse {
+                surface: msg.surface.clone(),
                 chat_id: msg.chat_id.clone(),
                 text: "Unauthorized. Ask the admin to add your user ID.".into(),
                 reply_to: msg.message_id,
@@ -87,6 +89,7 @@ impl MessageRouter {
         }
 
         let text = msg.text.trim();
+        let surface = msg.surface.clone();
         let chat_id = msg.chat_id.clone();
         let reply_to = msg.message_id.clone();
 
@@ -96,15 +99,16 @@ impl MessageRouter {
 
         // Command parsing
         if text.starts_with('/') {
-            self.handle_command(text, chat_id, reply_to, responses).await;
+            self.handle_command(text, surface, chat_id, reply_to, responses).await;
         } else {
-            self.handle_task(text, chat_id, reply_to, responses).await;
+            self.handle_task(text, surface, chat_id, reply_to, responses).await;
         }
     }
 
     async fn handle_command(
         &self,
         text: &str,
+        surface: String,
         chat_id: String,
         reply_to: Option<String>,
         responses: &mpsc::UnboundedSender<GatewayResponse>,
@@ -116,6 +120,7 @@ impl MessageRouter {
         match cmd.as_str() {
             "/start" | "/help" => {
                 let _ = responses.send(GatewayResponse {
+                    surface,
                     chat_id,
                     text: format!(
                         "Sparrow — one cli · grows with you\n\n\
@@ -134,6 +139,7 @@ impl MessageRouter {
             "/run" => {
                 if args.is_empty() {
                     let _ = responses.send(GatewayResponse {
+                        surface,
                         chat_id,
                         text: "Usage: /run <task description>".into(),
                         reply_to,
@@ -141,10 +147,11 @@ impl MessageRouter {
                     });
                     return;
                 }
-                self.handle_task(args, chat_id, reply_to, responses).await;
+                self.handle_task(args, surface, chat_id, reply_to, responses).await;
             }
             "/status" => {
                 let _ = responses.send(GatewayResponse {
+                    surface,
                     chat_id,
                     text: "Engine: online\nMode: headless".into(),
                     reply_to,
@@ -153,6 +160,7 @@ impl MessageRouter {
             }
             "/models" => {
                 let _ = responses.send(GatewayResponse {
+                    surface,
                     chat_id,
                     text: "Use 'sparrow model --list' in CLI for model listing.".into(),
                     reply_to,
@@ -161,6 +169,7 @@ impl MessageRouter {
             }
             "/budget" => {
                 let _ = responses.send(GatewayResponse {
+                    surface,
                     chat_id,
                     text: "Budget: configured in ~/.config/sparrow/config.toml".into(),
                     reply_to,
@@ -169,6 +178,7 @@ impl MessageRouter {
             }
             _ => {
                 let _ = responses.send(GatewayResponse {
+                    surface,
                     chat_id,
                     text: format!("Unknown command: {}. Try /help", cmd),
                     reply_to,
@@ -181,6 +191,7 @@ impl MessageRouter {
     async fn handle_task(
         &self,
         text: &str,
+        surface: String,
         chat_id: String,
         reply_to: Option<String>,
         responses: &mpsc::UnboundedSender<GatewayResponse>,
@@ -188,10 +199,12 @@ impl MessageRouter {
         let task_text = text.to_string();
         let resp_tx = responses.clone();
         let cid = chat_id.clone();
+        let surface_for_done = surface.clone();
 
         // Clone for second spawn
         let resp_tx2 = resp_tx.clone();
         let cid2 = cid.clone();
+        let surface_for_stream = surface.clone();
         let reply_to2 = reply_to.clone();
 
         // Create a one-shot event stream for this task
@@ -202,6 +215,7 @@ impl MessageRouter {
 
         // Send initial "thinking" response
         let _ = resp_tx.send(GatewayResponse {
+            surface: surface.clone(),
             chat_id: cid.clone(),
             text: format!("Working on: {}", &task_text[..task_text.len().min(80)]),
             reply_to: reply_to.clone(),
@@ -236,6 +250,7 @@ impl MessageRouter {
                     });
                     let _ = recorder.finalize(&run_id);
                     let _ = resp_tx.send(GatewayResponse {
+                        surface: surface_for_done,
                         chat_id: cid.clone(),
                         text: format!(
                             "Done.\nStatus: {}\nCost: ${:.4}\nFiles: {}",
@@ -249,6 +264,7 @@ impl MessageRouter {
                 }
                 Err(e) => {
                     let _ = resp_tx.send(GatewayResponse {
+                        surface: surface_for_done,
                         chat_id: cid,
                         text: format!("Error: {}", e),
                         reply_to: reply_to2,
@@ -269,6 +285,7 @@ impl MessageRouter {
                         buffer.push_str(text);
                         if buffer.len() > 500 || buffer.contains('\n') {
                             let _ = resp_tx2.send(GatewayResponse {
+                                surface: surface_for_stream.clone(),
                                 chat_id: cid2.clone(),
                                 text: buffer.clone(),
                                 reply_to: None,
@@ -280,6 +297,7 @@ impl MessageRouter {
                     Event::ToolUseProposed { name, .. } => {
                         if !buffer.is_empty() {
                             let _ = resp_tx2.send(GatewayResponse {
+                                surface: surface_for_stream.clone(),
                                 chat_id: cid2.clone(),
                                 text: buffer.clone(),
                                 reply_to: None,
@@ -288,6 +306,7 @@ impl MessageRouter {
                             buffer.clear();
                         }
                         let _ = resp_tx2.send(GatewayResponse {
+                            surface: surface_for_stream.clone(),
                             chat_id: cid2.clone(),
                             text: format!("[Tool: {}]", name),
                             reply_to: None,
@@ -296,6 +315,7 @@ impl MessageRouter {
                     }
                     Event::ApprovalRequested { summary, .. } => {
                         let _ = resp_tx2.send(GatewayResponse {
+                            surface: surface_for_stream.clone(),
                             chat_id: cid2.clone(),
                             text: format!("Approval needed: {}", summary),
                             reply_to: None,
@@ -307,6 +327,7 @@ impl MessageRouter {
             }
             if !buffer.is_empty() {
                 let _ = resp_tx2.send(GatewayResponse {
+                    surface: surface_for_stream,
                     chat_id: cid2.clone(),
                     text: buffer,
                     reply_to: None,

@@ -1,4 +1,3 @@
-use crate::event::Event;
 use crate::provider::{ContentBlock, Msg};
 
 // ─── Reasoning depth ───────────────────────────────────────────────────────────
@@ -239,7 +238,6 @@ impl ReasoningEngine {
                 crate::router::TaskTier::Medium => 3,
                 crate::router::TaskTier::Hard => 4,
                 crate::router::TaskTier::Vision => 3,
-                _ => 2,
             },
         }
     }
