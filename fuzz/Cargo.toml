@@ -1,0 +1,3 @@
+# Fuzz targets
+[lib]
+path = "fuzz_target_1.rs"

@@ -12,6 +12,7 @@ pub mod event_bus;
 pub mod recorder;
 pub mod scheduler;
 pub mod ratelimit;
+pub mod session;
 
 use event_bus::EventBus;
 use recorder::{FsRecorder, Recorder, RunInputs};
