@@ -46,7 +46,9 @@ async fn distiller_extracts_language_facts_from_tool_events() {
 
     let facts = memory.all_facts();
     assert!(
-        facts.iter().any(|f| f.key == "user:language" && f.value == "Rust"),
+        facts
+            .iter()
+            .any(|f| f.key == "user:language" && f.value == "Rust"),
         "expected a 'user:language = Rust' fact, got: {:?}",
         facts.iter().map(|f| (&f.key, &f.value)).collect::<Vec<_>>()
     );

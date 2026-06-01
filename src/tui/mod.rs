@@ -872,8 +872,7 @@ impl Tui {
                             self.rebuild_replay();
                         }
                         KeyCode::Right if self.replay_events.is_some() => {
-                            let max =
-                                self.replay_events.as_ref().map(|e| e.len()).unwrap_or(0);
+                            let max = self.replay_events.as_ref().map(|e| e.len()).unwrap_or(0);
                             self.replay_idx = (self.replay_idx + 1).min(max);
                             self.rebuild_replay();
                         }
@@ -1013,7 +1012,8 @@ impl Tui {
                                         );
                                         self.add_line(
                                             "/collapse · /expand — fold/unfold all tasks",
-                                            LogStyle::Dim, 1,
+                                            LogStyle::Dim,
+                                            1,
                                         );
                                     }
                                     _ => {
@@ -1437,6 +1437,8 @@ impl Tui {
                     // Collapsible header: ▾ expanded / ▸ collapsed + child count + focus mark
                     let gr = self.groups.get(gid);
                     let collapsed = gr.map(|g| g.collapsed).unwrap_or(false);
+                    let title = gr.map(|g| g.title.as_str()).unwrap_or(log.text.as_str());
+                    let log_style = gr.map(|g| g.style).unwrap_or(log.style);
                     let arrow = if collapsed { "▸" } else { "▾" };
                     let focused = self.focus_group == Some(gid);
                     let n = self.group_child_count(gid);
@@ -1446,12 +1448,12 @@ impl Tui {
                         String::new()
                     };
                     let marker = if focused { "‣ " } else { "  " };
-                    let mut style = Style::default().fg(log.style.color(&self.theme));
+                    let mut style = Style::default().fg(log_style.color(&self.theme));
                     if focused {
                         style = style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
                     }
                     Some(Line::from(Span::styled(
-                        format!("{}{} {}{}", marker, arrow, log.text, hint),
+                        format!("{}{} {}{}", marker, arrow, title, hint),
                         style,
                     )))
                 } else {

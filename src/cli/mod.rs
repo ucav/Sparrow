@@ -218,9 +218,13 @@ pub enum AgentAction {
 
 #[derive(Subcommand)]
 pub enum AuthAction {
-    Add { provider: String },
+    Add {
+        provider: String,
+    },
     List,
-    Rm { provider: String },
+    Rm {
+        provider: String,
+    },
     /// Authenticate a provider via OAuth device flow (github/google/microsoft).
     Login {
         provider: String,

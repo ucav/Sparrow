@@ -128,7 +128,10 @@ impl GatewayTransport for EmailTransport {
     #[cfg(feature = "email")]
     async fn send(&self, response: GatewayResponse) -> anyhow::Result<()> {
         if !self.allowed_to.iter().any(|a| a == &response.chat_id) {
-            anyhow::bail!("email recipient {} not in allowed_to list", response.chat_id);
+            anyhow::bail!(
+                "email recipient {} not in allowed_to list",
+                response.chat_id
+            );
         }
         let from: Mailbox = self.from.parse()?;
         let to: Mailbox = response.chat_id.parse()?;
@@ -190,8 +193,8 @@ fn poll_imap_once(
             if let Some(body) = msg.body() {
                 let raw = String::from_utf8_lossy(body);
                 let (from, subject, text) = parse_email(&raw);
-                let allowed_ok = allowed.is_empty()
-                    || allowed.iter().any(|a| from.contains(a.as_str()));
+                let allowed_ok =
+                    allowed.is_empty() || allowed.iter().any(|a| from.contains(a.as_str()));
                 if !allowed_ok {
                     continue;
                 }

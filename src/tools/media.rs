@@ -74,7 +74,10 @@ impl Tool for ImageGen {
 
         let client = reqwest::Client::new();
         let resp = client
-            .post(format!("{}/images/generations", self.base_url.trim_end_matches('/')))
+            .post(format!(
+                "{}/images/generations",
+                self.base_url.trim_end_matches('/')
+            ))
             .bearer_auth(&key)
             .json(&json!({
                 "model": self.model,
@@ -169,7 +172,10 @@ impl Tool for Tts {
 
         let client = reqwest::Client::new();
         let resp = client
-            .post(format!("{}/audio/speech", self.base_url.trim_end_matches('/')))
+            .post(format!(
+                "{}/audio/speech",
+                self.base_url.trim_end_matches('/')
+            ))
             .bearer_auth(&key)
             .json(&json!({ "model": self.model, "input": text, "voice": voice }))
             .send()
@@ -177,7 +183,10 @@ impl Tool for Tts {
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            return Ok(ToolResult::error(format!("tts API error {}: {}", status, body)));
+            return Ok(ToolResult::error(format!(
+                "tts API error {}: {}",
+                status, body
+            )));
         }
         let bytes = resp.bytes().await?;
         let path = super::resolve_workspace_path(&ctx.workspace_root, filename)?;

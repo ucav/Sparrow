@@ -189,9 +189,15 @@ impl PythonRpc {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()?;
-        let stdin = child.stdin.take().ok_or_else(|| anyhow::anyhow!("no stdin"))?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("no stdin"))?;
         let stdout = BufReader::new(
-            child.stdout.take().ok_or_else(|| anyhow::anyhow!("no stdout"))?,
+            child
+                .stdout
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("no stdout"))?,
         );
         *kernel = Some(Kernel {
             child,
@@ -248,9 +254,14 @@ impl Tool for PythonRpc {
 
         // Send request as a single JSON line.
         let req = serde_json::json!({ "code": code }).to_string();
-        if writeln!(kernel.stdin, "{}", req).and_then(|_| kernel.stdin.flush()).is_err() {
+        if writeln!(kernel.stdin, "{}", req)
+            .and_then(|_| kernel.stdin.flush())
+            .is_err()
+        {
             *guard = None; // kernel died; drop it so it respawns next time
-            return Ok(ToolResult::error("Python kernel write failed (kernel reset)"));
+            return Ok(ToolResult::error(
+                "Python kernel write failed (kernel reset)",
+            ));
         }
 
         // Read lines until the sentinel; the line before it is the JSON result.
@@ -271,13 +282,16 @@ impl Tool for PythonRpc {
                 }
                 Err(e) => {
                     *guard = None;
-                    return Ok(ToolResult::error(format!("Python kernel read error: {}", e)));
+                    return Ok(ToolResult::error(format!(
+                        "Python kernel read error: {}",
+                        e
+                    )));
                 }
             }
         }
 
-        let parsed: serde_json::Value =
-            serde_json::from_str(&last_json).unwrap_or_else(|_| serde_json::json!({"out": last_json, "err": ""}));
+        let parsed: serde_json::Value = serde_json::from_str(&last_json)
+            .unwrap_or_else(|_| serde_json::json!({"out": last_json, "err": ""}));
         let out = parsed["out"].as_str().unwrap_or("");
         let err = parsed["err"].as_str().unwrap_or("");
         if !err.is_empty() {
