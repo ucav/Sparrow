@@ -1625,7 +1625,7 @@ mod tests {
     // ─── Prompt A Regression Tests ───────────────────────────────────────
 
     #[test]
-    fn test_regression_git_commit_uses_F_flag() {
+    fn test_regression_git_commit_uses_f_flag() {
         // BUG 1: git commit must use -F not --file
         assert!(true); // Verified by code review: src/tools/git.rs line 56 uses "-F"
     }
@@ -1637,7 +1637,10 @@ mod tests {
         let src = fs::read_to_string("src/sandbox/mod.rs").unwrap();
         // Verify the sleep is tokio::time::sleep, not std::thread::sleep
         // (the source now uses tokio::time::sleep)
-        assert!(!src.contains("std::thread::sleep"), "No std::thread::sleep in sandbox");
+        assert!(
+            !src.contains("std::thread::sleep"),
+            "No std::thread::sleep in sandbox"
+        );
     }
 
     #[test]
@@ -1652,15 +1655,32 @@ mod tests {
                 run_id: sparrow::event::RunId("test-todo".into()),
             };
             // Create two todos
-            let r1 = todo.call(serde_json::json!({"action":"create","content":"task 1"}), &ctx).await.unwrap();
-            let r2 = todo.call(serde_json::json!({"action":"create","content":"task 2"}), &ctx).await.unwrap();
+            let r1 = todo
+                .call(
+                    serde_json::json!({"action":"create","content":"task 1"}),
+                    &ctx,
+                )
+                .await
+                .unwrap();
+            let r2 = todo
+                .call(
+                    serde_json::json!({"action":"create","content":"task 2"}),
+                    &ctx,
+                )
+                .await
+                .unwrap();
             assert!(!r1.is_error);
             assert!(!r2.is_error);
             // List should show both
-            let list = todo.call(serde_json::json!({"action":"list"}), &ctx).await.unwrap();
+            let list = todo
+                .call(serde_json::json!({"action":"list"}), &ctx)
+                .await
+                .unwrap();
             assert!(!list.is_error);
             // Cleanup
-            let _ = todo.call(serde_json::json!({"action":"clear_completed"}), &ctx).await;
+            let _ = todo
+                .call(serde_json::json!({"action":"clear_completed"}), &ctx)
+                .await;
         });
     }
 
@@ -1678,15 +1698,24 @@ mod tests {
         // BUG 6: context compaction must extract real topics
         let cm = sparrow::redaction::ContextManager::new(5000);
         let messages = vec![
-            sparrow::provider::Msg { role: "user".into(), content: vec![
-                sparrow::provider::ContentBlock::Text { text: "read src/main.rs".into() }
-            ]},
-            sparrow::provider::Msg { role: "assistant".into(), content: vec![
-                sparrow::provider::ContentBlock::Text { text: "I used fs_read to check src/main.rs".into() }
-            ]},
-            sparrow::provider::Msg { role: "user".into(), content: vec![
-                sparrow::provider::ContentBlock::Text { text: "now edit src/lib.rs".into() }
-            ]},
+            sparrow::provider::Msg {
+                role: "user".into(),
+                content: vec![sparrow::provider::ContentBlock::Text {
+                    text: "read src/main.rs".into(),
+                }],
+            },
+            sparrow::provider::Msg {
+                role: "assistant".into(),
+                content: vec![sparrow::provider::ContentBlock::Text {
+                    text: "I used fs_read to check src/main.rs".into(),
+                }],
+            },
+            sparrow::provider::Msg {
+                role: "user".into(),
+                content: vec![sparrow::provider::ContentBlock::Text {
+                    text: "now edit src/lib.rs".into(),
+                }],
+            },
         ];
         let compacted = cm.compact_messages(&messages, 50, 1);
         assert!(!compacted.is_empty());
@@ -1707,29 +1736,40 @@ mod tests {
 
     #[test]
     fn prop_cron_expressions_dont_panic() {
-        use proptest::prelude::*;
         let mut rt = proptest::test_runner::TestRunner::new(Default::default());
-        rt.run(&(0u32..59, 0u32..23, 1u32..31, 1u32..12, 0u32..7), |(min, hour, day, month, wday)| {
-            let expr = format!("{} {} {} {} {}", min, hour, day, month, wday);
-            let job = sparrow::runtime::scheduler::Job::new("prop-test".into(), expr);
-            let _ = job.next_schedule(); // Must not panic
-            Ok(())
-        }).unwrap();
+        rt.run(
+            &(0u32..59, 0u32..23, 1u32..31, 1u32..12, 0u32..7),
+            |(min, hour, day, month, wday)| {
+                let expr = format!("{} {} {} {} {}", min, hour, day, month, wday);
+                let job = sparrow::runtime::scheduler::Job::new("prop-test".into(), expr);
+                let _ = job.next_schedule(); // Must not panic
+                Ok(())
+            },
+        )
+        .unwrap();
     }
 
     #[test]
     fn prop_config_roundtrip_doesnt_panic() {
         use proptest::prelude::*;
         let mut rt = proptest::test_runner::TestRunner::new(Default::default());
-        rt.run(&(any::<String>(), any::<f64>(), any::<f64>()), |(theme, daily, session)| {
-            let mut cfg = sparrow::config::Config::default();
-            cfg.theme = theme;
-            cfg.budget.daily_usd = daily.max(0.0);
-            cfg.budget.session_usd = session.max(0.0);
-            let serialized = toml::to_string_pretty(&cfg).unwrap();
-            let _: sparrow::config::Config = toml::from_str(&serialized).unwrap();
-            Ok(())
-        }).unwrap();
+        rt.run(
+            &(any::<String>(), any::<f64>(), any::<f64>()),
+            |(theme, daily, session)| {
+                let cfg = sparrow::config::Config {
+                    theme,
+                    budget: sparrow::config::Budget {
+                        daily_usd: daily.max(0.0),
+                        session_usd: session.max(0.0),
+                    },
+                    ..Default::default()
+                };
+                let serialized = toml::to_string_pretty(&cfg).unwrap();
+                let _: sparrow::config::Config = toml::from_str(&serialized).unwrap();
+                Ok(())
+            },
+        )
+        .unwrap();
     }
 
     #[test]
@@ -1744,6 +1784,7 @@ mod tests {
             let _ = mem.recall(&query, k); // Must not panic, even with garbage input
             let _ = std::fs::remove_file(&tmp);
             Ok(())
-        }).unwrap();
+        })
+        .unwrap();
     }
 }

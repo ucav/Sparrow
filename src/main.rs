@@ -106,6 +106,7 @@ async fn main() -> anyhow::Result<()> {
                 "ollama".to_string(),
                 ollama_base_url,
                 String::new(),
+                false,
             )
             .await;
         });
@@ -251,7 +252,11 @@ async fn main() -> anyhow::Result<()> {
                 println!("\nDiscovered models (from API, cached 24h):");
                 let mut any_discovered = false;
                 for def in sparrow::config::providers::provider_registry() {
-                    let discovered = memory.get_discovered_models(&def.id);
+                    let discovered: Vec<String> = memory
+                        .get_discovered_models(&def.id)
+                        .into_iter()
+                        .filter(|model| sparrow::provider::discovery::is_chat_model_id(model))
+                        .collect();
                     let static_names: std::collections::HashSet<String> =
                         sparrow::config::providers::default_models(&def.id)
                             .into_iter()
@@ -343,6 +348,7 @@ async fn main() -> anyhow::Result<()> {
                         adapter,
                         base_url,
                         stored_key,
+                        true,
                     )
                     .await;
                 }
@@ -427,7 +433,13 @@ async fn main() -> anyhow::Result<()> {
                 .sum();
             let total_discovered: usize = sparrow::config::providers::provider_registry()
                 .iter()
-                .map(|provider| memory.get_discovered_models(&provider.id).len())
+                .map(|provider| {
+                    memory
+                        .get_discovered_models(&provider.id)
+                        .into_iter()
+                        .filter(|model| sparrow::provider::discovery::is_chat_model_id(model))
+                        .count()
+                })
                 .sum();
             println!(
                 "Models     : {} static + {} discovered (cached 24h)",
@@ -759,21 +771,28 @@ async fn discover_and_cache_provider(
     adapter: String,
     base_url: String,
     api_key: String,
+    announce: bool,
 ) {
     match sparrow::provider::discovery::discover_models(&adapter, &base_url, &api_key).await {
         Ok(models) if !models.is_empty() => {
             let count = models.len();
             if let Err(err) = memory.cache_discovered_models(&provider_id, &models) {
-                eprintln!(
-                    "  Model discovery cache failed for {}: {}",
-                    provider_id, err
-                );
-            } else {
+                if announce {
+                    eprintln!(
+                        "  Model discovery cache failed for {}: {}",
+                        provider_id, err
+                    );
+                }
+            } else if announce {
                 println!("  {} models discovered for {}.", count, provider_id);
             }
         }
         Ok(_) => {}
-        Err(err) => eprintln!("  Model discovery skipped for {}: {}", provider_id, err),
+        Err(err) => {
+            if announce {
+                eprintln!("  Model discovery skipped for {}: {}", provider_id, err);
+            }
+        }
     }
 }
 
@@ -813,7 +832,11 @@ fn build_provider_brains(
         }
 
         let mut model_names = pconfig.models.clone();
-        for discovered in memory.get_discovered_models(&name) {
+        for discovered in memory
+            .get_discovered_models(&name)
+            .into_iter()
+            .filter(|model| sparrow::provider::discovery::is_chat_model_id(model))
+        {
             if !model_names.iter().any(|model| model == &discovered) {
                 model_names.push(discovered);
             }

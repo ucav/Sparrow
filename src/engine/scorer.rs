@@ -7,7 +7,11 @@ pub struct FileScorer;
 impl FileScorer {
     /// Score a set of files against a task description.
     /// Returns (file_path, score) sorted by relevance descending.
-    pub fn score_files(task: &str, files: &[crate::memory::FileEntry], symbols: &[crate::memory::SymbolEntry]) -> Vec<(String, f64)> {
+    pub fn score_files(
+        task: &str,
+        files: &[crate::memory::FileEntry],
+        symbols: &[crate::memory::SymbolEntry],
+    ) -> Vec<(String, f64)> {
         let task_words: Vec<String> = tokenize(task);
         if task_words.is_empty() {
             return files.iter().map(|f| (f.path.clone(), 0.0)).collect();
@@ -35,7 +39,12 @@ impl FileScorer {
     }
 
     /// Return top N files, always including explicitly mentioned files
-    pub fn top_files(task: &str, files: &[crate::memory::FileEntry], symbols: &[crate::memory::SymbolEntry], max: usize) -> Vec<String> {
+    pub fn top_files(
+        task: &str,
+        files: &[crate::memory::FileEntry],
+        symbols: &[crate::memory::SymbolEntry],
+        max: usize,
+    ) -> Vec<String> {
         let mut scored = Self::score_files(task, files, symbols);
 
         // Always include files explicitly mentioned in the task
@@ -66,10 +75,15 @@ fn cosine_similarity_words(a: &[String], b: &[String]) -> f64 {
     let mut freq_a: HashMap<&str, f64> = HashMap::new();
     let mut freq_b: HashMap<&str, f64> = HashMap::new();
 
-    for w in a { *freq_a.entry(w.as_str()).or_insert(0.0) += 1.0; }
-    for w in b { *freq_b.entry(w.as_str()).or_insert(0.0) += 1.0; }
+    for w in a {
+        *freq_a.entry(w.as_str()).or_insert(0.0) += 1.0;
+    }
+    for w in b {
+        *freq_b.entry(w.as_str()).or_insert(0.0) += 1.0;
+    }
 
-    let all_words: std::collections::HashSet<&str> = freq_a.keys().chain(freq_b.keys()).copied().collect();
+    let all_words: std::collections::HashSet<&str> =
+        freq_a.keys().chain(freq_b.keys()).copied().collect();
     let mut dot = 0.0;
     let mut norm_a = 0.0;
     let mut norm_b = 0.0;
@@ -82,7 +96,11 @@ fn cosine_similarity_words(a: &[String], b: &[String]) -> f64 {
         norm_b += vb * vb;
     }
 
-    if norm_a == 0.0 || norm_b == 0.0 { 0.0 } else { dot / (norm_a.sqrt() * norm_b.sqrt()) }
+    if norm_a == 0.0 || norm_b == 0.0 {
+        0.0
+    } else {
+        dot / (norm_a.sqrt() * norm_b.sqrt())
+    }
 }
 
 // ─── Embedded Python kernel (persistent) ───────────────────────────────────────

@@ -10,7 +10,9 @@ pub struct BrowserTool;
 
 #[async_trait]
 impl Tool for BrowserTool {
-    fn name(&self) -> &str { "browser" }
+    fn name(&self) -> &str {
+        "browser"
+    }
     fn description(&self) -> &str {
         "Control a headless browser: navigate, screenshot, click, type, extract text"
     }
@@ -27,7 +29,9 @@ impl Tool for BrowserTool {
             "required": ["action"]
         })
     }
-    fn risk(&self) -> RiskLevel { RiskLevel::Network }
+    fn risk(&self) -> RiskLevel {
+        RiskLevel::Network
+    }
 
     async fn call(&self, args: serde_json::Value, _ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
         let action = args["action"].as_str().unwrap_or("navigate");
@@ -62,9 +66,10 @@ impl Tool for BrowserTool {
                     let png = tab.capture_screenshot(
                         headless_chrome::protocol::cdp::Page::CaptureScreenshot::default(),
                     )?;
-                    Ok(ToolResult::ok(vec![
-                        crate::event::Block::Image { data: png, mime: "image/png".into() }
-                    ]))
+                    Ok(ToolResult::ok(vec![crate::event::Block::Image {
+                        data: png,
+                        mime: "image/png".into(),
+                    }]))
                 }
                 "get_text" => {
                     let tab = browser.new_tab()?;
@@ -87,7 +92,10 @@ impl Tool for BrowserTool {
                     let result = tab.evaluate(js, false)?;
                     Ok(ToolResult::text(format!("{}", result)))
                 }
-                _ => Ok(ToolResult::text(format!("Unknown browser action: {}", action))),
+                _ => Ok(ToolResult::text(format!(
+                    "Unknown browser action: {}",
+                    action
+                ))),
             }
         }
 
@@ -145,6 +153,8 @@ impl SandboxHardener {
 
         #[cfg(target_os = "windows")]
         {
+            let _ = cmd;
+            let _ = workdir;
             // Windows: Job Objects for resource limiting
             // Uses windows-sys crate for job object creation
             // Basic memory + process limits
@@ -152,6 +162,7 @@ impl SandboxHardener {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn which(cmd: &str) -> bool {
     std::process::Command::new("which")
         .arg(cmd)

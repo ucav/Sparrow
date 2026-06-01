@@ -196,17 +196,29 @@ impl ContextManager {
                 for block in &msg.content {
                     if let crate::provider::ContentBlock::Text { text } = block {
                         // Extract tool names
-                        for tool in &["fs_read", "fs_write", "edit", "exec", "git", "search", "test"] {
-                            if text.contains(tool) { tools_used.insert(*tool); }
+                        for tool in &[
+                            "fs_read", "fs_write", "edit", "exec", "git", "search", "test",
+                        ] {
+                            if text.contains(tool) {
+                                tools_used.insert(*tool);
+                            }
                         }
                         // Extract file mentions
                         for word in text.split_whitespace() {
-                            if word.ends_with(".rs") || word.ends_with(".toml") || word.ends_with(".md")
-                                || word.ends_with(".py") || word.ends_with(".js") || word.ends_with(".ts") {
+                            if word.ends_with(".rs")
+                                || word.ends_with(".toml")
+                                || word.ends_with(".md")
+                                || word.ends_with(".py")
+                                || word.ends_with(".js")
+                                || word.ends_with(".ts")
+                            {
                                 files_mentioned.insert(word.to_string());
                             }
                         }
-                        if text.contains("error") || text.contains("Error") || text.contains("FAILED") {
+                        if text.contains("error")
+                            || text.contains("Error")
+                            || text.contains("FAILED")
+                        {
                             error_count += 1;
                         }
                     }
@@ -231,12 +243,18 @@ impl ContextManager {
             let summary_str = if topics.is_empty() {
                 format!("[{} messages summarized]", middle.len())
             } else {
-                format!("[{} messages summarized. {}]", middle.len(), topics.join("; "))
+                format!(
+                    "[{} messages summarized. {}]",
+                    middle.len(),
+                    topics.join("; ")
+                )
             };
 
             compacted.push(Msg {
                 role: "user".into(),
-                content: vec![crate::provider::ContentBlock::Text { text: summary_str.clone() }],
+                content: vec![crate::provider::ContentBlock::Text {
+                    text: summary_str.clone(),
+                }],
             });
             used += self.estimate_tokens(&summary_str);
         }

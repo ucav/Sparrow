@@ -96,7 +96,6 @@ use tokio::sync::mpsc;
 
 /// Wraps an MCP server tool with real JSON-RPC stdio execution.
 struct McpToolWrapper {
-    server_name: String,
     tool_def: McpToolDef,
     /// Channel to send JSON-RPC requests to the MCP server process
     request_tx: mpsc::Sender<McpRequest>,
@@ -110,18 +109,29 @@ struct McpRequest {
 
 #[async_trait]
 impl Tool for McpToolWrapper {
-    fn name(&self) -> &str { &self.tool_def.name }
-    fn description(&self) -> &str { &self.tool_def.description }
-    fn schema(&self) -> Value { self.tool_def.input_schema.clone() }
-    fn risk(&self) -> RiskLevel { RiskLevel::Exec }
+    fn name(&self) -> &str {
+        &self.tool_def.name
+    }
+    fn description(&self) -> &str {
+        &self.tool_def.description
+    }
+    fn schema(&self) -> Value {
+        self.tool_def.input_schema.clone()
+    }
+    fn risk(&self) -> RiskLevel {
+        RiskLevel::Exec
+    }
 
     async fn call(&self, args: Value, _ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        self.request_tx.send(McpRequest {
-            tool_name: self.tool_def.name.clone(),
-            args,
-            response_tx: tx,
-        }).await.map_err(|_| anyhow::anyhow!("MCP server process has stopped"))?;
+        self.request_tx
+            .send(McpRequest {
+                tool_name: self.tool_def.name.clone(),
+                args,
+                response_tx: tx,
+            })
+            .await
+            .map_err(|_| anyhow::anyhow!("MCP server process has stopped"))?;
 
         tokio::time::timeout(std::time::Duration::from_secs(30), rx)
             .await
@@ -299,27 +309,35 @@ impl BasicMcpClient {
                         "arguments": req.args,
                     }
                 });
-                let _ = writer.write_all((serde_json::to_string(&call_req).unwrap() + "\n").as_bytes()).await;
+                let _ = writer
+                    .write_all((serde_json::to_string(&call_req).unwrap() + "\n").as_bytes())
+                    .await;
                 let _ = writer.flush().await;
 
                 let mut resp_line = String::new();
                 match reader.read_line(&mut resp_line).await {
                     Ok(_) => {
-                        let result = if let Ok(resp) = serde_json::from_str::<JsonRpcResponse>(&resp_line) {
-                            if let Some(err) = resp.error {
-                                Ok(ToolResult::error(format!("MCP error {}: {}", err.code, err.message)))
-                            } else if let Some(val) = resp.result {
-                                Ok(ToolResult::text(val.to_string()))
+                        let result =
+                            if let Ok(resp) = serde_json::from_str::<JsonRpcResponse>(&resp_line) {
+                                if let Some(err) = resp.error {
+                                    Ok(ToolResult::error(format!(
+                                        "MCP error {}: {}",
+                                        err.code, err.message
+                                    )))
+                                } else if let Some(val) = resp.result {
+                                    Ok(ToolResult::text(val.to_string()))
+                                } else {
+                                    Ok(ToolResult::text("(empty MCP response)"))
+                                }
                             } else {
-                                Ok(ToolResult::text("(empty MCP response)"))
-                            }
-                        } else {
-                            Ok(ToolResult::text(resp_line))
-                        };
+                                Ok(ToolResult::text(resp_line))
+                            };
                         let _ = req.response_tx.send(result);
                     }
                     Err(e) => {
-                        let _ = req.response_tx.send(Err(anyhow::anyhow!("MCP read error: {}", e)));
+                        let _ = req
+                            .response_tx
+                            .send(Err(anyhow::anyhow!("MCP read error: {}", e)));
                         break; // Process dead, stop handling
                     }
                 }
@@ -338,10 +356,8 @@ impl BasicMcpClient {
                             .into_iter()
                             .filter(|t| allow_list.is_empty() || allow_list.contains(&t.name))
                             .map(|t| {
-                                let srv = server_name.clone();
-                                let tool_name = t.name.clone();
+                                let _srv = server_name.clone();
                                 Arc::new(McpToolWrapper {
-                                    server_name: srv.clone(),
                                     tool_def: t,
                                     request_tx: request_tx.clone(),
                                 }) as Arc<dyn Tool>
@@ -411,12 +427,11 @@ impl BasicMcpClient {
                     .into_iter()
                     .filter(|t| allow_list.is_empty() || allow_list.contains(&t.name))
                     .map(|t| {
-                        let srv = server_name.clone();
+                        let _srv = server_name.clone();
                         // HTTP MCP: create a channel with a no-op sender
                         let (tx, _rx) = mpsc::channel::<McpRequest>(1);
                         drop(_rx);
                         Arc::new(McpToolWrapper {
-                            server_name: srv.clone(),
                             tool_def: t,
                             request_tx: tx,
                         }) as Arc<dyn Tool>
