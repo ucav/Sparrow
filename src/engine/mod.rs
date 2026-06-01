@@ -444,12 +444,24 @@ impl Engine {
         self.drive_with_run_id(task, event_tx, RunId::new()).await
     }
 
-    /// Drive one AgentRun with a caller-provided run id.
+    /// Drive with a caller-provided run id.
     pub async fn drive_with_run_id(
         &self,
         task: Task,
         event_tx: mpsc::UnboundedSender<Event>,
         run_id: RunId,
+    ) -> anyhow::Result<OutcomeSummary> {
+        self.drive_with_inject(task, event_tx, run_id, None).await
+    }
+
+    /// Drive with an optional `inject_rx` channel that lets the caller inject
+    /// user messages mid-run. Polled non-blocking between turns. (§3.7)
+    pub async fn drive_with_inject(
+        &self,
+        task: Task,
+        event_tx: mpsc::UnboundedSender<Event>,
+        run_id: RunId,
+        mut inject_rx: Option<mpsc::UnboundedReceiver<String>>,
     ) -> anyhow::Result<OutcomeSummary> {
         let mut messages: Vec<Msg> = task.context.clone();
 
@@ -710,12 +722,95 @@ impl Engine {
                 }
             }
 
+            // ── Mid-run user injection (§3.7) ─────────────────────────────
+            // Poll the inject channel non-blocking. Each pending message becomes
+            // a new user turn so the next Brain call sees it.
+            if let Some(rx) = inject_rx.as_mut() {
+                loop {
+                    match rx.try_recv() {
+                        Ok(injected) => {
+                            let trimmed = injected.trim().to_string();
+                            if trimmed.is_empty() {
+                                continue;
+                            }
+                            messages.push(Msg {
+                                role: "user".into(),
+                                content: vec![ContentBlock::Text {
+                                    text: format!("INTERRUPT FROM USER: {}", trimmed),
+                                }],
+                            });
+                            let _ = event_tx.send(Event::Message {
+                                run: run_id.clone(),
+                                role: "interrupt".into(),
+                                text: trimmed,
+                            });
+                        }
+                        Err(mpsc::error::TryRecvError::Empty) => break,
+                        Err(mpsc::error::TryRecvError::Disconnected) => {
+                            inject_rx = None;
+                            break;
+                        }
+                    }
+                }
+            }
+
             let brain = match brain_policy.chain.get(current_chain_idx) {
                 Some(b) => b.clone(),
                 None => break,
             };
 
             let caps = brain.caps();
+
+            // ── Context compaction (§3.7) ─────────────────────────────────
+            // If estimated tokens > 75% of context_window, truncate middle
+            // messages to keep the original task + the last 6 exchanges.
+            // A summary placeholder is inserted to preserve continuity.
+            {
+                let req_for_estimate = BrainRequest {
+                    system: Some(system.clone()),
+                    messages: messages.clone(),
+                    tools: if need.required_tools {
+                        tool_specs.clone()
+                    } else {
+                        vec![]
+                    },
+                    max_tokens: caps.max_output as u32,
+                    temperature: 0.0,
+                    stop: vec![],
+                };
+                let est = estimate_request_tokens(&req_for_estimate);
+                let threshold = (caps.context_window as f64 * 0.75) as u64;
+                if est > threshold && messages.len() > 8 {
+                    let original_task = messages.first().cloned();
+                    let keep_tail: Vec<Msg> =
+                        messages.iter().rev().take(6).cloned().collect::<Vec<_>>();
+                    let dropped = messages.len().saturating_sub(7);
+                    let mut compacted: Vec<Msg> = Vec::new();
+                    if let Some(task) = original_task {
+                        compacted.push(task);
+                    }
+                    compacted.push(Msg {
+                        role: "user".into(),
+                        content: vec![ContentBlock::Text {
+                            text: format!(
+                                "[CONTEXT COMPACTED] {} prior messages dropped to fit the model window. \
+                                 Preserved: original task + last 6 turns. \
+                                 Files edited and tool outputs in the preserved tail remain authoritative.",
+                                dropped
+                            ),
+                        }],
+                    });
+                    for m in keep_tail.into_iter().rev() {
+                        compacted.push(m);
+                    }
+                    messages = compacted;
+                    let _ = event_tx.send(Event::Message {
+                        run: run_id.clone(),
+                        role: "compaction".into(),
+                        text: format!("context compacted: {} messages dropped (estimated {} tok > {} threshold)", dropped, est, threshold),
+                    });
+                }
+            }
 
             let req = BrainRequest {
                 system: Some(system.clone()),

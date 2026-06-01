@@ -99,6 +99,29 @@ pub const ASCII_SPARROW: &str = r#"
 
 pub const ASCII_WORDMARK: &str = "S P A R R O W";
 
+pub fn ascii_sparrow_at_frame(frame: u64) -> String {
+    let blink = frame % 88 == 0;
+    let bob = frame % 60 == 0;
+    let mut art = ASCII_SPARROW.to_string();
+    if blink {
+        art = art.replace("  o  ", "  -  ");
+    }
+    if bob {
+        art.lines()
+            .map(|line| {
+                if line.is_empty() {
+                    String::new()
+                } else {
+                    format!(" {}", line)
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        art
+    }
+}
+
 pub fn boot_sequence() -> Vec<String> {
     vec![
         format!("{}", ASCII_SPARROW),

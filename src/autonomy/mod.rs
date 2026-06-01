@@ -178,6 +178,11 @@ pub trait Checkpoints: Send + Sync {
     fn snapshot(&self, label: &str) -> anyhow::Result<CheckpointId>;
     fn list(&self) -> Vec<Checkpoint>;
     fn rewind(&self, to: CheckpointId) -> anyhow::Result<()>;
+    /// Show unified diff between HEAD and a checkpoint ref.
+    fn diff(&self, id: &CheckpointId) -> anyhow::Result<String>;
+    /// Delete checkpoint refs older than `older_than_days` days.
+    /// Returns the number of refs deleted.
+    fn prune(&self, older_than_days: u64) -> anyhow::Result<usize>;
 }
 
 /// Git-backed checkpoint implementation (basic, M0).
@@ -277,5 +282,56 @@ impl Checkpoints for GitCheckpoints {
             anyhow::bail!("Failed to rewind to checkpoint {}", to.0);
         }
         Ok(())
+    }
+
+    fn diff(&self, id: &CheckpointId) -> anyhow::Result<String> {
+        use std::process::Command;
+        let ref_name = format!("refs/sparrow/checkpoints/{}", id.0);
+        let output = Command::new("git")
+            .args(["diff", &ref_name, "HEAD"])
+            .current_dir(&self.repo_path)
+            .output()?;
+        if !output.status.success() {
+            let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            anyhow::bail!("git diff failed for checkpoint {}: {}", id.0, err);
+        }
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
+
+    fn prune(&self, older_than_days: u64) -> anyhow::Result<usize> {
+        use std::process::Command;
+        // List all sparrow checkpoint refs with their creator dates
+        let output = Command::new("git")
+            .args([
+                "for-each-ref",
+                "refs/sparrow/checkpoints",
+                "--format=%(refname) %(creatordate:unix)",
+            ])
+            .current_dir(&self.repo_path)
+            .output()?;
+        if !output.status.success() {
+            return Ok(0);
+        }
+        let cutoff = chrono::Utc::now()
+            .timestamp()
+            .saturating_sub((older_than_days * 86_400) as i64);
+        let text = String::from_utf8_lossy(&output.stdout);
+        let to_delete: Vec<String> = text
+            .lines()
+            .filter_map(|line| {
+                let mut parts = line.splitn(2, ' ');
+                let refname = parts.next()?.trim().to_string();
+                let ts: i64 = parts.next()?.trim().parse().ok()?;
+                if ts < cutoff { Some(refname) } else { None }
+            })
+            .collect();
+        let count = to_delete.len();
+        for refname in &to_delete {
+            let _ = Command::new("git")
+                .args(["update-ref", "-d", refname])
+                .current_dir(&self.repo_path)
+                .status();
+        }
+        Ok(count)
     }
 }

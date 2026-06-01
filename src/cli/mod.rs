@@ -247,7 +247,19 @@ pub enum McpAction {
 
 #[derive(Subcommand)]
 pub enum CheckpointAction {
+    /// List all checkpoints
     List,
+    /// Show diff between HEAD and a checkpoint
+    Diff {
+        /// Checkpoint ID
+        id: String,
+    },
+    /// Delete checkpoints older than N days (default: 30)
+    Prune {
+        /// Remove checkpoints older than this many days
+        #[arg(long, default_value = "30")]
+        older_than_days: u64,
+    },
 }
 
 #[derive(Subcommand)]

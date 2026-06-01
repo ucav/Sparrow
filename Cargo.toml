@@ -47,6 +47,7 @@ tree-sitter = { version = "0.23", optional = true }
 axum = { version = "0.7", features = ["ws"] }
 tower = "0.5"
 rpassword = "7"
+lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder"], optional = true }
 
 # OS keychain
 keyring = { version = "3", optional = true }
@@ -63,6 +64,7 @@ default = ["keyring"]
 keyring-dep = ["keyring"]
 browser = ["headless_chrome"]
 treesitter = ["tree-sitter"]
+email = ["lettre"]
 
 [profile.release]
 opt-level = "z"

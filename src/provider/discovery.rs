@@ -132,14 +132,33 @@ pub async fn discover_models(
 
 pub fn is_chat_model_id(id: &str) -> bool {
     let id = id.to_ascii_lowercase();
-    ![
+    // Exclude non-chat model families: embeddings, image-gen, audio, moderation,
+    // legacy completions (text-davinci/curie/babbage/ada), and search/similarity helpers.
+    let exclude = [
         "embed",
         "embedding",
         "tts",
         "dall-e",
+        "dall_e",
         "whisper",
         "moderation",
-    ]
-    .iter()
-    .any(|needle| id.contains(needle))
+        "text-davinci",
+        "text-curie",
+        "text-babbage",
+        "text-ada",
+        "babbage-",
+        "ada-",
+        "davinci-00",
+        "code-search",
+        "text-search",
+        "similarity",
+        "-edit-",
+        "cushman",
+        "text-similarity",
+        "audio",
+        "transcribe",
+        "translate",
+        "realtime",
+    ];
+    !exclude.iter().any(|needle| id.contains(needle))
 }

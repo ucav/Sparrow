@@ -151,6 +151,25 @@ pub struct SurfaceConfig {
     pub discord: Option<MessagingSurface>,
     #[serde(default)]
     pub slack: Option<MessagingSurface>,
+    #[serde(default)]
+    pub email: Option<EmailSurface>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmailSurface {
+    pub enabled: bool,
+    pub from: String,
+    pub smtp_host: String,
+    #[serde(default = "default_smtp_port")]
+    pub smtp_port: u16,
+    pub username_env: String,
+    pub password_env: String,
+    #[serde(default)]
+    pub allowed_to: Vec<String>,
+}
+
+fn default_smtp_port() -> u16 {
+    587
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
