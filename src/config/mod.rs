@@ -28,6 +28,8 @@ pub struct Config {
     pub config_dir: PathBuf,
     #[serde(default = "default_state_dir")]
     pub state_dir: PathBuf,
+    #[serde(skip)]
+    pub forced_model: Option<(String, String)>,
 }
 
 fn default_config_dir() -> PathBuf {
@@ -221,6 +223,7 @@ impl Default for Config {
             theme: "captain".into(),
             config_dir: default_config_dir(),
             state_dir: default_state_dir(),
+            forced_model: None,
         }
     }
 }
@@ -298,6 +301,7 @@ impl ConfigStore for FsConfigStore {
                 theme: "captain".into(),
                 config_dir: self.config_dir.clone(),
                 state_dir: default_state_dir(),
+                forced_model: None,
             };
             // Auto-detect local ollama if available
             if let Ok(v) = std::env::var("OLLAMA_HOST") {

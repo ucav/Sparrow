@@ -8,13 +8,13 @@ This audit reflects the repository state after commit `f785b1a` plus the current
 |---|---:|
 | `cargo check` | Pass |
 | `cargo build` | Pass |
-| `cargo test` | Pass, 107 tests total including 93 integration tests |
+| `cargo test` | Pass, 109 tests total including 95 integration tests |
 | `cargo clippy --all-targets -- -D warnings` | Pass |
 | `cargo fmt --all -- --check` | Pass |
 | CLI routing smoke test | Pass locally on NVIDIA Llama 3.1 8B and DeepSeek V4 Flash |
 | WebView console | Pass locally on `127.0.0.1:9339` |
 | Gateway WebSocket `/status` | Pass locally on `127.0.0.1:9338` |
-| NVIDIA discovery | Pass locally, 103 cached models from `/v1/models` using stored credential |
+| NVIDIA discovery | Pass locally, 92 chat-capable cached models from `/v1/models` using stored credential |
 
 ## Core Modules
 
@@ -58,15 +58,15 @@ Current reality:
 
 - Engine exists at `src/engine/mod.rs`, exported by Rust's module directory convention.
 - `cargo check`, `cargo build`, and `cargo test --all-targets` pass locally.
-- The integration suite has grown beyond the original 84-test audit to 93 integration tests, including explicit-cloud-policy routing and blank-theme normalization regressions.
+- The integration suite has grown beyond the original 84-test audit to 95 integration tests, including explicit-cloud-policy routing, blank-theme normalization, non-chat discovery filtering, and concise routing-chain summarization regressions.
 - CI needed branch correction and now targets `master` and `main`.
 
 ## Current Repair Notes
 
 - `model --list` now awaits model discovery before printing, using either environment variables or credentials stored by `sparrow auth add`.
-- NVIDIA is no longer represented as a single Nemotron entry. The static recommended chain includes `meta/llama-3.1-8b-instruct`, `deepseek-ai/deepseek-v4-flash`, and `nvidia/nemotron-3-super-120b-a12b`, while live discovery adds the wider API catalog.
+- NVIDIA is no longer represented as a single Nemotron entry. The static recommended chain includes `meta/llama-3.1-8b-instruct`, `stepfun-ai/step-3.5-flash`, and `nvidia/nemotron-3-super-120b-a12b`, while live discovery adds the wider chat-capable API catalog and filters embeddings/retrieval/parse/safety-only entries.
 - `sparrow model --set nvidia` can clear an older one-model local config and restore the recommended NVIDIA chain.
-- `--model nvidia:<model>` now keeps the explicit cloud model first for trivial/small prompts instead of forcing Ollama ahead of it.
+- `--model nvidia:<model>` now keeps the exact requested cloud model first for trivial/small prompts instead of forcing Ollama or another discovered NVIDIA model ahead of it.
 
 So the correct action is not to create a competing `src/engine.rs`; it is to document the actual engine signature, keep tests honest, and improve CI/readme trust.
 

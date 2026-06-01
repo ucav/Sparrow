@@ -85,6 +85,7 @@ async fn main() -> anyhow::Result<()> {
             theme: "captain".into(),
             config_dir: active_config_dir.clone(),
             state_dir: active_state_dir.clone(),
+            forced_model: None,
         }
     });
     config.config_dir = active_config_dir.clone();
@@ -847,6 +848,7 @@ fn apply_cli_overrides(config: &mut sparrow::config::Config, cli: &Cli) {
             .map(|(p, m)| (p.trim().to_lowercase(), m.trim().to_string()))
             .unwrap_or_else(|| ("custom".into(), model_ref.to_string()));
         if !model.is_empty() {
+            config.forced_model = Some((provider.clone(), model.clone()));
             config
                 .routing
                 .policy
@@ -1095,14 +1097,24 @@ fn build_provider_brains(
             continue;
         }
 
-        let mut model_names = pconfig.models.clone();
-        for discovered in memory
-            .get_discovered_models(&name)
-            .into_iter()
-            .filter(|model| sparrow::provider::discovery::is_chat_model_id(model))
-        {
-            if !model_names.iter().any(|model| model == &discovered) {
-                model_names.push(discovered);
+        let forced_model = config
+            .forced_model
+            .as_ref()
+            .filter(|(provider, _)| provider == &name)
+            .map(|(_, model)| model.clone());
+        let mut model_names = forced_model
+            .as_ref()
+            .map(|model| vec![model.clone()])
+            .unwrap_or_else(|| pconfig.models.clone());
+        if forced_model.is_none() {
+            for discovered in memory
+                .get_discovered_models(&name)
+                .into_iter()
+                .filter(|model| sparrow::provider::discovery::is_chat_model_id(model))
+            {
+                if !model_names.iter().any(|model| model == &discovered) {
+                    model_names.push(discovered);
+                }
             }
         }
 
