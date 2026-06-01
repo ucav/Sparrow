@@ -194,10 +194,42 @@ async fn main() -> anyhow::Result<()> {
     // Initialize scheduler
     let scheduler = Arc::new(MemoryScheduler::new().with_memory(memory.clone()));
 
+    // ── First-launch detection (§16) ─────────────────────────────────
+    // If no config.toml exists yet, run the conversational Setup Agent
+    // before launching the TUI — so the user is greeted with onboarding,
+    // not a blank cockpit with no providers.
+    let is_first_launch = !active_config_dir.join("config.toml").exists();
+    if is_first_launch && cli.command.is_none() {
+        println!("First launch detected — running setup...\n");
+        let setup_result = sparrow::onboarding::setup_agent::run_setup_agent(
+            &config,
+            &config_store,
+            memory.clone(),
+            build_provider_brains,
+        )
+        .await;
+        if let Err(err) = setup_result {
+            eprintln!("Setup Agent: {} — falling back to interactive setup.", err);
+            handle_setup(&config, &config_store).await?;
+        }
+        // Reload config after setup wrote it
+        if let Ok(fresh) = config_store.load() {
+            config = fresh;
+            config.config_dir = active_config_dir.clone();
+            config.state_dir = active_state_dir.clone();
+        }
+    }
+
     match cli.command {
         None => {
             if cli.tui {
-                run_tui(&config, memory.clone(), skill_library.clone()).await?;
+                run_tui(
+                    &config,
+                    memory.clone(),
+                    skill_library.clone(),
+                    &active_state_dir,
+                )
+                .await?;
             } else if cli.web {
                 handle_webview(
                     &config,
@@ -208,11 +240,23 @@ async fn main() -> anyhow::Result<()> {
                 )
                 .await?;
             } else {
-                run_tui(&config, memory.clone(), skill_library.clone()).await?;
+                run_tui(
+                    &config,
+                    memory.clone(),
+                    skill_library.clone(),
+                    &active_state_dir,
+                )
+                .await?;
             }
         }
         Some(Commands::Tui) => {
-            run_tui(&config, memory.clone(), skill_library.clone()).await?;
+            run_tui(
+                &config,
+                memory.clone(),
+                skill_library.clone(),
+                &active_state_dir,
+            )
+            .await?;
         }
         Some(Commands::Console) => {
             handle_webview(
@@ -288,8 +332,18 @@ async fn main() -> anyhow::Result<()> {
         }) => {
             handle_schedule(&task, &cron, autonomy, &report, &scheduler).await?;
         }
-        Some(Commands::Replay { run_id }) => {
-            handle_replay(&run_id, &recorder, &config, memory.clone()).await?;
+        Some(Commands::Replay { run_id, scrub }) => {
+            if scrub {
+                match recorder.load(&run_id) {
+                    Some(transcript) => {
+                        let mut tui = Tui::new().with_replay(transcript.events);
+                        tokio::task::spawn_blocking(move || tui.run()).await??;
+                    }
+                    None => eprintln!("Transcript not found: {}", run_id),
+                }
+            } else {
+                handle_replay(&run_id, &recorder, &config, memory.clone()).await?;
+            }
         }
         Some(Commands::Gateway { action }) => {
             handle_gateway(
@@ -397,22 +451,33 @@ async fn main() -> anyhow::Result<()> {
                         .insert("hard".into(), provider_id.clone());
                     if let Some(model) = model_opt {
                         let def = sparrow::config::providers::find_provider(&provider_id);
-                        updated
-                            .providers
-                            .entry(provider_id.clone())
-                            .or_insert_with(|| ProviderConfig {
-                                adapter: def
-                                    .as_ref()
-                                    .map(|d| d.adapter.clone())
-                                    .unwrap_or_else(|| "openai-compatible".into()),
-                                base_url: def
-                                    .as_ref()
-                                    .map(|d| Some(d.base_url.clone()))
-                                    .unwrap_or(None),
-                                models: vec![],
-                                api_key_env: def.and_then(|d| d.api_key_env),
-                            })
-                            .models = vec![model.clone()];
+                        let entry =
+                            updated
+                                .providers
+                                .entry(provider_id.clone())
+                                .or_insert_with(|| ProviderConfig {
+                                    adapter: def
+                                        .as_ref()
+                                        .map(|d| d.adapter.clone())
+                                        .unwrap_or_else(|| "openai-compatible".into()),
+                                    base_url: def
+                                        .as_ref()
+                                        .map(|d| Some(d.base_url.clone()))
+                                        .unwrap_or(None),
+                                    models: vec![],
+                                    api_key_env: def.as_ref().and_then(|d| d.api_key_env.clone()),
+                                });
+                        // Refresh base_url + adapter from the registry even for an
+                        // EXISTING entry — otherwise a stale/wrong base_url persists
+                        // (the OpenCode `zen.opencode.ai` regression came from here).
+                        if let Some(d) = &def {
+                            entry.adapter = d.adapter.clone();
+                            entry.base_url = Some(d.base_url.clone());
+                            if entry.api_key_env.is_none() {
+                                entry.api_key_env = d.api_key_env.clone();
+                            }
+                        }
+                        entry.models = vec![model.clone()];
                         println!("Routing updated: medium/hard → {}:{}", provider_id, model);
                     } else {
                         if let Some(provider) = updated.providers.get_mut(&provider_id) {
@@ -498,6 +563,12 @@ async fn main() -> anyhow::Result<()> {
                 sparrow::cli::AuthAction::Rm { provider } => {
                     auth.remove(&provider)?;
                     println!("Removed credentials for: {}", provider);
+                }
+                sparrow::cli::AuthAction::Login {
+                    provider,
+                    client_id,
+                } => {
+                    handle_auth_login(&provider, client_id, &auth).await?;
                 }
             }
         }
@@ -1221,8 +1292,10 @@ async fn run_tui(
     config: &sparrow::config::Config,
     memory: Arc<dyn Memory>,
     skills: Arc<dyn SkillLibrary>,
+    state_dir: &std::path::Path,
 ) -> anyhow::Result<()> {
     use sparrow::engine::{Engine, Task};
+    use sparrow::provider::{ContentBlock, Msg};
     use sparrow::router::BasicRouter;
 
     let providers = build_provider_brains(config, &memory, true);
@@ -1236,15 +1309,37 @@ async fn run_tui(
     let (task_tx, mut task_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
 
-    // Inject channel — Ctrl+I in the TUI sends `__inject__:<msg>` via task_tx
-    // and we forward to the engine via an UnboundedSender mid-flight.
+    // ── Multi-turn session for the TUI ────────────────────────────────
+    // Every message the user types in the TUI is added to a growing
+    // conversation that carries context across turns, just like `sparrow
+    // chat`. The session is also persisted to sessions.db so quitting
+    // and relaunching resumes the conversation.
+    let session_key = format!(
+        "tui:{}",
+        std::env::current_dir()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| "default".into())
+    );
+    let sessions = sparrow::runtime::session::SessionStore::open(&state_dir.join("sessions.db"))
+        .ok()
+        .map(Arc::new);
+    let prior: Vec<Msg> = sessions
+        .as_ref()
+        .and_then(|s| s.load(&session_key))
+        .and_then(|sess| serde_json::from_str(&sess.messages_json).ok())
+        .unwrap_or_default();
+    let conversation: Arc<tokio::sync::Mutex<Vec<Msg>>> = Arc::new(tokio::sync::Mutex::new(prior));
+
     let inject_holder: Arc<tokio::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<String>>>> =
         Arc::new(tokio::sync::Mutex::new(None));
     let inject_holder_task = inject_holder.clone();
+    let conversation_task = conversation.clone();
+    let sessions_task = sessions.clone();
+    let session_key_task = session_key.clone();
 
     tokio::spawn(async move {
         while let Some(description) = task_rx.recv().await {
-            // Intercept inject prefix: forward to the live run's inject channel
+            // Intercept inject prefix
             if let Some(payload) = description.strip_prefix("__inject__:") {
                 if let Some(tx) = inject_holder_task.lock().await.as_ref() {
                     let _ = tx.send(payload.to_string());
@@ -1279,17 +1374,39 @@ async fn run_tui(
                 continue;
             }
 
+            // ── Multi-turn: build task with conversation context ──────
+            let mut conv = conversation_task.lock().await;
+            conv.push(Msg {
+                role: "user".into(),
+                content: vec![ContentBlock::Text {
+                    text: description.clone(),
+                }],
+            });
             let task = Task {
-                description,
-                context: vec![],
+                description: description.clone(),
+                context: conv.clone(),
             };
-            // Create a fresh inject channel for this run and register it
+
             let (inject_tx, inject_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
             *inject_holder_task.lock().await = Some(inject_tx);
 
             let run_id = sparrow::event::RunId::new();
+            // Collect assistant reply for conversation history.
+            let (run_event_tx, mut run_event_rx) = tokio::sync::mpsc::unbounded_channel();
+            let fwd_tx = event_tx.clone();
+            let fwd_handle = tokio::spawn(async move {
+                let mut buf = String::new();
+                while let Some(ev) = run_event_rx.recv().await {
+                    if let sparrow::event::Event::ThinkingDelta { text, .. } = &ev {
+                        buf.push_str(text);
+                    }
+                    let _ = fwd_tx.send(ev);
+                }
+                buf
+            });
+
             if let Err(err) = engine
-                .drive_with_inject(task, event_tx.clone(), run_id, Some(inject_rx))
+                .drive_with_inject(task, run_event_tx, run_id, Some(inject_rx))
                 .await
             {
                 let _ = event_tx.send(sparrow::event::Event::Error {
@@ -1298,12 +1415,37 @@ async fn run_tui(
                 });
             }
             *inject_holder_task.lock().await = None;
+
+            // Append assistant reply to conversation
+            if let Ok(reply) = fwd_handle.await {
+                if !reply.trim().is_empty() {
+                    conv.push(Msg {
+                        role: "assistant".into(),
+                        content: vec![ContentBlock::Text { text: reply }],
+                    });
+                }
+            }
+
+            // Cap conversation + persist
+            let len = conv.len();
+            if len > 60 {
+                conv.drain(..len - 60);
+            }
+            if let Some(store) = &sessions_task {
+                let _ = store.save(&session_key_task, &conv, None);
+            }
         }
     });
 
     let mut tui = Tui::new().with_channels(task_tx, event_rx);
-    drop(inject_holder); // holder cloned into the task; this outer one can drop
+    drop(inject_holder);
     tokio::task::spawn_blocking(move || tui.run()).await??;
+
+    // Save conversation on TUI exit (belt-and-suspenders)
+    if let Some(store) = &sessions {
+        let conv = conversation.lock().await;
+        let _ = store.save(&session_key, &conv, None);
+    }
     Ok(())
 }
 
@@ -1340,6 +1482,50 @@ async fn handle_daemon(
     Ok(())
 }
 
+// ─── OAuth device-flow login (§3.2 Tool Gateway) ─────────────────────────────────
+
+async fn handle_auth_login(
+    provider: &str,
+    client_id: Option<String>,
+    auth: &sparrow::auth::store::ChainedAuthStore,
+) -> anyhow::Result<()> {
+    use sparrow::auth::AuthStore;
+    use sparrow::extras::OAuthFlow;
+
+    let supported = ["github", "google", "microsoft"];
+    if !supported.contains(&provider) {
+        anyhow::bail!(
+            "OAuth device flow not supported for '{}'. Supported: {}.\n\
+             For API-key providers use 'sparrow auth add {}'.",
+            provider,
+            supported.join(", "),
+            provider
+        );
+    }
+
+    let client_id = client_id
+        .or_else(|| std::env::var(format!("{}_CLIENT_ID", provider.to_uppercase())).ok())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "No OAuth client id. Pass --client-id <id> or set {}_CLIENT_ID.\n\
+                 Register an OAuth app with your provider to obtain one.",
+                provider.to_uppercase()
+            )
+        })?;
+
+    println!("Starting OAuth device flow for {}...", provider);
+    let (verification_uri, user_code, device_code) =
+        OAuthFlow::start_device_flow(provider, &client_id).await?;
+    println!("\n  1. Open: {}", verification_uri);
+    println!("  2. Enter code: {}\n", user_code);
+    println!("Waiting for authorization (up to 5 min)...");
+
+    let token = OAuthFlow::poll_token(provider, &client_id, &device_code, 300).await?;
+    auth.set(provider, sparrow::auth::Credential::api_key(token))?;
+    println!("✓ Authenticated. Credential stored for {}.", provider);
+    Ok(())
+}
+
 async fn run_task(
     task: &str,
     config: &sparrow::config::Config,
@@ -1362,9 +1548,31 @@ async fn run_task(
         engine = engine.with_identity(soul.to_identity());
     }
 
+    // ── Session continuity (§8) ───────────────────────────────────────────
+    // Load prior conversation so context follows the user across runs and
+    // surfaces. Key: $SPARROW_SESSION (set it to "user:<id>" to continue a
+    // Telegram/Slack thread) else a per-workspace CLI session.
+    let sessions =
+        sparrow::runtime::session::SessionStore::open(&config.state_dir.join("sessions.db"))
+            .ok()
+            .map(Arc::new);
+    let session_key = std::env::var("SPARROW_SESSION").unwrap_or_else(|_| {
+        format!(
+            "cli:{}",
+            std::env::current_dir()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| "default".into())
+        )
+    });
+    let prior_msgs: Vec<sparrow::provider::Msg> = sessions
+        .as_ref()
+        .and_then(|s| s.load(&session_key))
+        .and_then(|sess| serde_json::from_str(&sess.messages_json).ok())
+        .unwrap_or_default();
+
     let task_obj = sparrow::engine::Task {
         description: task.to_string(),
-        context: vec![],
+        context: prior_msgs.clone(),
     };
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1373,7 +1581,11 @@ async fn run_task(
     let config_snapshot = redacted_config_snapshot(config);
     let repo_head = current_repo_head();
     let print_handle = tokio::spawn(async move {
+        let mut full_reply = String::new();
         while let Some(event) = rx.recv().await {
+            if let sparrow::event::Event::ThinkingDelta { text, .. } = &event {
+                full_reply.push_str(text);
+            }
             if let sparrow::event::Event::RunStarted { run, agent, .. } = &event {
                 recorder.start_run(
                     run.0.clone(),
@@ -1434,12 +1646,35 @@ async fn run_task(
                 _ => {}
             }
         }
+        full_reply
     });
 
     println!("Running: {}", task);
     let outcome = engine.drive(task_obj, tx).await?;
-    print_handle.await?;
+    let full_reply = print_handle.await?;
     println!("Status: {}", outcome.status);
+
+    // Persist the turn to the session (prior + user + assistant), capped.
+    if let Some(store) = &sessions {
+        let mut updated = prior_msgs;
+        updated.push(sparrow::provider::Msg {
+            role: "user".into(),
+            content: vec![sparrow::provider::ContentBlock::Text {
+                text: task.to_string(),
+            }],
+        });
+        if !full_reply.trim().is_empty() {
+            updated.push(sparrow::provider::Msg {
+                role: "assistant".into(),
+                content: vec![sparrow::provider::ContentBlock::Text { text: full_reply }],
+            });
+        }
+        let len = updated.len();
+        if len > 40 {
+            updated.drain(..len - 40);
+        }
+        let _ = store.save(&session_key, &updated, None);
+    }
     Ok(())
 }
 
@@ -1964,14 +2199,20 @@ async fn handle_gateway(
                             "  Email    : enabled (SMTP {}:{})",
                             em.smtp_host, em.smtp_port
                         );
-                        transports.push(Box::new(sparrow::gateway::email::EmailTransport::new(
+                        let mut email_transport = sparrow::gateway::email::EmailTransport::new(
                             em.from.clone(),
                             em.smtp_host.clone(),
                             em.smtp_port,
                             user,
                             pass,
                             em.allowed_to.clone(),
-                        )));
+                        );
+                        if let Some(imap_host) = &em.imap_host {
+                            email_transport =
+                                email_transport.with_imap(imap_host.clone(), em.imap_port);
+                            println!("             + IMAP inbound {}:{}", imap_host, em.imap_port);
+                        }
+                        transports.push(Box::new(email_transport));
                     } else {
                         println!(
                             "  Email    : no credentials (set {} + {})",
