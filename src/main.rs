@@ -61,6 +61,17 @@ async fn main() -> anyhow::Result<()> {
         .map(|name| config_dir.join("profiles").join(name))
         .unwrap_or_else(|| config_dir.clone());
 
+    // Profile state isolation: each profile gets its own state dir (db, transcripts).
+    // The global state_dir is still used for gateway.pid and the profiles/ tree itself.
+    let active_state_dir = active_profile
+        .as_ref()
+        .map(|name| {
+            let p = state_dir.join("profiles").join(name);
+            std::fs::create_dir_all(&p).ok();
+            p
+        })
+        .unwrap_or_else(|| state_dir.clone());
+
     let config_store = FsConfigStore::new(active_config_dir.clone());
     let mut config = config_store.load().unwrap_or_else(|e| {
         eprintln!("Warning: could not load config: {}. Using defaults.", e);
@@ -73,17 +84,17 @@ async fn main() -> anyhow::Result<()> {
             skills: Default::default(),
             theme: "captain".into(),
             config_dir: active_config_dir.clone(),
-            state_dir: state_dir.clone(),
+            state_dir: active_state_dir.clone(),
         }
     });
     config.config_dir = active_config_dir.clone();
-    config.state_dir = state_dir.clone();
+    config.state_dir = active_state_dir.clone();
     migrate_inline_provider_keys(&mut config, &config_store);
     apply_cli_overrides(&mut config, &cli);
 
-    // Initialize memory (SQLite)
+    // Initialize memory (SQLite) — isolated per profile via active_state_dir
     let memory = Arc::new(
-        SqliteMemory::open(&state_dir.join("sparrow.db")).unwrap_or_else(|e| {
+        SqliteMemory::open(&active_state_dir.join("sparrow.db")).unwrap_or_else(|e| {
             eprintln!(
                 "Warning: could not open database: {}. Using in-memory fallback.",
                 e
@@ -92,24 +103,63 @@ async fn main() -> anyhow::Result<()> {
             SqliteMemory::open(&std::path::PathBuf::from(":memory:")).unwrap()
         }),
     );
-    let memory_for_discovery: Arc<dyn Memory> = memory.clone();
-    if memory_for_discovery
-        .get_discovered_models("ollama")
-        .is_empty()
+    // ── Boot-time model discovery ─────────────────────────────────────────────
+    // For every provider whose API key is already in the environment but whose
+    // model cache is empty, kick off a silent background discovery so `sparrow
+    // model --list` and the router see the full catalogue on first run.
     {
-        let ollama_base_url =
-            std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434/v1".into());
-        tokio::spawn(async move {
-            discover_and_cache_provider(
-                memory_for_discovery,
-                "ollama".to_string(),
-                "ollama".to_string(),
-                ollama_base_url,
-                String::new(),
-                false,
-            )
-            .await;
-        });
+        let memory_for_discovery: Arc<dyn Memory> = memory.clone();
+
+        // 1. Ollama — always try (no key needed)
+        if memory_for_discovery
+            .get_discovered_models("ollama")
+            .is_empty()
+        {
+            let ollama_base_url =
+                std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434/v1".into());
+            let m = memory_for_discovery.clone();
+            tokio::spawn(async move {
+                discover_and_cache_provider(
+                    m,
+                    "ollama".to_string(),
+                    "ollama".to_string(),
+                    ollama_base_url,
+                    String::new(),
+                    false,
+                )
+                .await;
+            });
+        }
+
+        // 2. Every other provider with an env key but empty cache
+        for def in sparrow::config::providers::provider_registry() {
+            if def.adapter == "ollama" {
+                continue; // handled above
+            }
+            let Some(env_var) = &def.api_key_env else {
+                continue;
+            };
+            let Ok(api_key) = std::env::var(env_var) else {
+                continue;
+            };
+            let api_key = api_key.trim().to_string();
+            if api_key.is_empty() {
+                continue;
+            }
+            if !memory_for_discovery
+                .get_discovered_models(&def.id)
+                .is_empty()
+            {
+                continue; // already cached
+            }
+            let m = memory_for_discovery.clone();
+            let pid = def.id.clone();
+            let adapter = def.adapter.clone();
+            let base_url = def.base_url.clone();
+            tokio::spawn(async move {
+                discover_and_cache_provider(m, pid, adapter, base_url, api_key, false).await;
+            });
+        }
     }
 
     // Initialize agent store
@@ -121,8 +171,8 @@ async fn main() -> anyhow::Result<()> {
     let skill_library: Arc<dyn SkillLibrary> =
         Arc::new(FsSkillLibrary::new(skills_dir).with_memory(memory.clone()));
 
-    // Initialize recorder (transcripts)
-    let recorder = Arc::new(FsRecorder::new(state_dir.join("transcripts")));
+    // Initialize recorder (transcripts) — isolated per profile
+    let recorder = Arc::new(FsRecorder::new(active_state_dir.join("transcripts")));
 
     // Initialize scheduler
     let scheduler = Arc::new(MemoryScheduler::new().with_memory(memory.clone()));
@@ -282,7 +332,76 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
             if let Some(route) = set {
-                println!("Model routing set to: {} (apply in config.toml)", route);
+                // Parse "provider" or "provider:model"
+                let (provider_id, model_opt) = if let Some(pos) = route.find(':') {
+                    let (p, m) = route.split_at(pos);
+                    (p.trim().to_string(), Some(m[1..].trim().to_string()))
+                } else {
+                    (route.trim().to_string(), None)
+                };
+
+                // Validate provider exists (static registry or discovered)
+                let provider_known = sparrow::config::providers::find_provider(&provider_id)
+                    .is_some()
+                    || !memory.get_discovered_models(&provider_id).is_empty();
+                if !provider_known {
+                    eprintln!(
+                        "Unknown provider '{}'. Run 'sparrow model --list' to see options.",
+                        provider_id
+                    );
+                } else {
+                    // Validate model if specified
+                    if let Some(ref model) = model_opt {
+                        let static_models =
+                            sparrow::config::providers::default_models(&provider_id);
+                        let discovered = memory.get_discovered_models(&provider_id);
+                        let all: Vec<&String> =
+                            static_models.iter().chain(discovered.iter()).collect();
+                        if !all.is_empty() && !all.contains(&model) {
+                            eprintln!(
+                                "Warning: model '{}' not found in provider '{}'. \
+                                 Run 'sparrow model --list' to see available models.",
+                                model, provider_id
+                            );
+                            // Proceed anyway — user may know a model not in our registry
+                        }
+                    }
+
+                    // Write routing policy to config
+                    let mut updated = config.clone();
+                    updated
+                        .routing
+                        .policy
+                        .insert("medium".into(), provider_id.clone());
+                    updated
+                        .routing
+                        .policy
+                        .insert("hard".into(), provider_id.clone());
+                    if let Some(model) = model_opt {
+                        let def = sparrow::config::providers::find_provider(&provider_id);
+                        updated
+                            .providers
+                            .entry(provider_id.clone())
+                            .or_insert_with(|| ProviderConfig {
+                                adapter: def
+                                    .as_ref()
+                                    .map(|d| d.adapter.clone())
+                                    .unwrap_or_else(|| "openai-compatible".into()),
+                                base_url: def
+                                    .as_ref()
+                                    .map(|d| Some(d.base_url.clone()))
+                                    .unwrap_or(None),
+                                models: vec![],
+                                api_key_env: def.and_then(|d| d.api_key_env),
+                            })
+                            .models = vec![model.clone()];
+                        println!("Routing updated: medium/hard → {}:{}", provider_id, model);
+                    } else {
+                        println!("Routing updated: medium/hard → {}", provider_id);
+                    }
+                    config_store.save(&updated)?;
+                    println!("Config saved. Run 'sparrow model --list' to verify.");
+                }
             }
         }
         Some(Commands::Auth { action }) => {
@@ -373,6 +492,32 @@ async fn main() -> anyhow::Result<()> {
                     }
                 }
             }
+            sparrow::cli::CheckpointAction::Diff { id } => {
+                let cwd = std::env::current_dir().unwrap_or_default();
+                let checkpoints = GitCheckpoints::new(cwd);
+                match checkpoints.diff(&sparrow::event::CheckpointId(id.clone())) {
+                    Ok(diff) if diff.trim().is_empty() => {
+                        println!("No changes between checkpoint {} and HEAD.", id);
+                    }
+                    Ok(diff) => print!("{}", diff),
+                    Err(e) => eprintln!("Failed to diff checkpoint {}: {}", id, e),
+                }
+            }
+            sparrow::cli::CheckpointAction::Prune { older_than_days } => {
+                let cwd = std::env::current_dir().unwrap_or_default();
+                let checkpoints = GitCheckpoints::new(cwd);
+                match checkpoints.prune(older_than_days) {
+                    Ok(0) => println!(
+                        "No checkpoints older than {} days to prune.",
+                        older_than_days
+                    ),
+                    Ok(n) => println!(
+                        "Pruned {} checkpoint(s) older than {} days.",
+                        n, older_than_days
+                    ),
+                    Err(e) => eprintln!("Failed to prune checkpoints: {}", e),
+                }
+            }
         },
         Some(Commands::Rewind { id }) => {
             let cwd = std::env::current_dir().unwrap_or_default();
@@ -417,6 +562,25 @@ async fn main() -> anyhow::Result<()> {
                 "Git        : {}",
                 if git_ok { "available" } else { "not found" }
             );
+
+            // Sandbox reality check
+            {
+                let sandbox = &config.defaults.sandbox;
+                #[cfg(not(target_os = "linux"))]
+                {
+                    if sandbox == "local-hardened" {
+                        println!(
+                            "Sandbox    : {} (note: namespace/seccomp isolation is Linux-only; \
+                             running with path-boundary enforcement only on this platform)",
+                            sandbox
+                        );
+                    } else {
+                        println!("Sandbox    : {}", sandbox);
+                    }
+                }
+                #[cfg(target_os = "linux")]
+                println!("Sandbox    : {} (firejail/bwrap/unshare)", sandbox);
+            }
 
             let facts = memory.all_facts();
             println!("Memory     : {} facts stored", facts.len());
@@ -474,7 +638,22 @@ async fn main() -> anyhow::Result<()> {
             handle_full_import(source)?;
         }
         Some(Commands::Setup) => {
-            handle_setup(&config, &config_store).await?;
+            // Conversational Setup Agent (§16). Falls back to the legacy
+            // interactive flow if no Brain is reachable at all.
+            let result = sparrow::onboarding::setup_agent::run_setup_agent(
+                &config,
+                &config_store,
+                memory.clone(),
+                build_provider_brains,
+            )
+            .await;
+            if let Err(err) = result {
+                eprintln!(
+                    "Setup Agent failed: {}\n→ falling back to the legacy interactive flow.",
+                    err
+                );
+                handle_setup(&config, &config_store).await?;
+            }
         }
         Some(Commands::Learn) => {
             sparrow::onboarding::Onboarding::default().run_interactive()?;
@@ -483,7 +662,13 @@ async fn main() -> anyhow::Result<()> {
             handle_init()?;
         }
         Some(Commands::Status) => {
-            handle_status(&(memory.clone() as Arc<dyn Memory>))?;
+            handle_status(
+                &(memory.clone() as Arc<dyn Memory>),
+                &config,
+                &scheduler,
+                &recorder,
+                &state_dir,
+            )?;
         }
         Some(Commands::Memory { action }) => {
             handle_memory(action, &(memory.clone() as Arc<dyn Memory>))?;
@@ -588,12 +773,20 @@ fn looks_like_inline_secret(value: &str) -> bool {
 
 fn apply_cli_overrides(config: &mut sparrow::config::Config, cli: &Cli) {
     if let Some(level) = cli.autonomy.as_deref() {
-        match level.trim().to_lowercase().as_str() {
-            "supervised" => config.defaults.autonomy = sparrow::event::AutonomyLevel::Supervised,
-            "trusted" => config.defaults.autonomy = sparrow::event::AutonomyLevel::Trusted,
-            "autonomous" => config.defaults.autonomy = sparrow::event::AutonomyLevel::Autonomous,
-            _ => {}
-        }
+        let trimmed = level.trim().to_lowercase();
+        // Accept named levels OR a float in [0.0, 1.0] — e.g. --autonomy 0.7
+        config.defaults.autonomy = match trimmed.as_str() {
+            "supervised" => sparrow::event::AutonomyLevel::Supervised,
+            "trusted" => sparrow::event::AutonomyLevel::Trusted,
+            "autonomous" => sparrow::event::AutonomyLevel::Autonomous,
+            other => {
+                if let Ok(f) = other.parse::<f64>() {
+                    sparrow::event::AutonomyLevel::from_float(f.clamp(0.0, 1.0))
+                } else {
+                    config.defaults.autonomy.clone()
+                }
+            }
+        };
     }
     if let Some(budget) = cli.budget {
         if budget > 0.0 {
@@ -856,6 +1049,22 @@ fn build_provider_brains(
                     ));
                 }
             }
+            "openai-responses" => {
+                let base_url = pconfig
+                    .base_url
+                    .clone()
+                    .unwrap_or_else(|| "https://api.openai.com/v1".into());
+                for model in &model_names {
+                    brains.push(Arc::new(
+                        sparrow::provider::responses::OpenAIResponsesAdapter::new(
+                            model,
+                            api_key.clone(),
+                            Some(&base_url),
+                        )
+                        .with_caps(sparrow::config::providers::model_caps(&name, model)),
+                    ));
+                }
+            }
             "openai-compatible" | "ollama" | "openai-chat" => {
                 let base_url = pconfig
                     .base_url
@@ -928,22 +1137,73 @@ async fn run_tui(
     let (task_tx, mut task_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
 
+    // Inject channel — Ctrl+I in the TUI sends `__inject__:<msg>` via task_tx
+    // and we forward to the engine via an UnboundedSender mid-flight.
+    let inject_holder: Arc<tokio::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<String>>>> =
+        Arc::new(tokio::sync::Mutex::new(None));
+    let inject_holder_task = inject_holder.clone();
+
     tokio::spawn(async move {
         while let Some(description) = task_rx.recv().await {
+            // Intercept inject prefix: forward to the live run's inject channel
+            if let Some(payload) = description.strip_prefix("__inject__:") {
+                if let Some(tx) = inject_holder_task.lock().await.as_ref() {
+                    let _ = tx.send(payload.to_string());
+                } else {
+                    let _ = event_tx.send(sparrow::event::Event::Error {
+                        run: sparrow::event::RunId("tui".into()),
+                        message: "no active run to inject into".into(),
+                    });
+                }
+                continue;
+            }
+            if let Some(id) = description.strip_prefix("__rewind__:") {
+                let checkpoints = GitCheckpoints::new(std::env::current_dir().unwrap_or_default());
+                match checkpoints.rewind(sparrow::event::CheckpointId(id.to_string())) {
+                    Ok(()) => {
+                        let _ = event_tx.send(sparrow::event::Event::ToolOutput {
+                            run: sparrow::event::RunId("tui".into()),
+                            id: "rewind".into(),
+                            blocks: vec![sparrow::event::Block::Text(format!(
+                                "rewound to checkpoint {}",
+                                id
+                            ))],
+                        });
+                    }
+                    Err(err) => {
+                        let _ = event_tx.send(sparrow::event::Event::Error {
+                            run: sparrow::event::RunId("tui".into()),
+                            message: format!("checkpoint rewind failed: {}", err),
+                        });
+                    }
+                }
+                continue;
+            }
+
             let task = Task {
                 description,
                 context: vec![],
             };
-            if let Err(err) = engine.drive(task, event_tx.clone()).await {
+            // Create a fresh inject channel for this run and register it
+            let (inject_tx, inject_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+            *inject_holder_task.lock().await = Some(inject_tx);
+
+            let run_id = sparrow::event::RunId::new();
+            if let Err(err) = engine
+                .drive_with_inject(task, event_tx.clone(), run_id, Some(inject_rx))
+                .await
+            {
                 let _ = event_tx.send(sparrow::event::Event::Error {
                     run: sparrow::event::RunId("tui".into()),
                     message: err.to_string(),
                 });
             }
+            *inject_holder_task.lock().await = None;
         }
     });
 
     let mut tui = Tui::new().with_channels(task_tx, event_rx);
+    drop(inject_holder); // holder cloned into the task; this outer one can drop
     tokio::task::spawn_blocking(move || tui.run()).await??;
     Ok(())
 }
@@ -1337,7 +1597,28 @@ async fn handle_schedule(
         _ => sparrow::event::AutonomyLevel::Supervised,
     };
 
-    let mut job = Job::new(task.to_string(), cron.to_string());
+    // Try natural-language → cron translation before creating the job
+    let resolved_cron =
+        sparrow::runtime::scheduler::parse_nl_cron(cron).unwrap_or_else(|| cron.to_string());
+
+    if resolved_cron != cron {
+        println!("Parsed schedule: \"{}\" → {}", cron, resolved_cron);
+    }
+
+    // Validate the cron expression before storing
+    {
+        use cron::Schedule;
+        use std::str::FromStr;
+        if Schedule::from_str(&resolved_cron).is_err() {
+            anyhow::bail!(
+                "Invalid cron expression: '{}'. Use cron syntax (e.g. '0 2 * * *') \
+                 or natural language (e.g. 'every day at 2am').",
+                resolved_cron
+            );
+        }
+    }
+
+    let mut job = Job::new(task.to_string(), resolved_cron.clone());
     job.autonomy = level.clone();
     job.next_run = job.next_schedule().map(|dt| dt.to_rfc3339());
 
@@ -1346,7 +1627,7 @@ async fn handle_schedule(
 
     println!("Job scheduled: {}", id);
     println!("Task    : {}", task);
-    println!("Cron    : {}", cron);
+    println!("Cron    : {}", resolved_cron);
     println!("Autonomy: {:?}", level);
 
     if let Some(j) = jobs.iter().find(|j| j.id == id) {
@@ -1571,13 +1852,40 @@ async fn handle_gateway(
                 }
             }
 
+            // Email (outbound only, behind `email` feature)
+            if let Some(ref em) = config.surfaces.email {
+                if em.enabled {
+                    let user = std::env::var(&em.username_env).unwrap_or_default();
+                    let pass = std::env::var(&em.password_env).unwrap_or_default();
+                    if !user.is_empty() && !pass.is_empty() {
+                        println!(
+                            "  Email    : enabled (SMTP {}:{})",
+                            em.smtp_host, em.smtp_port
+                        );
+                        transports.push(Box::new(sparrow::gateway::email::EmailTransport::new(
+                            em.from.clone(),
+                            em.smtp_host.clone(),
+                            em.smtp_port,
+                            user,
+                            pass,
+                            em.allowed_to.clone(),
+                        )));
+                    } else {
+                        println!(
+                            "  Email    : no credentials (set {} + {})",
+                            em.username_env, em.password_env
+                        );
+                    }
+                }
+            }
+
             // Always start WebSocket API
             println!("  WS API   : ws://127.0.0.1:9338");
             let ws_api = WebSocketApi::new("127.0.0.1:9338");
             transports.push(Box::new(ws_api));
 
             println!(
-                "  Extra    : WhatsApp/Signal/Email/Feishu/WeCom/QQ/Teams adapters present, not started without credentials"
+                "  Extra    : WhatsApp/Signal/Feishu/WeCom/QQ/Teams adapters present, not started without credentials"
             );
 
             if transports.is_empty() {
@@ -2163,8 +2471,24 @@ async fn run_task_json(
     let outcome = engine.drive(task_obj, tx).await?;
     print_handle.await?;
 
-    if outcome.status.contains("error") {
-        std::process::exit(1);
+    // Structured exit codes for CI/hook/script consumption:
+    //   0  = completed successfully
+    //   1  = generic error
+    //   62 = budget cap exceeded
+    //   63 = denied by autonomy / approval
+    //   64 = timeout / interrupt
+    let exit_code = match outcome.status.as_str() {
+        "completed" => 0,
+        "denied" => 63,
+        "waiting_for_approval" => 63,
+        s if s.contains("budget") => 62,
+        s if s.contains("timeout") || s.contains("interrupt") => 64,
+        s if s.starts_with("error") || s.contains("error") => 1,
+        _ => 0,
+    };
+
+    if exit_code != 0 {
+        std::process::exit(exit_code);
     }
 
     Ok(())
@@ -2310,16 +2634,110 @@ blocked_paths = [".env", "*.pem", "secrets/"]
 
 // ─── Status command ────────────────────────────────────────────────────────────
 
-fn handle_status(memory: &Arc<dyn Memory>) -> anyhow::Result<()> {
-    let facts = memory.all_facts();
+fn handle_status(
+    memory: &Arc<dyn Memory>,
+    config: &sparrow::config::Config,
+    scheduler: &Arc<sparrow::runtime::scheduler::MemoryScheduler>,
+    recorder: &Arc<sparrow::runtime::recorder::FsRecorder>,
+    state_dir: &std::path::PathBuf,
+) -> anyhow::Result<()> {
     println!("Sparrow Status");
     println!("──────────────");
-    println!("Facts stored: {}", facts.len());
-    if !facts.is_empty() {
-        for f in &facts {
-            println!("  {}: {}", f.key, f.value);
+
+    // Budget & autonomy
+    println!(
+        "Budget     : ${:.2}/session  ${:.2}/day",
+        config.budget.session_usd, config.budget.daily_usd
+    );
+    println!("Autonomy   : {:?}", config.defaults.autonomy);
+    println!("Sandbox    : {}", config.defaults.sandbox);
+
+    // Gateway up/down
+    let gw_pid_path = state_dir.join("gateway.pid");
+    let gw_ws_open = std::net::TcpStream::connect_timeout(
+        &"127.0.0.1:9338".parse().unwrap(),
+        std::time::Duration::from_millis(150),
+    )
+    .is_ok();
+    let gw_pid_alive = gw_pid_path
+        .exists()
+        .then(|| {
+            std::fs::read_to_string(&gw_pid_path)
+                .ok()
+                .and_then(|s| s.trim().parse::<u32>().ok())
+        })
+        .flatten()
+        .map(|pid| {
+            #[cfg(windows)]
+            {
+                std::process::Command::new("tasklist")
+                    .args(["/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"])
+                    .output()
+                    .map(|o| String::from_utf8_lossy(&o.stdout).contains(&pid.to_string()))
+                    .unwrap_or(false)
+            }
+            #[cfg(not(windows))]
+            {
+                std::process::Command::new("kill")
+                    .args(["-0", &pid.to_string()])
+                    .status()
+                    .map(|s| s.success())
+                    .unwrap_or(false)
+            }
+        })
+        .unwrap_or(false);
+    println!(
+        "Gateway    : {}",
+        if gw_ws_open || gw_pid_alive {
+            "running"
+        } else {
+            "stopped  (start with: sparrow gateway start)"
+        }
+    );
+
+    // Scheduled jobs
+    let jobs = scheduler.list();
+    if jobs.is_empty() {
+        println!("Cron jobs  : none scheduled");
+    } else {
+        println!("Cron jobs  : {} scheduled", jobs.len());
+        for j in &jobs {
+            let st = if j.enabled { "active" } else { "paused" };
+            let next = j.next_run.as_deref().unwrap_or("pending");
+            println!("  [{}] {}  cron:{}  next:{}", st, j.id, j.cron, next);
         }
     }
-    println!("Run: sparrow doctor for full diagnostics");
+
+    // Recent transcripts
+    let transcripts = recorder.list_transcripts();
+    println!("Transcripts: {} total", transcripts.len());
+    for id in transcripts.iter().rev().take(3) {
+        if let Some(tr) = recorder.load(id) {
+            println!(
+                "  {} | {} events | {}",
+                id,
+                tr.events.len(),
+                tr.inputs.task.chars().take(50).collect::<String>()
+            );
+        }
+    }
+
+    // Memory & model cache
+    let facts = memory.all_facts();
+    println!("Memory     : {} facts stored", facts.len());
+    let total_discovered: usize = sparrow::config::providers::provider_registry()
+        .iter()
+        .map(|p| memory.get_discovered_models(&p.id).len())
+        .sum();
+    let static_count: usize = sparrow::config::providers::provider_registry()
+        .iter()
+        .map(|p| p.models.len())
+        .sum();
+    println!(
+        "Models     : {} static + {} discovered (cached 24h)",
+        static_count, total_discovered
+    );
+
+    println!("\nRun 'sparrow doctor' for full diagnostics.");
     Ok(())
 }

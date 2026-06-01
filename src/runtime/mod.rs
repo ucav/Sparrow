@@ -48,11 +48,14 @@ pub struct SparrowRuntime {
     recorder: Arc<FsRecorder>,
     event_bus: EventBus,
     _memory: Arc<dyn Memory>,
-    _config: Config,
+    config: Config,
     running: std::sync::atomic::AtomicBool,
     // Running tasks
     active_runs: tokio::sync::Mutex<std::collections::HashMap<String, tokio::task::JoinHandle<()>>>,
     cancellations: Arc<tokio::sync::Mutex<std::collections::HashMap<String, CancellationToken>>>,
+    /// Per-run injection senders. Populated on submit(), consumed by redirect().
+    injects:
+        Arc<tokio::sync::Mutex<std::collections::HashMap<String, mpsc::UnboundedSender<String>>>>,
 }
 
 impl SparrowRuntime {
@@ -70,10 +73,25 @@ impl SparrowRuntime {
             recorder,
             event_bus,
             _memory: memory,
-            _config: config,
+            config,
             running: std::sync::atomic::AtomicBool::new(false),
             active_runs: tokio::sync::Mutex::new(std::collections::HashMap::new()),
             cancellations: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            injects: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+        }
+    }
+
+    /// Inject a user message into a running run mid-flight (§3.7).
+    /// Returns an error if no run with that id is active.
+    pub async fn redirect(&self, run_id: &str, msg: String) -> anyhow::Result<()> {
+        let injects = self.injects.lock().await;
+        match injects.get(run_id) {
+            Some(tx) => {
+                tx.send(msg)
+                    .map_err(|e| anyhow::anyhow!("inject channel closed: {}", e))?;
+                Ok(())
+            }
+            None => anyhow::bail!("No active run with id {}", run_id),
         }
     }
 
@@ -155,7 +173,6 @@ impl SparrowRuntime {
 
                         tokio::spawn(async move {
                             use tokio::io::AsyncWriteExt;
-                            // Send events as NDJSON
                             loop {
                                 match rx.recv().await {
                                     Ok(event) => {
@@ -178,6 +195,67 @@ impl SparrowRuntime {
             }
         });
 
+        Ok(())
+    }
+
+    /// Start a Unix domain socket for local API access (Linux/macOS).
+    /// Clients can `socat - UNIX-CONNECT:/path/to/socket` to receive NDJSON events.
+    #[cfg(unix)]
+    async fn serve_unix_socket(&self, path: &str) -> anyhow::Result<()> {
+        use tokio::net::UnixListener;
+
+        // Remove stale socket file from a previous run
+        let _ = std::fs::remove_file(path);
+
+        let listener = UnixListener::bind(path)?;
+        tracing::info!("Runtime Unix socket at {}", path);
+
+        // Restrict to owner only (rwx------) for security
+        #[cfg(target_os = "linux")]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        }
+
+        let event_bus = self.event_bus.clone();
+
+        tokio::spawn(async move {
+            loop {
+                match listener.accept().await {
+                    Ok((mut stream, _)) => {
+                        tracing::debug!("Unix socket connection");
+                        let mut rx = event_bus.subscribe_all();
+                        tokio::spawn(async move {
+                            use tokio::io::AsyncWriteExt;
+                            loop {
+                                match rx.recv().await {
+                                    Ok(event) => {
+                                        if let Ok(json) = serde_json::to_string(&event) {
+                                            let line = json + "\n";
+                                            if stream.write_all(line.as_bytes()).await.is_err() {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    Err(_) => break,
+                                }
+                            }
+                        });
+                    }
+                    Err(e) => {
+                        tracing::error!("Unix socket accept error: {}", e);
+                    }
+                }
+            }
+        });
+
+        Ok(())
+    }
+
+    /// No-op stub on Windows / non-unix targets.
+    #[cfg(not(unix))]
+    async fn serve_unix_socket(&self, _path: &str) -> anyhow::Result<()> {
+        tracing::debug!("Unix socket not available on this platform; skipping.");
         Ok(())
     }
 }
@@ -213,13 +291,23 @@ impl Runtime for SparrowRuntime {
         let token = cancel_token.clone();
         let cancellations = self.cancellations.clone();
 
+        // Inject channel: redirect() pushes user messages into the running engine
+        let (inject_tx, inject_rx) = mpsc::unbounded_channel::<String>();
+        self.injects.lock().await.insert(run_id.clone(), inject_tx);
+        let injects_map = self.injects.clone();
+
         let handle = tokio::spawn(async move {
             let engine_rid = rid.clone();
             let cancel_rid = rid.clone();
             let cancel_tx = tx.clone();
             let engine_handle = tokio::spawn(async move {
                 tokio::select! {
-                    result = engine.drive_with_run_id(task, tx, crate::event::RunId(engine_rid)) => result,
+                    result = engine.drive_with_inject(
+                        task,
+                        tx,
+                        crate::event::RunId(engine_rid),
+                        Some(inject_rx),
+                    ) => result,
                     _ = token.cancelled() => {
                         let _ = cancel_tx.send(Event::Error {
                             run: crate::event::RunId(cancel_rid),
@@ -247,6 +335,7 @@ impl Runtime for SparrowRuntime {
                 tracing::error!("runtime engine task failed: {}", err);
             }
             cancellations.lock().await.remove(&rid);
+            injects_map.lock().await.remove(&rid);
             let _ = recorder.finalize(&rid);
         });
 
@@ -282,7 +371,21 @@ impl Runtime for SparrowRuntime {
         let api_addr = "127.0.0.1:9337";
         self.cron_loop().await;
         self.serve_api(api_addr).await?;
-        tracing::info!("Runtime started. API at {}", api_addr);
+
+        // Unix socket: resolves to ~/.local/state/sparrow/sparrow.sock (or XDG equivalent)
+        let socket_path = self
+            .config
+            .state_dir
+            .join("sparrow.sock")
+            .to_string_lossy()
+            .to_string();
+        if let Err(e) = self.serve_unix_socket(&socket_path).await {
+            tracing::warn!("Unix socket failed (non-fatal): {}", e);
+        } else {
+            tracing::info!("Runtime Unix socket at {}", socket_path);
+        }
+
+        tracing::info!("Runtime started. TCP API at {}", api_addr);
         tracing::info!("Scheduled jobs active.");
 
         Ok(())

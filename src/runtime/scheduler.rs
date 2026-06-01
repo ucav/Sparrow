@@ -47,6 +47,162 @@ impl Job {
     }
 }
 
+// ─── Natural-language → cron parser ────────────────────────────────────────────
+
+/// Try to convert a natural-language schedule expression into a cron string.
+/// Examples:
+///   "every minute"            → "* * * * *"
+///   "every hour" / "hourly"   → "0 * * * *"
+///   "every day at 2am"        → "0 2 * * *"
+///   "daily at 9:30"           → "30 9 * * *"
+///   "every monday at 8"       → "0 8 * * 1"
+///   "every 15 minutes"        → "*/15 * * * *"
+///   "midnight"                → "0 0 * * *"
+///   "noon"                    → "0 12 * * *"
+///   "weekly"                  → "0 9 * * 1"
+///   "monthly"                 → "0 9 1 * *"
+///
+/// Returns `None` if the input already looks like a cron expression or cannot be parsed.
+pub fn parse_nl_cron(input: &str) -> Option<String> {
+    // Already a cron expression (5 whitespace-separated tokens, first can be */N or digits)
+    let parts: Vec<&str> = input.split_whitespace().collect();
+    if parts.len() == 5 {
+        return None; // looks like raw cron, leave as-is
+    }
+
+    let lower = input.to_lowercase();
+    let lower = lower.trim();
+
+    // Named shortcuts
+    if lower == "hourly" || lower == "every hour" {
+        return Some("0 * * * *".into());
+    }
+    if lower == "daily" || lower == "every day" {
+        return Some("0 9 * * *".into());
+    }
+    if lower == "weekly" || lower == "every week" {
+        return Some("0 9 * * 1".into());
+    }
+    if lower == "monthly" || lower == "every month" {
+        return Some("0 9 1 * *".into());
+    }
+    if lower.contains("midnight") {
+        return Some("0 0 * * *".into());
+    }
+    if lower.contains("noon") {
+        return Some("0 12 * * *".into());
+    }
+    if lower == "every minute" {
+        return Some("* * * * *".into());
+    }
+
+    // "every N minutes"
+    if let Some(n_str) = lower
+        .strip_prefix("every ")
+        .and_then(|s| s.strip_suffix(" minutes"))
+    {
+        if let Ok(n) = n_str.trim().parse::<u32>() {
+            if n > 0 && n < 60 {
+                return Some(format!("*/{} * * * *", n));
+            }
+        }
+    }
+    if let Some(n_str) = lower
+        .strip_prefix("every ")
+        .and_then(|s| s.strip_suffix(" hours"))
+    {
+        if let Ok(n) = n_str.trim().parse::<u32>() {
+            if n > 0 && n <= 24 {
+                return Some(format!("0 */{} * * *", n));
+            }
+        }
+    }
+
+    // Day-of-week mapping
+    let dow_map = [
+        ("sunday", 0),
+        ("monday", 1),
+        ("tuesday", 2),
+        ("wednesday", 3),
+        ("thursday", 4),
+        ("friday", 5),
+        ("saturday", 6),
+        ("sun", 0),
+        ("mon", 1),
+        ("tue", 2),
+        ("wed", 3),
+        ("thu", 4),
+        ("fri", 5),
+        ("sat", 6),
+    ];
+
+    // Parse optional hour from "at H", "at H:MM", "at Ham/pm"
+    fn parse_hour_minute(at_str: &str) -> Option<(u32, u32)> {
+        let s = at_str
+            .trim()
+            .trim_start_matches("at ")
+            .replace("am", "")
+            .replace("pm", "");
+        let is_pm = at_str.contains("pm");
+        if let Some((h, m)) = s.split_once(':') {
+            let h: u32 = h.trim().parse().ok()?;
+            let m: u32 = m.trim().parse().ok()?;
+            let h = if is_pm && h < 12 {
+                h + 12
+            } else if !is_pm && h == 12 {
+                0
+            } else {
+                h
+            };
+            Some((h.min(23), m.min(59)))
+        } else {
+            let h: u32 = s.trim().parse().ok()?;
+            let h = if is_pm && h < 12 {
+                h + 12
+            } else if !is_pm && h == 12 {
+                0
+            } else {
+                h
+            };
+            Some((h.min(23), 0))
+        }
+    }
+
+    // "every <day> at <time>"
+    for (day_name, dow) in &dow_map {
+        if lower.contains(day_name) {
+            let at_idx = lower.find(" at ");
+            let (h, m) = if let Some(idx) = at_idx {
+                parse_hour_minute(&lower[idx + 4..]).unwrap_or((9, 0))
+            } else {
+                (9, 0)
+            };
+            return Some(format!("{} {} * * {}", m, h, dow));
+        }
+    }
+
+    // "every day at <time>" / "daily at <time>"
+    if lower.contains("every day") || lower.contains("daily") {
+        if let Some(idx) = lower.find(" at ") {
+            let (h, m) = parse_hour_minute(&lower[idx + 4..]).unwrap_or((9, 0));
+            return Some(format!("{} {} * * *", m, h));
+        }
+        return Some("0 9 * * *".into());
+    }
+
+    // "every hour at :MM" / "every hour at MM"
+    if lower.contains("every hour") {
+        if let Some(idx) = lower.find(" at ") {
+            let time_part = lower[idx + 4..].trim();
+            let m: u32 = time_part.trim_start_matches(':').parse().unwrap_or(0);
+            return Some(format!("{} * * * *", m.min(59)));
+        }
+        return Some("0 * * * *".into());
+    }
+
+    None
+}
+
 // ─── THE SCHEDULER TRAIT ────────────────────────────────────────────────────────
 
 #[async_trait::async_trait]

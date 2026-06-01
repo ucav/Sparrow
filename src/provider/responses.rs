@@ -36,6 +36,12 @@ impl OpenAIResponsesAdapter {
             },
         }
     }
+
+    /// Override capabilities with those from the static registry (cost, context, etc.)
+    pub fn with_caps(mut self, caps: ModelCaps) -> Self {
+        self.caps = caps;
+        self
+    }
 }
 
 #[async_trait]

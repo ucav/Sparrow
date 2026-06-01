@@ -6,6 +6,7 @@ use crate::event::Event;
 use crate::runtime::recorder::{FsRecorder, Recorder, RunInputs};
 
 pub mod discord;
+pub mod email;
 pub mod extra_transports;
 pub mod slack;
 pub mod telegram;
