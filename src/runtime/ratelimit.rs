@@ -8,6 +8,7 @@ use std::time::Instant;
 pub struct RateLimiter {
     window_secs: u64,
     max_requests: u64,
+    burst: u64,
     buckets: Mutex<HashMap<String, Bucket>>,
 }
 
@@ -22,6 +23,7 @@ impl RateLimiter {
         Self {
             window_secs: 60,
             max_requests: max_requests_per_minute,
+            burst: burst.max(1),
             buckets: Mutex::new(HashMap::new()),
         }
     }
@@ -32,15 +34,16 @@ impl RateLimiter {
         let mut buckets = self.buckets.lock().unwrap();
         let now = Instant::now();
         let bucket = buckets.entry(user_id.to_string()).or_insert(Bucket {
-            tokens: self.max_requests,
+            tokens: self.burst,
             last_refill: now,
         });
 
         // Refill tokens based on elapsed time
         let elapsed = now.duration_since(bucket.last_refill).as_secs();
         if elapsed > 0 {
-            let refill = (elapsed as f64 / self.window_secs as f64 * self.max_requests as f64) as u64;
-            bucket.tokens = (bucket.tokens + refill).min(self.max_requests);
+            let refill =
+                (elapsed as f64 / self.window_secs as f64 * self.max_requests as f64) as u64;
+            bucket.tokens = (bucket.tokens + refill).min(self.burst);
             bucket.last_refill = now;
         }
 
@@ -61,8 +64,8 @@ impl Default for RateLimiter {
 
 // ─── TUI Interrupt Handler (Phase 6 Item 17) ──────────────────────────────────
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub struct InterruptHandler {
     interrupted: Arc<AtomicBool>,
@@ -78,7 +81,8 @@ impl InterruptHandler {
         // Set up Ctrl+C handler
         ctrlc::set_handler(move || {
             flag.store(true, Ordering::SeqCst);
-        }).ok();
+        })
+        .ok();
 
         handler
     }
@@ -89,5 +93,11 @@ impl InterruptHandler {
 
     pub fn reset(&self) {
         self.interrupted.store(false, Ordering::SeqCst);
+    }
+}
+
+impl Default for InterruptHandler {
+    fn default() -> Self {
+        Self::new()
     }
 }

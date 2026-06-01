@@ -9,9 +9,9 @@ use crate::event::Event;
 use crate::memory::Memory;
 
 pub mod event_bus;
+pub mod ratelimit;
 pub mod recorder;
 pub mod scheduler;
-pub mod ratelimit;
 pub mod session;
 
 use event_bus::EventBus;

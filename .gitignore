@@ -25,6 +25,11 @@ state/
 *.db-wal
 transcripts/
 
+# Codex / local assistant artifacts
+.codex-remote-attachments/
+skills/local-temperature/
+get_twitter_followers.py
+
 # Env files
 .env
 .env.local

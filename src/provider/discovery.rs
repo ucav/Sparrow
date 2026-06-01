@@ -102,6 +102,7 @@ impl ModelDiscovery for OllamaDiscovery {
                 items
                     .iter()
                     .filter_map(|item| item.get("name").and_then(|name| name.as_str()))
+                    .filter(|name| is_chat_model_id(name))
                     .map(str::to_string)
                     .collect()
             })
@@ -129,9 +130,16 @@ pub async fn discover_models(
     }
 }
 
-fn is_chat_model_id(id: &str) -> bool {
+pub fn is_chat_model_id(id: &str) -> bool {
     let id = id.to_ascii_lowercase();
-    !["embedding", "tts", "dall-e", "whisper", "moderation"]
-        .iter()
-        .any(|needle| id.contains(needle))
+    ![
+        "embed",
+        "embedding",
+        "tts",
+        "dall-e",
+        "whisper",
+        "moderation",
+    ]
+    .iter()
+    .any(|needle| id.contains(needle))
 }

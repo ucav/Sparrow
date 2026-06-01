@@ -11,11 +11,16 @@ pub struct Todo {
 
 impl Todo {
     pub fn new() -> Self {
-        Self { db: Mutex::new(None) }
+        Self {
+            db: Mutex::new(None),
+        }
     }
 
-    fn get_conn(&self) -> anyhow::Result<std::sync::MutexGuard<Option<rusqlite::Connection>>> {
-        let mut guard = self.db.lock().map_err(|_| anyhow::anyhow!("Todo DB lock poisoned"))?;
+    fn get_conn(&self) -> anyhow::Result<std::sync::MutexGuard<'_, Option<rusqlite::Connection>>> {
+        let mut guard = self
+            .db
+            .lock()
+            .map_err(|_| anyhow::anyhow!("Todo DB lock poisoned"))?;
         if guard.is_none() {
             let state_dir = dirs::state_dir().unwrap_or_default().join("sparrow");
             std::fs::create_dir_all(&state_dir)?;
@@ -27,7 +32,7 @@ impl Todo {
                     status TEXT NOT NULL DEFAULT 'pending',
                     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
                     updated_at INTEGER NOT NULL DEFAULT (unixepoch())
-                );"
+                );",
             )?;
             *guard = Some(conn);
         }
@@ -37,8 +42,12 @@ impl Todo {
 
 #[async_trait]
 impl Tool for Todo {
-    fn name(&self) -> &str { "todo" }
-    fn description(&self) -> &str { "Track tasks with persistent state across calls" }
+    fn name(&self) -> &str {
+        "todo"
+    }
+    fn description(&self) -> &str {
+        "Track tasks with persistent state across calls"
+    }
     fn schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -51,7 +60,9 @@ impl Tool for Todo {
             "required": ["action"]
         })
     }
-    fn risk(&self) -> RiskLevel { RiskLevel::ReadOnly }
+    fn risk(&self) -> RiskLevel {
+        RiskLevel::ReadOnly
+    }
 
     async fn call(&self, args: serde_json::Value, _ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
         let action = args["action"].as_str().unwrap_or("list");
@@ -60,7 +71,9 @@ impl Tool for Todo {
         let id = args["id"].as_str().unwrap_or("");
 
         let guard = self.get_conn()?;
-        let conn = guard.as_ref().ok_or_else(|| anyhow::anyhow!("Todo DB not initialized"))?;
+        let conn = guard
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("Todo DB not initialized"))?;
 
         match action {
             "create" => {
@@ -69,7 +82,10 @@ impl Tool for Todo {
                     "INSERT INTO todos (id, content, status) VALUES (?1, ?2, ?3)",
                     rusqlite::params![new_id, content, status],
                 )?;
-                Ok(ToolResult::text(format!("Created task {}: {} ({})", new_id, content, status)))
+                Ok(ToolResult::text(format!(
+                    "Created task {}: {} ({})",
+                    new_id, content, status
+                )))
             }
             "update" => {
                 let rows = conn.execute(
@@ -79,7 +95,10 @@ impl Tool for Todo {
                 if rows == 0 {
                     Ok(ToolResult::error(format!("Task {} not found", id)))
                 } else {
-                    Ok(ToolResult::text(format!("Updated task {}: {} ({})", id, content, status)))
+                    Ok(ToolResult::text(format!(
+                        "Updated task {}: {} ({})",
+                        id, content, status
+                    )))
                 }
             }
             "complete" => {
@@ -99,7 +118,10 @@ impl Tool for Todo {
             }
             "clear_completed" => {
                 let count = conn.execute("DELETE FROM todos WHERE status = 'completed'", [])?;
-                Ok(ToolResult::text(format!("Cleared {} completed tasks", count)))
+                Ok(ToolResult::text(format!(
+                    "Cleared {} completed tasks",
+                    count
+                )))
             }
             _ => {
                 // list — optionally filtered by status
@@ -110,12 +132,26 @@ impl Tool for Todo {
                 };
                 let rows: Vec<String> = if !status.is_empty() && status != "pending" {
                     stmt.query_map(rusqlite::params![status], |row| {
-                        Ok(format!("  {} [{}] {}", row.get::<_, String>(0)?, row.get::<_, String>(2)?, row.get::<_, String>(1)?))
-                    })?.filter_map(|r| r.ok()).collect()
+                        Ok(format!(
+                            "  {} [{}] {}",
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(2)?,
+                            row.get::<_, String>(1)?
+                        ))
+                    })?
+                    .filter_map(|r| r.ok())
+                    .collect()
                 } else {
                     stmt.query_map([], |row| {
-                        Ok(format!("  {} [{}] {}", row.get::<_, String>(0)?, row.get::<_, String>(2)?, row.get::<_, String>(1)?))
-                    })?.filter_map(|r| r.ok()).collect()
+                        Ok(format!(
+                            "  {} [{}] {}",
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(2)?,
+                            row.get::<_, String>(1)?
+                        ))
+                    })?
+                    .filter_map(|r| r.ok())
+                    .collect()
                 };
                 if rows.is_empty() {
                     Ok(ToolResult::text("No tasks."))
@@ -128,5 +164,7 @@ impl Tool for Todo {
 }
 
 impl Default for Todo {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }

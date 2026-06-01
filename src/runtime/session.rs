@@ -1,6 +1,6 @@
 // ─── Session persistence (Phase 9 Item 27) ─────────────────────────────────────
 
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 
@@ -29,12 +29,19 @@ impl SessionStore {
                 name TEXT,
                 status TEXT DEFAULT 'active',
                 messages_json TEXT NOT NULL DEFAULT '[]'
-            );"
+            );",
         )?;
-        Ok(Self { conn: Mutex::new(conn) })
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
     }
 
-    pub fn save(&self, id: &str, messages: &[crate::provider::Msg], name: Option<&str>) -> anyhow::Result<()> {
+    pub fn save(
+        &self,
+        id: &str,
+        messages: &[crate::provider::Msg],
+        name: Option<&str>,
+    ) -> anyhow::Result<()> {
         let conn = self.conn.lock().unwrap();
         let json = serde_json::to_string(messages)?;
         conn.execute(
@@ -61,10 +68,19 @@ impl SessionStore {
         let mut stmt = conn.prepare(
             "SELECT id, name, status, messages_json, created_at, updated_at FROM sessions ORDER BY updated_at DESC LIMIT 100"
         ).unwrap();
-        stmt.query_map([], |row| Ok(Session {
-            id: row.get(0)?, name: row.get(1)?, status: row.get(2)?,
-            messages_json: row.get(3)?, created_at: row.get(4)?, updated_at: row.get(5)?,
-        })).unwrap().filter_map(|r| r.ok()).collect()
+        stmt.query_map([], |row| {
+            Ok(Session {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                status: row.get(2)?,
+                messages_json: row.get(3)?,
+                created_at: row.get(4)?,
+                updated_at: row.get(5)?,
+            })
+        })
+        .unwrap()
+        .filter_map(|r| r.ok())
+        .collect()
     }
 
     pub fn delete(&self, id: &str) -> anyhow::Result<()> {
@@ -105,33 +121,67 @@ impl Metrics {
 
     pub fn render(&self) -> String {
         let mut out = String::new();
-        out.push_str(&format!("# HELP sparrow_requests_total Total number of requests\n"));
+        out.push_str(&format!(
+            "# HELP sparrow_requests_total Total number of requests\n"
+        ));
         out.push_str(&format!("# TYPE sparrow_requests_total counter\n"));
-        out.push_str(&format!("sparrow_requests_total{{status=\"ok\"}} {}\n", self.requests_total.load(Ordering::Relaxed)));
-        out.push_str(&format!("sparrow_requests_total{{status=\"error\"}} {}\n", self.requests_errors.load(Ordering::Relaxed)));
+        out.push_str(&format!(
+            "sparrow_requests_total{{status=\"ok\"}} {}\n",
+            self.requests_total.load(Ordering::Relaxed)
+        ));
+        out.push_str(&format!(
+            "sparrow_requests_total{{status=\"error\"}} {}\n",
+            self.requests_errors.load(Ordering::Relaxed)
+        ));
 
-        out.push_str(&format!("# HELP sparrow_tokens_used_total Total tokens used\n"));
+        out.push_str(&format!(
+            "# HELP sparrow_tokens_used_total Total tokens used\n"
+        ));
         out.push_str(&format!("# TYPE sparrow_tokens_used_total counter\n"));
-        out.push_str(&format!("sparrow_tokens_used_total{{direction=\"input\"}} {}\n", self.tokens_input.load(Ordering::Relaxed)));
-        out.push_str(&format!("sparrow_tokens_used_total{{direction=\"output\"}} {}\n", self.tokens_output.load(Ordering::Relaxed)));
+        out.push_str(&format!(
+            "sparrow_tokens_used_total{{direction=\"input\"}} {}\n",
+            self.tokens_input.load(Ordering::Relaxed)
+        ));
+        out.push_str(&format!(
+            "sparrow_tokens_used_total{{direction=\"output\"}} {}\n",
+            self.tokens_output.load(Ordering::Relaxed)
+        ));
 
-        out.push_str(&format!("# HELP sparrow_tool_calls_total Total tool calls\n"));
+        out.push_str(&format!(
+            "# HELP sparrow_tool_calls_total Total tool calls\n"
+        ));
         out.push_str(&format!("# TYPE sparrow_tool_calls_total counter\n"));
-        out.push_str(&format!("sparrow_tool_calls_total{{status=\"ok\"}} {}\n", self.tool_calls_total.load(Ordering::Relaxed)));
-        out.push_str(&format!("sparrow_tool_calls_total{{status=\"error\"}} {}\n", self.tool_calls_errors.load(Ordering::Relaxed)));
+        out.push_str(&format!(
+            "sparrow_tool_calls_total{{status=\"ok\"}} {}\n",
+            self.tool_calls_total.load(Ordering::Relaxed)
+        ));
+        out.push_str(&format!(
+            "sparrow_tool_calls_total{{status=\"error\"}} {}\n",
+            self.tool_calls_errors.load(Ordering::Relaxed)
+        ));
 
-        out.push_str(&format!("# HELP sparrow_cost_usd_total Total cost in USD cents\n"));
+        out.push_str(&format!(
+            "# HELP sparrow_cost_usd_total Total cost in USD cents\n"
+        ));
         out.push_str(&format!("# TYPE sparrow_cost_usd_total counter\n"));
-        out.push_str(&format!("sparrow_cost_usd_total {}\n", self.cost_usd_cents.load(Ordering::Relaxed)));
+        out.push_str(&format!(
+            "sparrow_cost_usd_total {}\n",
+            self.cost_usd_cents.load(Ordering::Relaxed)
+        ));
 
         out.push_str(&format!("# HELP sparrow_active_sessions Active sessions\n"));
         out.push_str(&format!("# TYPE sparrow_active_sessions gauge\n"));
-        out.push_str(&format!("sparrow_active_sessions {}\n", self.active_sessions.load(Ordering::Relaxed)));
+        out.push_str(&format!(
+            "sparrow_active_sessions {}\n",
+            self.active_sessions.load(Ordering::Relaxed)
+        ));
 
         out
     }
 }
 
 impl Default for Metrics {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
