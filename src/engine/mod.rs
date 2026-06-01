@@ -125,6 +125,18 @@ fn estimate_request_tokens(req: &BrainRequest) -> u64 {
     system + messages + tools
 }
 
+pub fn summarize_model_chain(chain_ids: &[String], limit: usize) -> String {
+    if chain_ids.is_empty() {
+        return "aucun modèle disponible".into();
+    }
+    let limit = limit.max(1);
+    let mut visible: Vec<String> = chain_ids.iter().take(limit).cloned().collect();
+    if chain_ids.len() > limit {
+        visible.push(format!("+{} autres fallbacks", chain_ids.len() - limit));
+    }
+    visible.join(" -> ")
+}
+
 // ─── System prompt / SOUL ───────────────────────────────────────────────────────
 
 fn build_system_prompt(
@@ -425,13 +437,14 @@ impl Engine {
         need: &crate::router::RoutingNeed,
         chain_ids: &[String],
     ) -> String {
+        let chain = summarize_model_chain(chain_ids, 5);
         format!(
             "Je suis Sparrow, donc je ne réponds pas comme un modèle isolé: avant chaque run, mon routeur classe ta demande puis choisit une chaîne de modèles.\n\nPour cette requête, j'ai détecté: tier `{}` · tools `{}` · vision `{}` · local `{}`.\n\nJe sélectionne ensuite le modèle avec ces critères: adéquation aux capacités demandées, support des tools, besoin vision, préférence local/free-first, budget restant, latence, taille de contexte, puis disponibilité provider. Le résultat est une fallback chain, pas un seul choix figé: `{}`.\n\nConcrètement: une question simple ou meta doit aller vers le modèle le moins coûteux capable de répondre; une tâche code complexe monte vers un modèle plus fort; une tâche avec fichiers/tools exige un modèle compatible tools; une tâche image demande vision; si un provider échoue, je bascule au suivant dans la chaîne.",
             tier.as_str(),
             need.required_tools,
             need.required_vision,
             need.prefer_local,
-            chain_ids.join(" -> ")
+            chain
         )
     }
 
@@ -643,7 +656,7 @@ impl Engine {
             need.required_tools,
             need.required_vision,
             need.prefer_local,
-            chain_ids.join(" -> "),
+            summarize_model_chain(&chain_ids, 8),
             self.config.routing.free_first,
             self.config.budget.session_usd
         );

@@ -31,9 +31,9 @@ Sparrow is **alpha software**. The kernel builds and has a real integration suit
 | Area | Status | Evidence |
 |---|---:|---|
 | Rust build | Stable | `cargo check`, `cargo build` pass locally |
-| Test suite | Stable | 107 tests pass with `cargo test` locally, including 93 integration tests |
+| Test suite | Stable | 109 tests pass with `cargo test` locally, including 95 integration tests |
 | Engine loop | Alpha | `src/engine/mod.rs`, integration tests, JSON smoke test |
-| Provider routing | Alpha | Ollama + NVIDIA stored-credential discovery tested locally; 103 NVIDIA models cached from `/v1/models` |
+| Provider routing | Alpha | Ollama + NVIDIA stored-credential discovery tested locally; 92 NVIDIA chat-capable models cached from `/v1/models` |
 | WebView console | Alpha | HTTP + WebSocket console tested on port 9339 |
 | Gateway WebSocket | Alpha | `/status` command roundtrip tested on port 9338 |
 | Telegram/Discord/Slack | Partial | Transport implementations exist; real account tokens required for end-to-end validation |
@@ -145,7 +145,7 @@ Current NVIDIA defaults are intentionally not a single Nemotron pin:
 | Model | Use |
 |---|---|
 | `meta/llama-3.1-8b-instruct` | fast general chat and cheap smoke tests |
-| `deepseek-ai/deepseek-v4-flash` | fast coding/reasoning checks |
+| `stepfun-ai/step-3.5-flash` | fast backup route validated through NVIDIA NIM |
 | `nvidia/nemotron-3-super-120b-a12b` | stronger fallback for heavier tasks |
 
 `sparrow model --set nvidia` resets an older pinned NVIDIA config back to this recommended chain. `sparrow --model nvidia:<model> run ...` now respects the explicit cloud route instead of putting local Ollama first for trivial prompts.

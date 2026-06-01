@@ -698,6 +698,23 @@ mod tests {
     }
 
     #[test]
+    fn test_discovery_filters_non_chat_nvidia_models() {
+        use sparrow::provider::discovery::is_chat_model_id;
+
+        assert!(is_chat_model_id("meta/llama-3.1-8b-instruct"));
+        assert!(is_chat_model_id("deepseek-ai/deepseek-v4-flash"));
+        assert!(is_chat_model_id("qwen/qwen3-coder-480b-a35b-instruct"));
+
+        assert!(!is_chat_model_id("baai/bge-m3"));
+        assert!(!is_chat_model_id("nvidia/nemotron-parse"));
+        assert!(!is_chat_model_id("nvidia/nvclip"));
+        assert!(!is_chat_model_id("nvidia/ai-synthetic-video-detector"));
+        assert!(!is_chat_model_id(
+            "nvidia/llama-3.1-nemoguard-8b-content-safety"
+        ));
+    }
+
+    #[test]
     fn test_onboarding_providers() {
         let providers = sparrow::config::providers::onboarding_providers();
         // Should return top recommended ones
@@ -1637,6 +1654,22 @@ mod tests {
         let identity = sparrow::engine::Identity::default();
         assert_eq!(identity.name, "sparrow");
         assert!(!identity.personality.is_empty());
+    }
+
+    #[test]
+    fn test_engine_summarizes_long_model_chain() {
+        let chain = vec![
+            "meta/llama-3.1-8b-instruct".to_string(),
+            "stepfun-ai/step-3.5-flash".to_string(),
+            "nvidia/nemotron-3-super-120b-a12b".to_string(),
+            "deepseek-ai/deepseek-v4-pro".to_string(),
+        ];
+
+        let summary = sparrow::engine::summarize_model_chain(&chain, 2);
+        assert_eq!(
+            summary,
+            "meta/llama-3.1-8b-instruct -> stepfun-ai/step-3.5-flash -> +2 autres fallbacks"
+        );
     }
 
     #[test]

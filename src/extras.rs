@@ -532,6 +532,7 @@ impl Profile {
                     theme: "captain".into(),
                     config_dir: config_dir.clone(),
                     state_dir: state_dir.clone(),
+                    forced_model: None,
                 }
             }
         };

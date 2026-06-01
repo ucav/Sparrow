@@ -173,7 +173,16 @@ pub fn provider_registry() -> Vec<ProviderDef> {
                 ModelDef {
                     name: "deepseek-ai/deepseek-v4-flash".into(),
                     label: "DeepSeek V4 Flash".into(),
-                    tags: vec!["fast".into(), "code".into(), "free".into(), "tool_support".into()],
+                    tags: vec!["code".into(), "reasoning".into(), "free".into(), "tool_support".into()],
+                    cost_input_per_mtok: 0.0,
+                    cost_output_per_mtok: 0.0,
+                    context_window: 131072,
+                    recommended: false,
+                },
+                ModelDef {
+                    name: "stepfun-ai/step-3.5-flash".into(),
+                    label: "Step 3.5 Flash".into(),
+                    tags: vec!["fast".into(), "free".into(), "tool_support".into()],
                     cost_input_per_mtok: 0.0,
                     cost_output_per_mtok: 0.0,
                     context_window: 131072,
