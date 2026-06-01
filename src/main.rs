@@ -2810,7 +2810,13 @@ fn handle_status(
     println!("Memory     : {} facts stored", facts.len());
     let total_discovered: usize = sparrow::config::providers::provider_registry()
         .iter()
-        .map(|p| memory.get_discovered_models(&p.id).len())
+        .map(|p| {
+            memory
+                .get_discovered_models(&p.id)
+                .into_iter()
+                .filter(|model| sparrow::provider::discovery::is_chat_model_id(model))
+                .count()
+        })
         .sum();
     let static_count: usize = sparrow::config::providers::provider_registry()
         .iter()

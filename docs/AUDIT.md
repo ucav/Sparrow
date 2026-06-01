@@ -1,6 +1,6 @@
 # Sparrow Audit
 
-This audit reflects the repository state after commit `f785b1a` plus the current routing-discovery repair pass. It is intentionally stricter than the product vision: a module is marked **REAL** only when there is compiled code and a tested or manually verified path.
+This audit reflects the current `master` branch after the routing-discovery and fallback-polish passes. It is intentionally stricter than the product vision: a module is marked **REAL** only when there is compiled code and a tested or manually verified path.
 
 ## Acceptance Evidence
 
@@ -11,10 +11,11 @@ This audit reflects the repository state after commit `f785b1a` plus the current
 | `cargo test` | Pass, 109 tests total including 95 integration tests |
 | `cargo clippy --all-targets -- -D warnings` | Pass |
 | `cargo fmt --all -- --check` | Pass |
-| CLI routing smoke test | Pass locally on NVIDIA Llama 3.1 8B and DeepSeek V4 Flash |
+| CLI routing smoke test | Pass locally on NVIDIA Llama 3.1 8B and Step 3.5 Flash |
 | WebView console | Pass locally on `127.0.0.1:9339` |
 | Gateway WebSocket `/status` | Pass locally on `127.0.0.1:9338` |
 | NVIDIA discovery | Pass locally, 92 chat-capable cached models from `/v1/models` using stored credential |
+| WebView route display | Pass by source inspection and local `/config`; route chains are summarized instead of dumping all discovered models |
 
 ## Core Modules
 
@@ -83,9 +84,14 @@ Avoid marking a module complete because a file exists. Mark it complete only whe
 
 ## Remaining Game-Changers To Prove
 
-1. **Verifier gate:** prove coder diffs are not applied until verifier PASS.
-2. **Ollama E2E:** keep a lightweight mock in CI and a real local script for developers.
-3. **Release trust:** publish a `v0.1.0-alpha` release with binaries and checksums.
-4. **Screenshots/GIFs:** WebView console, TUI, routing stream, and gateway command.
-5. **Provider matrix:** generated table of configured/available/tested providers.
-6. **Security posture:** document redaction, sandbox limits, and gateway exposure clearly.
+1. **Release trust:** publish a `v0.1.0-alpha` release with binaries and checksums.
+2. **Screenshots/GIFs:** WebView console, TUI, routing stream, and gateway command.
+3. **Provider matrix:** generate a checked-in configured/available/tested provider table from the registry and discovery cache.
+4. **TUI screenshot regression:** add an automated render/smoke artifact for the Ratatui cockpit.
+5. **Gateway account E2E:** validate Telegram/Discord/Slack with real account tokens before marking them stable.
+
+Recently proved:
+
+- Verifier gate: `tests/orchestrator_gate.rs` proves diffs are emitted only after verifier PASS.
+- Ollama stream path: `tests/ollama_stream.rs` keeps a local mock stream in CI.
+- Security posture: redaction, sandbox path isolation, org policy, and no-hardcoded-secret tests pass; security docs live in `docs/memory.md`, `docs/sandboxing.md`, and `docs/autonomy.md`.

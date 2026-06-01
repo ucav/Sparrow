@@ -198,6 +198,7 @@ Important contracts:
 ## Docs
 
 - [Module audit](docs/AUDIT.md)
+- [V1 completion audit](docs/V1_COMPLETION_AUDIT.md)
 - [Architecture](docs/architecture.md)
 - [CLI reference](docs/cli-reference.md)
 - [Configuration](docs/configuration.md)
