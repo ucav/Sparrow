@@ -216,6 +216,7 @@ impl Router for BasicRouter {
         }
 
         let preferred_provider = self.resolve_provider(need);
+        let preferred_is_local = preferred_provider == "local" || preferred_provider == "ollama";
         let mut scored: Vec<(f64, String, Arc<dyn Brain>)> = Vec::new();
 
         // Score all available brains
@@ -245,7 +246,7 @@ impl Router for BasicRouter {
             result.push(brain.clone());
         }
 
-        if matches!(need.tier, TaskTier::Trivial | TaskTier::Small) {
+        if preferred_is_local && matches!(need.tier, TaskTier::Trivial | TaskTier::Small) {
             if let Some((pos, _)) = scored
                 .iter()
                 .enumerate()
@@ -259,7 +260,7 @@ impl Router for BasicRouter {
         }
 
         // If free_first and there's a free model, push it first for small tasks.
-        if self.free_first {
+        if self.free_first && preferred_is_local {
             if let Some(pos) = result.iter().position(|b| {
                 b.caps().cost_input_per_mtok == 0.0
                     && matches!(need.tier, TaskTier::Trivial | TaskTier::Small)
