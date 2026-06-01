@@ -84,17 +84,19 @@ impl Default for Theme {
 
 // ─── ASCII Logo (§9.4) ──────────────────────────────────────────────────────────
 
+// Validated console mascot (§9.4): two-feather crest, thick eyebrow, open eye +
+// pirate patch, coral beak, cheek blush, cream belly, feet + key in the wing.
 pub const ASCII_SPARROW: &str = r#"
-        /\  /)
-      .-`--'-.
-    .'  o  ██ `.
-   /   .  v    \
-  |     \___/   |
-  |      \_/  ╭─┤
-   \   /|    ╰─┘
-    '-/ |__.-'
-      /_    _\
-     _/      \_
+        ^^
+      .-~~~-.
+     /__     \
+    | o   ██  |
+    |    v    |
+    | .       |
+     \ \__/  /
+      '-..-'
+      /|  |\  ╤━o
+     '_|  |_'
 "#;
 
 pub const ASCII_WORDMARK: &str = "S P A R R O W";
@@ -104,7 +106,8 @@ pub fn ascii_sparrow_at_frame(frame: u64) -> String {
     let bob = frame % 60 == 0;
     let mut art = ASCII_SPARROW.to_string();
     if blink {
-        art = art.replace("  o  ", "  -  ");
+        // eye line is "| o   ██  |" → close the eye to a dash
+        art = art.replace("| o ", "| - ");
     }
     if bob {
         art.lines()

@@ -46,8 +46,16 @@ async fn main() -> anyhow::Result<()> {
     let config_dir = dirs::config_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("sparrow");
+    // state_dir: dirs::state_dir() is None on Windows/macOS — fall back to the
+    // platform's local-data dir so the DB and transcripts never land in the CWD.
     let state_dir = dirs::state_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .or_else(dirs::data_local_dir)
+        .or_else(dirs::data_dir)
+        .unwrap_or_else(|| {
+            dirs::home_dir()
+                .map(|h| h.join(".local").join("state"))
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+        })
         .join("sparrow");
 
     let active_profile = cli.profile.clone().or_else(|| {
@@ -226,8 +234,8 @@ async fn main() -> anyhow::Result<()> {
             )
             .await?;
         }
-        Some(Commands::Run { ref task }) => {
-            if cli.json {
+        Some(Commands::Run { ref task, json }) => {
+            if cli.json || json {
                 // NDJSON mode: output each event as a JSON line
                 run_task_json(
                     task,
@@ -556,7 +564,7 @@ async fn main() -> anyhow::Result<()> {
             println!("State dir  : {:?}", config.state_dir);
             println!("Theme      : {}", config.theme);
             println!("Autonomy   : {:?}", config.defaults.autonomy);
-            println!("Sandbox    : {}", config.defaults.sandbox);
+            // Sandbox line is printed (platform-aware) further down.
             println!(
                 "Budget     : ${}/day, ${}/session",
                 config.budget.daily_usd, config.budget.session_usd
@@ -1072,6 +1080,14 @@ fn build_provider_brains(
         std::collections::HashMap::new();
 
     for (name, pconfig) in effective_provider_configs(config) {
+        // A forced model (--model provider:model) is exclusive: build only that
+        // provider so the router can't fall back to a cheaper/free other provider.
+        if let Some((forced_provider, _)) = &config.forced_model {
+            if &name != forced_provider {
+                continue;
+            }
+        }
+
         let api_key = pconfig
             .api_key_env
             .as_ref()
@@ -1857,13 +1873,16 @@ async fn handle_gateway(
             // Event bus for pub/sub
             let (event_bus_tx, _) = tokio::sync::broadcast::channel::<sparrow::event::Event>(256);
 
+            // Session store for cross-surface continuity (§8)
+            let session_store = std::sync::Arc::new(sparrow::runtime::session::SessionStore::open(
+                &config.state_dir.join("sessions.db"),
+            )?);
+
             // Message router
-            let router_handler = Arc::new(MessageRouter::new(
-                engine,
-                recorder.clone(),
-                event_bus_tx,
-                vec![],
-            ));
+            let router_handler = Arc::new(
+                MessageRouter::new(engine, recorder.clone(), event_bus_tx, vec![])
+                    .with_sessions(session_store),
+            );
 
             // Channel: transports → router
             let (msg_tx, mut msg_rx) = tokio::sync::mpsc::unbounded_channel::<GatewayMessage>();

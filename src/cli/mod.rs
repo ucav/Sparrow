@@ -58,6 +58,11 @@ pub enum Commands {
     Run {
         /// Task description
         task: String,
+
+        /// Emit NDJSON event stream (same as the global --json flag, but may
+        /// follow the task: `sparrow run "..." --json`)
+        #[arg(long)]
+        json: bool,
     },
 
     /// Interactive multi-turn chat

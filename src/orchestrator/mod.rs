@@ -7,7 +7,7 @@ use crate::config::Config;
 use crate::engine::{Identity, Workspace};
 use crate::event::{AgentStatus, Block, Event, OutcomeSummary, RiskLevel, RunId, TokenUsage};
 use crate::memory::Memory;
-use crate::provider::{Brain, BrainRequest, ContentBlock, Msg};
+use crate::provider::{Brain, BrainRequest, BrainStream, ContentBlock, ModelCaps, Msg};
 use crate::router::{BudgetState, Router, TaskTier};
 use crate::sandbox::LocalSandbox;
 use crate::tools::edit::{Edit, MultiEdit};
@@ -16,6 +16,51 @@ use crate::tools::fs::{FsList, FsRead, FsWrite};
 use crate::tools::git::Git;
 use crate::tools::search_and_web::Search;
 use crate::tools::{ToolCtx, ToolRegistry};
+
+// ─── Fallback brain ──────────────────────────────────────────────────────────
+// Wraps an ordered chain of brains and tries each on `complete()` until one
+// succeeds. Lets each swarm role (planner/coder/verifier) survive a model that
+// 404s or rate-limits — discovery sometimes lists models that aren't callable.
+
+struct FallbackBrain {
+    id: String,
+    caps: ModelCaps,
+    chain: Vec<Arc<dyn Brain>>,
+}
+
+impl FallbackBrain {
+    fn new(chain: Vec<Arc<dyn Brain>>) -> Self {
+        let id = chain
+            .first()
+            .map(|b| b.id().to_string())
+            .unwrap_or_else(|| "none".into());
+        let caps = chain.first().map(|b| b.caps()).unwrap_or_default();
+        Self { id, caps, chain }
+    }
+}
+
+#[async_trait::async_trait]
+impl Brain for FallbackBrain {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn caps(&self) -> ModelCaps {
+        self.caps.clone()
+    }
+    async fn complete(&self, req: BrainRequest) -> anyhow::Result<BrainStream> {
+        let mut last_err: Option<anyhow::Error> = None;
+        for brain in &self.chain {
+            match brain.complete(req.clone()).await {
+                Ok(stream) => return Ok(stream),
+                Err(e) => {
+                    tracing::warn!("swarm brain {} failed, trying next: {}", brain.id(), e);
+                    last_err = Some(e);
+                }
+            }
+        }
+        Err(last_err.unwrap_or_else(|| anyhow::anyhow!("no brains in fallback chain")))
+    }
+}
 
 // ─── Swarm types ────────────────────────────────────────────────────────────────
 
@@ -244,7 +289,14 @@ impl DefaultOrchestrator {
                 prefer_local: false,
             },
             _ => crate::router::RoutingNeed {
-                tier, // Coder uses appropriate tier
+                // Coder writes files via tools — it must get a tool-capable,
+                // competent model. A "trivial"/"small" classification would route
+                // to the cheapest free model that often emits prose instead of
+                // tool calls (no diff lands). Floor the coder at Medium.
+                tier: match tier {
+                    TaskTier::Trivial | TaskTier::Small => TaskTier::Medium,
+                    other => other,
+                },
                 required_tools: true,
                 required_vision: false,
                 prefer_local: false,
@@ -258,7 +310,14 @@ impl DefaultOrchestrator {
             session_spent_usd: 0.0,
         };
 
-        self.router.select(&need, &budget).into_iter().next()
+        // Wrap the whole fallback chain so a 404/ratelimit on the top model
+        // transparently advances to the next instead of killing the role.
+        let chain = self.router.select(&need, &budget);
+        if chain.is_empty() {
+            None
+        } else {
+            Some(Arc::new(FallbackBrain::new(chain)) as Arc<dyn Brain>)
+        }
     }
 
     /// Run the planner agent
@@ -869,6 +928,32 @@ impl Orchestrator for DefaultOrchestrator {
             }
 
             all_diffs = diffs.clone();
+
+            // ▸ Empty-diff guard: if the coder changed no files, don't waste a
+            // verify pass (and never let it PASS) — force a REWORK with an
+            // explicit instruction to actually call the tools. This rescues weak
+            // models that describe a change in prose instead of emitting tool calls.
+            if diffs.is_empty() && attempt < plan.max_reworks {
+                reworks += 1;
+                let note = "You made NO file changes. You MUST call the fs_write or edit \
+                    tool to create/modify the files in the spec — do not merely describe \
+                    the change in prose. Emit the tool call now."
+                    .to_string();
+                rework_notes = Some(vec![note.clone()]);
+                let _ = event_tx.send(Event::TestResult {
+                    run: run_id.clone(),
+                    passed: 0,
+                    failed: 1,
+                    detail: "no file changes — coder must use tools".into(),
+                });
+                let _ = event_tx.send(Event::AgentStatus {
+                    run: run_id.clone(),
+                    role: "coder".into(),
+                    status: AgentStatus::Working,
+                    note: format!("no diff — forcing tool use (attempt {})", attempt + 1),
+                });
+                continue;
+            }
 
             // ▸ VERIFIER
             let verdict = self

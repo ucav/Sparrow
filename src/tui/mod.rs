@@ -326,7 +326,10 @@ pub struct Tui {
 impl Tui {
     pub fn new() -> Self {
         // Resolve history path: ~/.local/state/sparrow/tui_history.txt
-        let history_path = dirs::state_dir().map(|d| d.join("sparrow").join("tui_history.txt"));
+        let history_path = dirs::state_dir()
+            .or_else(dirs::data_local_dir)
+            .or_else(dirs::data_dir)
+            .map(|d| d.join("sparrow").join("tui_history.txt"));
         let history = history_path
             .as_ref()
             .and_then(|p| std::fs::read_to_string(p).ok())
@@ -652,29 +655,38 @@ impl Tui {
     }
 
     fn boot(&mut self) {
-        for l in theme::ASCII_SPARROW.lines() {
-            self.add_line(l, LogStyle::Brand, 0);
-        }
         self.add_line(
             "SPARROW  v0.1.0 — one cli · grows with you",
             LogStyle::Dim,
             0,
         );
         self.add_line("", LogStyle::Normal, 0);
+
+        // Honest, platform-aware sandbox status. seccomp/namespaces are Linux-only;
+        // on other platforms we run with workspace path-boundary enforcement only.
+        #[cfg(target_os = "linux")]
+        let sandbox_line = "local-hardened · namespaces + path boundary";
+        #[cfg(not(target_os = "linux"))]
+        let sandbox_line = "path-boundary enforcement (namespaces are Linux-only)";
+
         let boot = [
-            ("router  ", "5 providers online", LogStyle::Planner),
             (
-                "surfaces",
-                "cli · telegram · discord · slack",
+                "router  ",
+                "model routing + fallback chain",
                 LogStyle::Planner,
             ),
-            ("sandbox ", "seccomp + namespaces armed", LogStyle::Ok),
-            ("skills  ", "47 loaded · self-improving", LogStyle::Accent),
             (
-                "memory  ",
-                "4 tiers · knows you across sessions",
-                LogStyle::Ok,
+                "surfaces",
+                "cli · tui · webview · gateway",
+                LogStyle::Planner,
             ),
+            ("sandbox ", sandbox_line, LogStyle::Ok),
+            (
+                "skills  ",
+                "library indexed · self-improving",
+                LogStyle::Accent,
+            ),
+            ("memory  ", "4 tiers · sqlite profile", LogStyle::Ok),
             (
                 "autonomy",
                 "dial: supervised → trusted → autonomous",
@@ -1041,10 +1053,14 @@ impl Tui {
                     .add_modifier(Modifier::BOLD),
             )));
         }
+        #[cfg(target_os = "linux")]
+        let sandbox_boot = "sandbox    local-hardened · namespaces armed";
+        #[cfg(not(target_os = "linux"))]
+        let sandbox_boot = "sandbox    path-boundary enforcement";
         let boot_log = [
             "router     warming provider graph",
             "surfaces   cli · webview · gateway",
-            "sandbox    local-hardened boundaries armed",
+            sandbox_boot,
             "skills     library indexed",
             "memory     sqlite profile loaded",
             "autonomy   dial ready",

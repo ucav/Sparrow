@@ -202,6 +202,36 @@ fn tool_result_text(blocks: &[Block]) -> String {
     out.join("\n")
 }
 
+/// Reconstruct an Event view from a finished conversation so the Distiller can
+/// mine durable facts (tool paths/content + reasoning). ToolUse blocks carry the
+/// real, parsed tool arguments; Text blocks carry assistant reasoning.
+fn events_from_messages(run_id: &RunId, messages: &[Msg]) -> Vec<Event> {
+    let mut events = Vec::new();
+    for msg in messages {
+        for block in &msg.content {
+            match block {
+                ContentBlock::ToolUse { name, input, .. } => {
+                    events.push(Event::ToolUseProposed {
+                        run: run_id.clone(),
+                        id: String::new(),
+                        name: name.clone(),
+                        args: input.clone(),
+                        risk: RiskLevel::ReadOnly,
+                    });
+                }
+                ContentBlock::Text { text } if msg.role == "assistant" => {
+                    events.push(Event::ThinkingDelta {
+                        run: run_id.clone(),
+                        text: text.clone(),
+                    });
+                }
+                _ => {}
+            }
+        }
+    }
+    events
+}
+
 // ─── Task ───────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -303,11 +333,14 @@ impl Engine {
         self
     }
 
-    /// Classify a task into a TaskTier.
-    fn classify(&self, task: &str) -> TaskTier {
+    /// Heuristic classification + a confidence flag.
+    /// Returns `(tier, ambiguous)`. `ambiguous == true` means no semantic keyword
+    /// matched and the tier was guessed purely from length — a good signal that a
+    /// tiny model call could do better (§3.6).
+    fn classify_with_confidence(&self, task: &str) -> (TaskTier, bool) {
         let lower = task.to_lowercase();
         if lower.contains("vision") || lower.contains("image") || lower.contains("screenshot") {
-            TaskTier::Vision
+            (TaskTier::Vision, false)
         } else if lower.contains("architecture")
             || lower.contains("refactor")
             || lower.contains("audit")
@@ -316,13 +349,13 @@ impl Engine {
             || lower.contains("livrer")
             || lower.contains("v1")
         {
-            TaskTier::Hard
+            (TaskTier::Hard, false)
         } else if lower.contains("bug")
             || lower.contains("fix")
             || lower.contains("corrige")
             || lower.contains("debug")
         {
-            TaskTier::Small
+            (TaskTier::Small, false)
         } else if lower.contains("routing")
             || lower.contains("routeur")
             || lower.contains("modèle")
@@ -331,11 +364,56 @@ impl Engine {
             || lower.contains("sélectionne")
             || lower.contains("selectionne")
         {
-            TaskTier::Small
+            (TaskTier::Small, false)
         } else if lower.len() < 80 {
-            TaskTier::Trivial
+            // length-only guess → ambiguous
+            (TaskTier::Trivial, true)
         } else {
-            TaskTier::Medium
+            (TaskTier::Medium, true)
+        }
+    }
+
+    /// Ask a cheap brain to classify an ambiguous task into a tier (§3.6).
+    /// Bounded to a 10-token completion; failures fall back to the heuristic tier.
+    async fn classify_via_brain(&self, task: &str, brain: &dyn Brain) -> Option<TaskTier> {
+        let req = BrainRequest {
+            system: Some(
+                "You are a task classifier. Output exactly one word: trivial, small, medium, hard, or vision."
+                    .into(),
+            ),
+            messages: vec![Msg {
+                role: "user".into(),
+                content: vec![ContentBlock::Text {
+                    text: format!(
+                        "Classify this coding task into exactly one tier (trivial, small, medium, hard, vision):\n\n{}\n\nTier:",
+                        task
+                    ),
+                }],
+            }],
+            tools: vec![],
+            max_tokens: 6,
+            temperature: 0.0,
+            stop: vec![],
+        };
+        let mut stream = brain.complete(req).await.ok()?;
+        let mut out = String::new();
+        while let Some(ev) = stream.next().await {
+            match ev {
+                BrainEvent::TextDelta(t) => out.push_str(&t),
+                BrainEvent::Done(_) => break,
+                BrainEvent::Error(_) => return None,
+                _ => {}
+            }
+        }
+        let word = out.trim().to_lowercase();
+        let word = word.split_whitespace().next().unwrap_or("");
+        match word {
+            "trivial" => Some(TaskTier::Trivial),
+            "small" => Some(TaskTier::Small),
+            "medium" => Some(TaskTier::Medium),
+            "hard" => Some(TaskTier::Hard),
+            "vision" => Some(TaskTier::Vision),
+            _ => None,
         }
     }
 
@@ -478,9 +556,8 @@ impl Engine {
     ) -> anyhow::Result<OutcomeSummary> {
         let mut messages: Vec<Msg> = task.context.clone();
 
-        // Classify task
-        let tier = self.classify(&task.description);
-        let task_summary = self.task_summary(&task.description, &tier);
+        // Classify task (heuristic first)
+        let (mut tier, ambiguous) = self.classify_with_confidence(&task.description);
 
         // Route: select brain chain
         let budget = BudgetState {
@@ -490,16 +567,56 @@ impl Engine {
             session_spent_usd: 0.0,
         };
 
-        let required_tools = self.requires_tools(&task.description, &tier);
-        let required_vision = self.requires_vision(&task.description, &tier);
-        let need = crate::router::RoutingNeed {
+        let mut required_tools = self.requires_tools(&task.description, &tier);
+        let mut required_vision = self.requires_vision(&task.description, &tier);
+        let mut need = crate::router::RoutingNeed {
             tier: tier.clone(),
             required_tools,
             required_vision,
             prefer_local: false,
         };
 
-        let chain = self.router.select(&need, &budget);
+        let mut chain = self.router.select(&need, &budget);
+
+        // §3.6: model-assisted refinement for genuinely ambiguous tasks. Only the
+        // length-based Medium guess qualifies — short tasks stay Trivial without
+        // the extra round-trip, keeping the common path fast. Uses the cheapest
+        // already-selected brain, bounded to a 6-token call.
+        if ambiguous
+            && matches!(tier, TaskTier::Medium)
+            && !self.is_routing_question(&task.description)
+        {
+            if let Some(brain) = chain.first().cloned() {
+                if let Some(refined) = self
+                    .classify_via_brain(&task.description, brain.as_ref())
+                    .await
+                {
+                    if std::mem::discriminant(&refined) != std::mem::discriminant(&tier) {
+                        let _ = event_tx.send(Event::Message {
+                            run: run_id.clone(),
+                            role: "router".into(),
+                            text: format!(
+                                "classification affinée par modèle: {} → {}",
+                                tier.as_str(),
+                                refined.as_str()
+                            ),
+                        });
+                        tier = refined;
+                        required_tools = self.requires_tools(&task.description, &tier);
+                        required_vision = self.requires_vision(&task.description, &tier);
+                        need = crate::router::RoutingNeed {
+                            tier: tier.clone(),
+                            required_tools,
+                            required_vision,
+                            prefer_local: false,
+                        };
+                        chain = self.router.select(&need, &budget);
+                    }
+                }
+            }
+        }
+
+        let task_summary = self.task_summary(&task.description, &tier);
         let chain_ids: Vec<String> = chain.iter().map(|b| b.id().to_string()).collect();
 
         let _ = event_tx.send(Event::RunStarted {
@@ -1404,9 +1521,12 @@ impl Engine {
                 }
             }
 
-            // Auto-distill facts from successful run
+            // Auto-distill facts from the successful run. Reconstruct the event
+            // view from the final conversation: ToolUse blocks carry the real
+            // tool args (file paths, content), Text blocks carry reasoning — both
+            // are what the Distiller mines for durable user facts (§3.8).
             if let Some(mem) = &self.memory {
-                let events: Vec<Event> = Vec::new(); // In production, collect from event stream
+                let events = events_from_messages(&run_id, &messages);
                 Distiller::distill(mem, &events, &task.description).await;
             }
         }

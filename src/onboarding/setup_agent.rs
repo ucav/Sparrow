@@ -367,3 +367,45 @@ async fn fallback_interactive(config: &Config, store: &FsConfigStore) -> anyhow:
     );
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn apply_setup_json_maps_intent_to_config() {
+        let base = Config::default();
+        let json = serde_json::json!({
+            "providers_to_enable": ["anthropic", "nvidia", "not-a-real-provider"],
+            "routing_policy": {"medium": "nvidia", "hard": "anthropic"},
+            "budget_daily_usd": 5.0,
+            "budget_session_usd": 1.0,
+            "default_autonomy": "trusted",
+            "default_sandbox": "local-hardened",
+            "surfaces": {"telegram": {"enabled": true, "allow_users": [1780070685]}},
+            "missing_keys": ["ANTHROPIC_API_KEY"],
+            "clarifying_question": null
+        });
+        let cfg = apply_setup_json(&base, &json).unwrap();
+        assert!(cfg.providers.contains_key("anthropic"));
+        assert!(cfg.providers.contains_key("nvidia"));
+        assert!(
+            !cfg.providers.contains_key("not-a-real-provider"),
+            "unknown provider must be skipped"
+        );
+        assert_eq!(
+            cfg.routing.policy.get("medium").map(String::as_str),
+            Some("nvidia")
+        );
+        assert_eq!(
+            cfg.routing.policy.get("hard").map(String::as_str),
+            Some("anthropic")
+        );
+        assert_eq!(cfg.budget.daily_usd, 5.0);
+        assert_eq!(cfg.defaults.autonomy, crate::event::AutonomyLevel::Trusted);
+        assert_eq!(cfg.defaults.sandbox, "local-hardened");
+        let tg = cfg.surfaces.telegram.expect("telegram enabled");
+        assert!(tg.enabled);
+        assert_eq!(tg.allow_users, vec!["1780070685".to_string()]);
+    }
+}

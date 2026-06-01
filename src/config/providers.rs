@@ -635,19 +635,52 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             id: "opencode-zen".into(),
             label: "OpenCode Zen".into(),
             adapter: "openai-compatible".into(),
-            base_url: "https://zen.opencode.ai/v1".into(),
+            base_url: "https://opencode.ai/zen/v1".into(),
             api_key_env: Some("OPENCODE_API_KEY".into()),
-            models: vec![ModelDef {
-                name: "opencode-zen".into(),
-                label: "Zen".into(),
-                tags: vec!["code".into(), "tool_support".into()],
-                cost_input_per_mtok: 0.0,
-                cost_output_per_mtok: 0.0,
-                context_window: 32768,
-                recommended: true,
-            }],
-            tags: vec!["code".into()],
-            notes: "OpenCode Zen — coding-optimized models.".into(),
+            models: vec![
+                ModelDef {
+                    name: "claude-sonnet-4-6".into(),
+                    label: "Claude Sonnet 4.6 (via Zen)".into(),
+                    tags: vec![
+                        "strong".into(),
+                        "code".into(),
+                        "vision".into(),
+                        "tool_support".into(),
+                    ],
+                    cost_input_per_mtok: 3.0,
+                    cost_output_per_mtok: 15.0,
+                    context_window: 200000,
+                    recommended: true,
+                },
+                ModelDef {
+                    name: "qwen3.6-plus".into(),
+                    label: "Qwen 3.6 Plus (via Zen)".into(),
+                    tags: vec![
+                        "strong".into(),
+                        "code".into(),
+                        "tool_support".into(),
+                    ],
+                    cost_input_per_mtok: 1.0,
+                    cost_output_per_mtok: 3.0,
+                    context_window: 262144,
+                    recommended: false,
+                },
+                ModelDef {
+                    name: "gpt-5-codex".into(),
+                    label: "GPT-5 Codex (via Zen)".into(),
+                    tags: vec![
+                        "strong".into(),
+                        "code".into(),
+                        "tool_support".into(),
+                    ],
+                    cost_input_per_mtok: 2.5,
+                    cost_output_per_mtok: 10.0,
+                    context_window: 200000,
+                    recommended: false,
+                },
+            ],
+            tags: vec!["code".into(), "strong".into(), "multi".into()],
+            notes: "OpenCode Zen — curated gateway (Claude, GPT, Qwen, DeepSeek). Most models need credits or an OpenCode Go subscription. Discovery expands the list from /v1/models.".into(),
         },
         // ─── KiloCode ──────────────────────────────────────────────────
         ProviderDef {
@@ -958,9 +991,74 @@ pub fn default_models(provider_id: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Infer capabilities for a model that is NOT in the static registry (e.g. a
+/// model returned by live discovery). Heuristics on the model name let the
+/// router distinguish a strong 120B coder from an 8B flash model instead of
+/// treating every discovered model as identical default caps.
+pub fn infer_caps_from_name(model_name: &str) -> ModelCaps {
+    let n = model_name.to_ascii_lowercase();
+
+    let vision = n.contains("vision")
+        || n.contains("-vl")
+        || n.contains("vl-")
+        || n.contains("multimodal")
+        || n.contains("omni");
+
+    // Coding / tool-use signal
+    let tools = n.contains("coder")
+        || n.contains("code")
+        || n.contains("instruct")
+        || n.contains("chat")
+        || n.contains("nemotron")
+        || n.contains("qwen")
+        || n.contains("llama")
+        || n.contains("mistral")
+        || n.contains("deepseek")
+        || n.contains("gpt")
+        || n.contains("glm");
+
+    // Size / strength signal → latency + context window
+    let is_large = [
+        "70b", "72b", "120b", "122b", "175b", "180b", "235b", "253b", "340b", "397b", "405b",
+        "480b", "675b", "ultra", "-large", "super",
+    ]
+    .iter()
+    .any(|t| n.contains(t));
+    let is_small = n.contains("flash")
+        || n.contains("nano")
+        || n.contains("mini")
+        || n.contains("lite")
+        || n.contains("-small")
+        || n.contains("1b")
+        || n.contains("2b")
+        || n.contains("3b")
+        || n.contains("7b")
+        || n.contains("8b")
+        || n.contains("9b");
+
+    let (latency, context_window) = if is_large {
+        (LatencyClass::Slow, 131_072)
+    } else if is_small {
+        (LatencyClass::Fast, 32_768)
+    } else {
+        (LatencyClass::Medium, 65_536)
+    };
+
+    ModelCaps {
+        context_window,
+        max_output: 8_192,
+        tools,
+        vision,
+        cost_input_per_mtok: 0.0,
+        cost_output_per_mtok: 0.0,
+        latency,
+    }
+}
+
 pub fn model_caps(provider_id: &str, model_name: &str) -> ModelCaps {
     let Some(model) = find_model(provider_id, model_name) else {
-        return ModelCaps::default();
+        // Not in the static registry → infer from the model name (discovery path).
+        return infer_caps_from_name(model_name);
     };
 
     let latency = if model.tags.iter().any(|t| t == "fast") {
