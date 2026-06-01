@@ -113,9 +113,110 @@ impl Tool for SubagentSpawn {
     }
 }
 
-// ─── Python RPC channel (stub) ──────────────────────────────────────────────────
+// ─── Persistent Python kernel ─────────────────────────────────────────────────
+// A long-lived `python3` process that keeps a single globals dict across calls,
+// so variables/imports/state persist between tool invocations (§15). A small
+// driver loop reads one JSON request per line, execs it capturing stdout, and
+// emits a JSON result terminated by a unique sentinel.
 
-pub struct PythonRpc;
+use std::io::{BufRead, BufReader, Write};
+use std::process::{Child, ChildStdin, ChildStdout};
+use std::sync::Mutex;
+
+const KERNEL_SENTINEL: &str = "__SPARROW_KERNEL_END__";
+
+const KERNEL_DRIVER: &str = r#"
+import sys, io, json, contextlib, traceback
+_g = {"__name__": "__sparrow__"}
+SENT = "__SPARROW_KERNEL_END__"
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        req = json.loads(line)
+    except Exception:
+        print(json.dumps({"out": "", "err": "bad request"}), flush=True)
+        print(SENT, flush=True)
+        continue
+    code = req.get("code", "")
+    buf = io.StringIO()
+    err = ""
+    try:
+        with contextlib.redirect_stdout(buf):
+            exec(compile(code, "<sparrow>", "exec"), _g)
+    except Exception:
+        err = traceback.format_exc()
+    print(json.dumps({"out": buf.getvalue(), "err": err}), flush=True)
+    print(SENT, flush=True)
+"#;
+
+struct Kernel {
+    child: Child,
+    stdin: ChildStdin,
+    stdout: BufReader<ChildStdout>,
+}
+
+pub struct PythonRpc {
+    kernel: Mutex<Option<Kernel>>,
+    python_bin: String,
+}
+
+impl PythonRpc {
+    pub fn new() -> Self {
+        // Prefer python3, fall back to python (Windows often only has `python`).
+        let python_bin = if which_python("python3") {
+            "python3".to_string()
+        } else {
+            "python".to_string()
+        };
+        Self {
+            kernel: Mutex::new(None),
+            python_bin,
+        }
+    }
+
+    fn ensure_kernel(&self, kernel: &mut Option<Kernel>) -> anyhow::Result<()> {
+        if kernel.is_some() {
+            return Ok(());
+        }
+        use std::process::{Command, Stdio};
+        let mut child = Command::new(&self.python_bin)
+            .arg("-u")
+            .arg("-c")
+            .arg(KERNEL_DRIVER)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("no stdin"))?;
+        let stdout = BufReader::new(
+            child
+                .stdout
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("no stdout"))?,
+        );
+        *kernel = Some(Kernel {
+            child,
+            stdin,
+            stdout,
+        });
+        Ok(())
+    }
+}
+
+fn which_python(bin: &str) -> bool {
+    std::process::Command::new(bin)
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
 
 #[async_trait]
 impl Tool for PythonRpc {
@@ -123,14 +224,13 @@ impl Tool for PythonRpc {
         "python_rpc"
     }
     fn description(&self) -> &str {
-        "Execute Python code via an RPC channel to a persistent Python kernel"
+        "Execute Python in a PERSISTENT kernel — variables, imports and state persist across calls."
     }
     fn schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
             "properties": {
-                "code": { "type": "string", "description": "Python code to execute" },
-                "timeout_ms": { "type": "integer", "description": "Timeout in milliseconds" }
+                "code": { "type": "string", "description": "Python code to execute in the persistent kernel" }
             },
             "required": ["code"]
         })
@@ -139,39 +239,74 @@ impl Tool for PythonRpc {
         RiskLevel::Exec
     }
     async fn call(&self, args: serde_json::Value, _ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
-        let code = args["code"].as_str().unwrap_or("");
-        let timeout_ms = args["timeout_ms"].as_u64().unwrap_or(30_000);
+        let code = args["code"].as_str().unwrap_or("").to_string();
 
-        // Execute via python3 subprocess (M6 stub — full RPC in v2)
-        use std::process::Command as StdCommand;
-        use std::time::Instant;
+        // Kernel IO is blocking; run on a blocking thread without holding the
+        // lock across an await. We take the kernel out, use it, put it back.
+        let mut guard = self.kernel.lock().unwrap();
+        if let Err(e) = self.ensure_kernel(&mut guard) {
+            return Ok(ToolResult::error(format!(
+                "Python kernel unavailable ({}). Is '{}' installed?",
+                e, self.python_bin
+            )));
+        }
+        let kernel = guard.as_mut().unwrap();
 
-        let mut child = StdCommand::new("python3")
-            .arg("-c")
-            .arg(code)
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()?;
+        // Send request as a single JSON line.
+        let req = serde_json::json!({ "code": code }).to_string();
+        if writeln!(kernel.stdin, "{}", req)
+            .and_then(|_| kernel.stdin.flush())
+            .is_err()
+        {
+            *guard = None; // kernel died; drop it so it respawns next time
+            return Ok(ToolResult::error(
+                "Python kernel write failed (kernel reset)",
+            ));
+        }
 
-        let start = Instant::now();
-        let timeout = std::time::Duration::from_millis(timeout_ms);
-
+        // Read lines until the sentinel; the line before it is the JSON result.
+        let mut last_json = String::new();
         loop {
-            match child.try_wait()? {
-                Some(_status) => {
-                    let output = child.wait_with_output()?;
-                    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-                    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
-                    let result = if stderr.is_empty() { stdout } else { stderr };
-                    return Ok(ToolResult::text(result));
+            let mut line = String::new();
+            match kernel.stdout.read_line(&mut line) {
+                Ok(0) => {
+                    *guard = None;
+                    return Ok(ToolResult::error("Python kernel closed unexpectedly"));
                 }
-                None => {
-                    if start.elapsed() > timeout {
-                        let _ = child.kill();
-                        return Ok(ToolResult::error("Python execution timed out"));
+                Ok(_) => {
+                    let trimmed = line.trim_end();
+                    if trimmed == KERNEL_SENTINEL {
+                        break;
                     }
-                    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                    last_json = trimmed.to_string();
                 }
+                Err(e) => {
+                    *guard = None;
+                    return Ok(ToolResult::error(format!(
+                        "Python kernel read error: {}",
+                        e
+                    )));
+                }
+            }
+        }
+
+        let parsed: serde_json::Value = serde_json::from_str(&last_json)
+            .unwrap_or_else(|_| serde_json::json!({"out": last_json, "err": ""}));
+        let out = parsed["out"].as_str().unwrap_or("");
+        let err = parsed["err"].as_str().unwrap_or("");
+        if !err.is_empty() {
+            Ok(ToolResult::ok(vec![Block::Text(format!("{}{}", out, err))]))
+        } else {
+            Ok(ToolResult::text(out.to_string()))
+        }
+    }
+}
+
+impl Drop for PythonRpc {
+    fn drop(&mut self) {
+        if let Ok(mut g) = self.kernel.lock() {
+            if let Some(mut k) = g.take() {
+                let _ = k.child.kill();
             }
         }
     }

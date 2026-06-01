@@ -718,6 +718,9 @@ impl Engine {
         registry.register(Arc::new(crate::tools::git::Git));
         registry.register(Arc::new(crate::tools::todo::Todo::new()));
         registry.register(Arc::new(crate::tools::exec::Exec::new(sandbox.clone())));
+        registry.register(Arc::new(crate::tools::media::ImageGen::new()));
+        registry.register(Arc::new(crate::tools::media::Tts::new()));
+        registry.register(Arc::new(crate::tools::subagent::PythonRpc::new()));
         let tools = Arc::new(registry);
         let tool_specs: Vec<ToolSpec> = tools.to_specs();
 
