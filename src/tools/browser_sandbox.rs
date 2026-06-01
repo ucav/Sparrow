@@ -135,6 +135,7 @@ impl SandboxHardener {
         #[cfg(target_os = "macos")]
         {
             // macOS: sandbox-exec with minimal profile
+            let _ = cmd;
             if which("sandbox-exec") {
                 let profile = format!(
                     r#"(version 1)
@@ -147,6 +148,7 @@ impl SandboxHardener {
 "#,
                     workdir.display()
                 );
+                let _ = profile;
                 // sandbox-exec would be used here if available
             }
         }
