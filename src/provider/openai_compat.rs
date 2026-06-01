@@ -329,10 +329,18 @@ impl Brain for OpenAICompatAdapter {
                                 }
                             }
 
-                            if let Some(usage) = event["usage"].as_object() {
+                            if let Some(usage) = event.get("usage").and_then(|u| u.as_object()) {
+                                // Use .get() — indexing a serde_json::Map with [] panics on a
+                                // missing key, and some providers (e.g. MiniMax) omit fields.
                                 parsed.push(BrainEvent::Usage(crate::event::TokenUsage {
-                                    input: usage["prompt_tokens"].as_u64().unwrap_or(0),
-                                    output: usage["completion_tokens"].as_u64().unwrap_or(0),
+                                    input: usage
+                                        .get("prompt_tokens")
+                                        .and_then(|v| v.as_u64())
+                                        .unwrap_or(0),
+                                    output: usage
+                                        .get("completion_tokens")
+                                        .and_then(|v| v.as_u64())
+                                        .unwrap_or(0),
                                 }));
                             }
                         }

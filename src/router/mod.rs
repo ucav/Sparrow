@@ -149,15 +149,32 @@ impl BasicRouter {
             score -= est_cost * 10.0; // penalize expensive models
         }
 
-        // Latency preference
-        match caps.latency {
-            LatencyClass::Fast => score += 10.0,
-            LatencyClass::Medium => score += 5.0,
-            LatencyClass::Slow => score += 0.0,
+        // Latency / capability preference — tier-aware.
+        // Cheap tiers want speed; hard tiers want capable (bigger, slower) models.
+        match need.tier {
+            TaskTier::Trivial | TaskTier::Small => match caps.latency {
+                LatencyClass::Fast => score += 15.0,
+                LatencyClass::Medium => score += 6.0,
+                LatencyClass::Slow => score += 0.0,
+            },
+            TaskTier::Medium | TaskTier::Hard | TaskTier::Vision => match caps.latency {
+                LatencyClass::Slow => score += 18.0,
+                LatencyClass::Medium => score += 9.0,
+                LatencyClass::Fast => score += 0.0,
+            },
         }
 
-        // Context window fit (larger is better)
-        score += (caps.context_window as f64 / 10_000.0).min(10.0);
+        // Context window fit. Weighted more heavily for capable tiers so larger
+        // models (which we infer to have bigger windows) rise for hard tasks.
+        let ctx_weight = match need.tier {
+            TaskTier::Hard | TaskTier::Medium => 20_000.0,
+            _ => 10_000.0,
+        };
+        let ctx_cap = match need.tier {
+            TaskTier::Hard | TaskTier::Medium => 20.0,
+            _ => 10.0,
+        };
+        score += (caps.context_window as f64 / ctx_weight).min(ctx_cap);
 
         score
     }
@@ -238,12 +255,20 @@ impl Router for BasicRouter {
             }
         }
 
-        // Sort by score descending
+        // Stable sort by score descending (preserves insertion order for ties,
+        // so equal-scored discovered models keep a deterministic order).
         scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
+        // De-duplicate by brain id, then cap to a sane fallback depth.
+        // A 90-model chain bloats every RouteSelected event and pushes junk
+        // models (PII/vision-only) ahead of real fallbacks. Keep top-K distinct.
+        const MAX_CHAIN: usize = 6;
+        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut result: Vec<Arc<dyn Brain>> = Vec::new();
         for (_, _, brain) in &scored {
-            result.push(brain.clone());
+            if seen.insert(brain.id().to_string()) {
+                result.push(brain.clone());
+            }
         }
 
         if preferred_is_local && matches!(need.tier, TaskTier::Trivial | TaskTier::Small) {
@@ -270,6 +295,8 @@ impl Router for BasicRouter {
             }
         }
 
+        // Cap the fallback depth. Done last so reordering above still applies.
+        result.truncate(MAX_CHAIN);
         result
     }
 

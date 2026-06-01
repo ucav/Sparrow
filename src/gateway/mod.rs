@@ -49,6 +49,9 @@ pub struct MessageRouter {
     recorder: Arc<FsRecorder>,
     event_bus_tx: tokio::sync::broadcast::Sender<Event>,
     allowed_users: Vec<String>,
+    /// Cross-surface session continuity (§8). Keyed by user identity so the same
+    /// user resumes the same conversation/context regardless of surface.
+    sessions: Option<Arc<crate::runtime::session::SessionStore>>,
 }
 
 impl MessageRouter {
@@ -63,6 +66,24 @@ impl MessageRouter {
             recorder,
             event_bus_tx,
             allowed_users,
+            sessions: None,
+        }
+    }
+
+    /// Attach a session store to enable cross-surface conversation continuity.
+    pub fn with_sessions(mut self, sessions: Arc<crate::runtime::session::SessionStore>) -> Self {
+        self.sessions = Some(sessions);
+        self
+    }
+
+    /// Stable session key for a message. Keyed on user identity so the same user
+    /// continues the same session across CLI/Telegram/Slack (§8). Falls back to
+    /// surface:chat_id when no user id is present.
+    fn session_key(msg_user_id: &str, surface: &str, chat_id: &str) -> String {
+        if !msg_user_id.is_empty() {
+            format!("user:{}", msg_user_id)
+        } else {
+            format!("{}:{}", surface, chat_id)
         }
     }
 
@@ -87,6 +108,7 @@ impl MessageRouter {
         let text = msg.text.trim();
         let surface = msg.surface.clone();
         let chat_id = msg.chat_id.clone();
+        let user_id = msg.user_id.clone();
         let reply_to = msg.message_id.clone();
 
         if text.is_empty() {
@@ -95,10 +117,10 @@ impl MessageRouter {
 
         // Command parsing
         if text.starts_with('/') {
-            self.handle_command(text, surface, chat_id, reply_to, responses)
+            self.handle_command(text, surface, chat_id, user_id, reply_to, responses)
                 .await;
         } else {
-            self.handle_task(text, surface, chat_id, reply_to, responses)
+            self.handle_task(text, surface, chat_id, user_id, reply_to, responses)
                 .await;
         }
     }
@@ -108,6 +130,7 @@ impl MessageRouter {
         text: &str,
         surface: String,
         chat_id: String,
+        user_id: String,
         reply_to: Option<String>,
         responses: &mpsc::UnboundedSender<GatewayResponse>,
     ) {
@@ -145,8 +168,22 @@ impl MessageRouter {
                     });
                     return;
                 }
-                self.handle_task(args, surface, chat_id, reply_to, responses)
+                self.handle_task(args, surface, chat_id, user_id, reply_to, responses)
                     .await;
+            }
+            "/reset" => {
+                // Clear the cross-surface session for this user
+                if let Some(sessions) = &self.sessions {
+                    let key = Self::session_key(&user_id, &surface, &chat_id);
+                    let _ = sessions.delete(&key);
+                }
+                let _ = responses.send(GatewayResponse {
+                    surface,
+                    chat_id,
+                    text: "Session cleared. Next message starts fresh.".into(),
+                    reply_to,
+                    buttons: vec![],
+                });
             }
             "/status" => {
                 let _ = responses.send(GatewayResponse {
@@ -192,6 +229,7 @@ impl MessageRouter {
         text: &str,
         surface: String,
         chat_id: String,
+        user_id: String,
         reply_to: Option<String>,
         responses: &mpsc::UnboundedSender<GatewayResponse>,
     ) {
@@ -205,6 +243,20 @@ impl MessageRouter {
         let cid2 = cid.clone();
         let surface_for_stream = surface.clone();
         let reply_to2 = reply_to.clone();
+
+        // ── Session continuity (§8) ───────────────────────────────────────────
+        // Load prior conversation for this user so context follows them across
+        // surfaces and survives gateway restarts.
+        let session_key = Self::session_key(&user_id, &surface, &chat_id);
+        let prior_msgs: Vec<crate::provider::Msg> = self
+            .sessions
+            .as_ref()
+            .and_then(|s| s.load(&session_key))
+            .and_then(|sess| serde_json::from_str(&sess.messages_json).ok())
+            .unwrap_or_default();
+        let sessions_for_save = self.sessions.clone();
+        let session_key_save = session_key.clone();
+        let prior_for_save = prior_msgs.clone();
 
         // Create a one-shot event stream for this task
         let (task_tx, mut task_rx) = mpsc::unbounded_channel::<Event>();
@@ -238,7 +290,7 @@ impl MessageRouter {
         tokio::spawn(async move {
             let task = Task {
                 description: task_text.clone(),
-                context: vec![],
+                context: prior_msgs,
             };
 
             match engine.drive(task, task_tx.clone()).await {
@@ -276,9 +328,14 @@ impl MessageRouter {
         });
 
         // Stream intermediate updates
+        let user_task_text = text.to_string();
         tokio::spawn(async move {
             let mut buffer = String::new();
+            let mut full_reply = String::new();
             while let Some(event) = task_rx.recv().await {
+                if let Event::ThinkingDelta { text, .. } = &event {
+                    full_reply.push_str(text);
+                }
                 match &event {
                     Event::ThinkingDelta { text, .. } => {
                         buffer.push_str(text);
@@ -359,6 +416,31 @@ impl MessageRouter {
                     reply_to: None,
                     buttons: vec![],
                 });
+            }
+
+            // ── Persist the turn to the session (§8) ──────────────────────────
+            // Append the user message and the assistant reply so the next message
+            // — on any surface — resumes with full context.
+            if let Some(sessions) = &sessions_for_save {
+                let mut updated = prior_for_save;
+                updated.push(crate::provider::Msg {
+                    role: "user".into(),
+                    content: vec![crate::provider::ContentBlock::Text {
+                        text: user_task_text,
+                    }],
+                });
+                if !full_reply.trim().is_empty() {
+                    updated.push(crate::provider::Msg {
+                        role: "assistant".into(),
+                        content: vec![crate::provider::ContentBlock::Text { text: full_reply }],
+                    });
+                }
+                // Cap session history to the last 40 messages to bound growth.
+                let len = updated.len();
+                if len > 40 {
+                    updated.drain(..len - 40);
+                }
+                let _ = sessions.save(&session_key_save, &updated, None);
             }
         });
     }

@@ -173,6 +173,19 @@ pub fn is_chat_model_id(id: &str) -> bool {
         "transcribe",
         "translate",
         "realtime",
+        // Domain-specific / non-general models that polluted the fallback chain
+        // (observed via NVIDIA /v1/models). These are not general chat models.
+        "gliner",        // NER / PII extraction
+        "pii",           // PII detection
+        "deplot",        // chart-to-table
+        "kosmos",        // vision grounding
+        "fuyu",          // vision-only
+        "calibration",   // internal calibration model
+        "cosmos-reason", // physical-AI vision reasoning
+        "palmyra-med",   // medical domain
+        "palmyra-fin",   // finance domain
+        "-med-70b",      // medical variants
+        "chatqa",        // retrieval-augmented QA, not general chat
     ];
     !exclude.iter().any(|needle| id.contains(needle))
 }
