@@ -455,6 +455,13 @@ function routeSwitchLabel(from,to,reason){
   }
   return `↳ fallback: ${esc(from)} → ${esc(to)} <span class="dimd">${esc(clean)}</span>`;
 }
+function summarizeChain(chain,limit=5){
+  const list=Array.isArray(chain)?chain:[];
+  if(!list.length)return 'aucun modèle disponible';
+  const visible=list.slice(0,limit);
+  if(list.length>limit)visible.push(`+${list.length-limit} autres fallbacks`);
+  return visible.join(' → ');
+}
 function setSwarm(role,state,msg){
   const lane=$('swarm-'+role);
   if(!lane)return;
@@ -484,7 +491,13 @@ connect();
 function handleEvent(ev){
   switch(ev.type){
     case 'RunStarted':line(`<span class="acc">▸ started:</span> <span class="cmd">analyse de la requête</span>`);resetRunMetrics();resetSwarm();setSwarm('planner','thinking','classifying request and selecting route');ensureTokenMeter();break;
-    case 'RouteSelected':setRoute(ev.chain.join(' → '));setSwarm('planner','done','route selected · '+ev.chain.join(' → '));line(`<span class="muted">↳ route: <span class="planner">${esc(ev.chain.join(' → '))}</span></span>`);break;
+    case 'RouteSelected':{
+      const chain=summarizeChain(ev.chain);
+      setRoute(chain);
+      setSwarm('planner','done','route selected · '+chain);
+      line(`<span class="muted">↳ route: <span class="planner">${esc(chain)}</span></span>`);
+      break;
+    }
     case 'ModelSwitched':line(`<span class="warn">${routeSwitchLabel(ev.from,ev.to,ev.reason)}</span>`);break;
     case 'Message':
       if(ev.role==='router'){line(`<span class="muted">○ routing · <span class="planner">${esc(ev.text)}</span></span>`)}
