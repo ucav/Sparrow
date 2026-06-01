@@ -31,15 +31,17 @@ Sparrow is **alpha software**. The kernel builds and has a real integration suit
 | Area | Status | Evidence |
 |---|---:|---|
 | Rust build | Stable | `cargo check`, `cargo build` pass locally |
-| Test suite | Stable | 84 tests pass with `cargo test --all-targets` |
+| Test suite | Stable | 107 tests pass with `cargo test` locally, including 93 integration tests |
 | Engine loop | Alpha | `src/engine/mod.rs`, integration tests, JSON smoke test |
-| Provider routing | Alpha | Ollama + NVIDIA auto-discovery tested locally |
+| Provider routing | Alpha | Ollama + NVIDIA stored-credential discovery tested locally; 103 NVIDIA models cached from `/v1/models` |
 | WebView console | Alpha | HTTP + WebSocket console tested on port 9339 |
 | Gateway WebSocket | Alpha | `/status` command roundtrip tested on port 9338 |
 | Telegram/Discord/Slack | Partial | Transport implementations exist; real account tokens required for end-to-end validation |
 | Extra transports | Experimental | WhatsApp/Signal/Email/Feishu/WeCom/QQ/Teams adapters are present but not all fully wired |
 | Cloud sandboxes | Experimental | Modal/Daytona/Vercel/Singularity are placeholders |
 | Image/TTS/LSP | Experimental | Tool shells exist; provider/runtime integration remains future work |
+| TUI cockpit | Alpha | animated terminal cockpit, swarm lanes, checkpoint/diff/cost panels |
+| First-run setup | Alpha | conversational setup agent + fallback interactive setup |
 | Cross-platform release | Planned | workflows exist; no public release artifact yet |
 
 See [docs/AUDIT.md](docs/AUDIT.md) for module-by-module proof.
@@ -83,7 +85,7 @@ Run a routing smoke test:
 cargo run -- --json run "comment sélectionne tu le modèle le plus adapté lors du routing ?"
 ```
 
-List detected providers:
+List detected providers and discovered models:
 
 ```bash
 cargo run -- model --list
@@ -95,10 +97,16 @@ Prefer local Ollama:
 cargo run -- --local run "summarize this repository"
 ```
 
-Force a provider/model route:
+Force a fast NVIDIA route:
 
 ```bash
-cargo run -- --model nvidia:nvidia/nemotron-3-super-120b-a12b run "explain Sparrow routing"
+cargo run -- --model nvidia:meta/llama-3.1-8b-instruct run "explain Sparrow routing"
+```
+
+Force an NVIDIA coding/reasoning route:
+
+```bash
+cargo run -- --model nvidia:deepseek-ai/deepseek-v4-flash run "explain Sparrow routing"
 ```
 
 ## First Configuration
@@ -127,6 +135,20 @@ Configuration lives in the platform config directory, usually:
 ```
 
 Sparrow never needs API keys in the repository.
+
+## Provider Routing Notes
+
+Sparrow keeps a static provider registry and expands it with live model discovery when credentials are available. Stored credentials added with `sparrow auth add nvidia` are now used for discovery, so `sparrow model --list` can populate the NVIDIA catalog even when `NVIDIA_API_KEY` is not exported in the shell.
+
+Current NVIDIA defaults are intentionally not a single Nemotron pin:
+
+| Model | Use |
+|---|---|
+| `meta/llama-3.1-8b-instruct` | fast general chat and cheap smoke tests |
+| `deepseek-ai/deepseek-v4-flash` | fast coding/reasoning checks |
+| `nvidia/nemotron-3-super-120b-a12b` | stronger fallback for heavier tasks |
+
+`sparrow model --set nvidia` resets an older pinned NVIDIA config back to this recommended chain. `sparrow --model nvidia:<model> run ...` now respects the explicit cloud route instead of putting local Ollama first for trivial prompts.
 
 ## Common Commands
 

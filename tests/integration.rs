@@ -306,6 +306,49 @@ mod tests {
     }
 
     #[test]
+    fn test_router_explicit_cloud_policy_overrides_local_free_first() {
+        let mut config = Config::default();
+        config.routing.free_first = true;
+        config
+            .routing
+            .policy
+            .insert("trivial".into(), "nvidia".into());
+
+        let mut providers = std::collections::HashMap::new();
+        providers.insert(
+            "ollama".into(),
+            vec![make_mock("qwen3.5:32b", 0.0, 0.0, LatencyClass::Slow)],
+        );
+        providers.insert(
+            "nvidia".into(),
+            vec![make_mock(
+                "meta/llama-3.1-8b-instruct",
+                0.0,
+                0.0,
+                LatencyClass::Fast,
+            )],
+        );
+
+        let router = BasicRouter::new(&config, providers);
+        let need = RoutingNeed {
+            tier: TaskTier::Trivial,
+            required_tools: false,
+            required_vision: false,
+            prefer_local: false,
+        };
+        let budget = BudgetState {
+            daily_limit_usd: 100.0,
+            daily_spent_usd: 0.0,
+            session_limit_usd: 10.0,
+            session_spent_usd: 0.0,
+        };
+
+        let chain = router.select(&need, &budget);
+        assert_eq!(chain[0].id(), "meta/llama-3.1-8b-instruct");
+        assert_eq!(chain[1].id(), "qwen3.5:32b");
+    }
+
+    #[test]
     fn test_router_vision_penalizes_non_vision_models() {
         let mut config = Config::default();
         config
@@ -564,6 +607,20 @@ mod tests {
         assert_eq!(config.budget.daily_usd, 5.0);
         assert_eq!(config.budget.session_usd, 1.0);
         assert!(config.defaults.autonomy == AutonomyLevel::Trusted);
+    }
+
+    #[test]
+    fn test_config_load_normalizes_blank_theme() {
+        use sparrow::config::{ConfigStore, FsConfigStore};
+
+        let temp = std::env::temp_dir().join(format!("sparrow-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&temp).unwrap();
+        std::fs::write(temp.join("config.toml"), "theme = \"\"\n").unwrap();
+        let store = FsConfigStore::new(temp.clone());
+        let config = store.load().unwrap();
+        let _ = std::fs::remove_dir_all(temp);
+
+        assert_eq!(config.theme, "captain");
     }
 
     // ─── Embeddings Test ─────────────────────────────────────────────────────

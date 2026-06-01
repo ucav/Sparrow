@@ -1,6 +1,6 @@
 # Sparrow Audit
 
-This audit reflects the repository state after commit `fdb403c` and the GitHub polish pass. It is intentionally stricter than the product vision: a module is marked **REAL** only when there is compiled code and a tested or manually verified path.
+This audit reflects the repository state after commit `f785b1a` plus the current routing-discovery repair pass. It is intentionally stricter than the product vision: a module is marked **REAL** only when there is compiled code and a tested or manually verified path.
 
 ## Acceptance Evidence
 
@@ -8,12 +8,13 @@ This audit reflects the repository state after commit `fdb403c` and the GitHub p
 |---|---:|
 | `cargo check` | Pass |
 | `cargo build` | Pass |
-| `cargo test --all-targets` | Pass, 84 tests |
+| `cargo test` | Pass, 107 tests total including 93 integration tests |
 | `cargo clippy --all-targets -- -D warnings` | Pass |
 | `cargo fmt --all -- --check` | Pass |
-| CLI routing smoke test | Pass locally |
+| CLI routing smoke test | Pass locally on NVIDIA Llama 3.1 8B and DeepSeek V4 Flash |
 | WebView console | Pass locally on `127.0.0.1:9339` |
 | Gateway WebSocket `/status` | Pass locally on `127.0.0.1:9338` |
+| NVIDIA discovery | Pass locally, 103 cached models from `/v1/models` using stored credential |
 
 ## Core Modules
 
@@ -25,7 +26,7 @@ This audit reflects the repository state after commit `fdb403c` and the GitHub p
 | `src/provider/openai_compat.rs` | REAL | Used for NVIDIA/OpenRouter/Groq-style APIs. |
 | `src/provider/anthropic.rs` | REAL | Streaming parser exists; tool-use ID mapping repaired. |
 | `src/provider/responses.rs` | PARTIAL | OpenAI Responses/Bedrock-style paths exist; AWS signing is not production-complete. |
-| `src/router/mod.rs` | REAL | Budget-aware fallback routing with local/free preference and tool/vision penalties. |
+| `src/router/mod.rs` | REAL | Budget-aware fallback routing with local/free preference, explicit provider override, tool/vision penalties, and regression coverage. |
 | `src/engine/mod.rs` | REAL | `Task`, `Engine`, and `drive()` exist. Signature: `drive(Task, UnboundedSender<Event>) -> anyhow::Result<OutcomeSummary>`. |
 | `src/autonomy/mod.rs` | REAL | Autonomy matrix covered by integration tests. |
 | `src/redaction.rs` | REAL | Secret redaction has unit/integration coverage. |
@@ -41,8 +42,8 @@ This audit reflects the repository state after commit `fdb403c` and the GitHub p
 | `src/gateway/slack.rs` | PARTIAL | Slack Socket Mode path exists; account-backed E2E not recorded in CI. |
 | `src/gateway/extra_transports.rs` | EXPERIMENTAL | Some send paths exist; unsupported transports return explicit errors instead of fake success. |
 | `src/console.rs` + `console.html` | REAL | Local WebView HTTP/WebSocket surface tested manually. |
-| `src/tui/*` | PARTIAL | Ratatui cockpit exists; needs screenshots and UX pass before “stable”. |
-| `src/onboarding/*` | PARTIAL | Setup/migration pieces exist; enterprise IDE integrations are template-level. |
+| `src/tui/*` | PARTIAL | Ratatui cockpit exists with animated brand, swarm lanes, checkpoint/diff/cost panels; needs screenshot regression before “stable”. |
+| `src/onboarding/*` | PARTIAL | Setup agent, fallback interactive setup, and migration pieces exist; enterprise IDE integrations are template-level. |
 
 ## Prompt Reconciliation
 
@@ -57,8 +58,15 @@ Current reality:
 
 - Engine exists at `src/engine/mod.rs`, exported by Rust's module directory convention.
 - `cargo check`, `cargo build`, and `cargo test --all-targets` pass locally.
-- There are 84 tests across unit, integration, and bench harnesses.
+- The integration suite has grown beyond the original 84-test audit to 93 integration tests, including explicit-cloud-policy routing and blank-theme normalization regressions.
 - CI needed branch correction and now targets `master` and `main`.
+
+## Current Repair Notes
+
+- `model --list` now awaits model discovery before printing, using either environment variables or credentials stored by `sparrow auth add`.
+- NVIDIA is no longer represented as a single Nemotron entry. The static recommended chain includes `meta/llama-3.1-8b-instruct`, `deepseek-ai/deepseek-v4-flash`, and `nvidia/nemotron-3-super-120b-a12b`, while live discovery adds the wider API catalog.
+- `sparrow model --set nvidia` can clear an older one-model local config and restore the recommended NVIDIA chain.
+- `--model nvidia:<model>` now keeps the explicit cloud model first for trivial/small prompts instead of forcing Ollama ahead of it.
 
 So the correct action is not to create a competing `src/engine.rs`; it is to document the actual engine signature, keep tests honest, and improve CI/readme trust.
 

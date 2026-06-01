@@ -104,11 +104,13 @@ async fn main() -> anyhow::Result<()> {
         }),
     );
     // ── Boot-time model discovery ─────────────────────────────────────────────
-    // For every provider whose API key is already in the environment but whose
-    // model cache is empty, kick off a silent background discovery so `sparrow
+    // For every provider with an environment key or stored credential but an
+    // empty model cache, kick off a silent background discovery so `sparrow
     // model --list` and the router see the full catalogue on first run.
     {
         let memory_for_discovery: Arc<dyn Memory> = memory.clone();
+        let auth_for_discovery =
+            sparrow::auth::store::ChainedAuthStore::new(config.config_dir.clone());
 
         // 1. Ollama — always try (no key needed)
         if memory_for_discovery
@@ -131,15 +133,21 @@ async fn main() -> anyhow::Result<()> {
             });
         }
 
-        // 2. Every other provider with an env key but empty cache
+        // 2. Every other provider with an env key or stored credential but empty cache
         for def in sparrow::config::providers::provider_registry() {
             if def.adapter == "ollama" {
                 continue; // handled above
             }
-            let Some(env_var) = &def.api_key_env else {
-                continue;
-            };
-            let Ok(api_key) = std::env::var(env_var) else {
+            let api_key = def
+                .api_key_env
+                .as_ref()
+                .and_then(|env_var| std::env::var(env_var).ok())
+                .or_else(|| {
+                    auth_for_discovery
+                        .get(&def.id)
+                        .and_then(|credential| credential.expose_key().map(str::to_string))
+                });
+            let Some(api_key) = api_key else {
                 continue;
             };
             let api_key = api_key.trim().to_string();
@@ -287,6 +295,7 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::Model { set, list }) => {
             if list {
+                refresh_discovery_cache(memory.clone(), &config, false, false).await;
                 println!("Configured providers:");
                 let effective = effective_provider_configs(&config);
                 for (name, pconfig) in &effective {
@@ -397,6 +406,12 @@ async fn main() -> anyhow::Result<()> {
                             .models = vec![model.clone()];
                         println!("Routing updated: medium/hard → {}:{}", provider_id, model);
                     } else {
+                        if let Some(provider) = updated.providers.get_mut(&provider_id) {
+                            let defaults = sparrow::config::providers::default_models(&provider_id);
+                            if !defaults.is_empty() {
+                                provider.models = defaults;
+                            }
+                        }
                         println!("Routing updated: medium/hard → {}", provider_id);
                     }
                     config_store.save(&updated)?;
@@ -956,6 +971,62 @@ fn effective_provider_configs(
     }
 
     effective
+}
+
+async fn refresh_discovery_cache(
+    memory: Arc<dyn Memory>,
+    config: &sparrow::config::Config,
+    force: bool,
+    announce: bool,
+) {
+    let auth = sparrow::auth::store::ChainedAuthStore::new(config.config_dir.clone());
+
+    if force || memory.get_discovered_models("ollama").is_empty() {
+        let ollama_base_url =
+            std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434/v1".into());
+        discover_and_cache_provider(
+            memory.clone(),
+            "ollama".to_string(),
+            "ollama".to_string(),
+            ollama_base_url,
+            String::new(),
+            announce,
+        )
+        .await;
+    }
+
+    for def in sparrow::config::providers::provider_registry() {
+        if def.adapter == "ollama" {
+            continue;
+        }
+        if !force && !memory.get_discovered_models(&def.id).is_empty() {
+            continue;
+        }
+
+        let api_key = def
+            .api_key_env
+            .as_ref()
+            .and_then(|env_var| std::env::var(env_var).ok())
+            .or_else(|| {
+                auth.get(&def.id)
+                    .and_then(|credential| credential.expose_key().map(str::to_string))
+            })
+            .map(|key| key.trim().to_string())
+            .filter(|key| !key.is_empty());
+        let Some(api_key) = api_key else {
+            continue;
+        };
+
+        discover_and_cache_provider(
+            memory.clone(),
+            def.id,
+            def.adapter,
+            def.base_url,
+            api_key,
+            announce,
+        )
+        .await;
+    }
 }
 
 async fn discover_and_cache_provider(

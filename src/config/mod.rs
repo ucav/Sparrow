@@ -273,7 +273,9 @@ impl FsConfigStore {
         }
         // SPARROW_THEME
         if let Ok(v) = std::env::var("SPARROW_THEME") {
-            cfg.theme = v;
+            if !v.trim().is_empty() {
+                cfg.theme = v;
+            }
         }
     }
 }
@@ -312,6 +314,9 @@ impl ConfigStore for FsConfigStore {
             c
         };
         Self::apply_env_overrides(&mut cfg);
+        if cfg.theme.trim().is_empty() {
+            cfg.theme = default_theme();
+        }
         Ok(cfg)
     }
 
