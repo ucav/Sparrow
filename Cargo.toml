@@ -53,6 +53,7 @@ keyring = { version = "3", optional = true }
 
 [dev-dependencies]
 criterion = "0.5"
+proptest = "1"
 
 [features]
 default = ["keyring"]
