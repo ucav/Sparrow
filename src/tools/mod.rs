@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use crate::event::{Block, RiskLevel};
 
+pub mod browser_sandbox;
 pub mod builder_tools;
 pub mod edit;
 pub mod exec;

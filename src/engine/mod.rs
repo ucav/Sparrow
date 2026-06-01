@@ -24,6 +24,7 @@ use crate::sandbox::Sandbox;
 use crate::tools::{ToolCtx, ToolRegistry};
 
 pub mod scorer;
+pub mod treesitter;
 
 // ─── Agent identity ─────────────────────────────────────────────────────────────
 
