@@ -23,6 +23,8 @@ use crate::router::{BudgetState, Router, TaskTier};
 use crate::sandbox::Sandbox;
 use crate::tools::{ToolCtx, ToolRegistry};
 
+pub mod scorer;
+
 // ─── Agent identity ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]

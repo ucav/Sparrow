@@ -1,14 +1,6 @@
 // ─── Self-update ────────────────────────────────────────────────────────────────
 
 pub fn self_update() -> anyhow::Result<String> {
-    self_update_inner(false)
-}
-
-pub fn check_update() -> anyhow::Result<String> {
-    self_update_inner(true)
-}
-
-fn self_update_inner(check_only: bool) -> anyhow::Result<String> {
     let current = env!("CARGO_PKG_VERSION");
     let bin_path = std::env::current_exe()?;
 

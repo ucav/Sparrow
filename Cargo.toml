@@ -41,6 +41,7 @@ tokio-tungstenite = "0.24"
 futures-util = "0.3"
 mime_guess = "2"
 cron = "0.12"
+ctrlc = "3"
 axum = { version = "0.7", features = ["ws"] }
 tower = "0.5"
 rpassword = "7"

@@ -11,6 +11,7 @@ use crate::memory::Memory;
 pub mod event_bus;
 pub mod recorder;
 pub mod scheduler;
+pub mod ratelimit;
 
 use event_bus::EventBus;
 use recorder::{FsRecorder, Recorder, RunInputs};
