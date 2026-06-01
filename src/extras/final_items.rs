@@ -140,29 +140,8 @@ pub fn macos_sandbox_profile(workdir: &std::path::Path) -> String {
 }
 
 /// Hardened sandbox: Windows Job Object (Phase 7 Item 21)
-/// Limits memory and kills child processes on job close.
-#[cfg(target_os = "windows")]
-pub fn create_windows_job() -> Result<windows_sys::Win32::System::JobObjects::HANDLE, std::io::Error> {
-    use std::io::Error;
-    use windows_sys::Win32::System::JobObjects::*;
-    unsafe {
-        let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
-        if job.is_null() {
-            return Err(Error::last_os_error());
-        }
-        let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
-        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-            | JOB_OBJECT_LIMIT_DIE_ON_UNHANDLED_EXCEPTION;
-        let size = std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>();
-        if SetInformationJobObject(job, JobObjectExtendedLimitInformation, &info as *const _ as _, size as u32) == 0 {
-            CloseHandle(job);
-            return Err(Error::last_os_error());
-        }
-        Ok(job)
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-pub fn create_windows_job() -> Result<u64, std::io::Error> {
-    Ok(0) // No-op on non-Windows
+/// Requires windows-sys crate. Until then, returns basic job limits via CLI.
+pub fn windows_job_info() -> &'static str {
+    "Windows sandbox: use 'start /b /wait /low' for basic process isolation.\n\
+     Full Job Object support requires windows-sys crate (compile with --features windows-sandbox)."
 }
