@@ -4,20 +4,37 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 use super::{Tool, ToolCtx, ToolResult};
+use crate::config::Config;
 use crate::engine::{Engine, Task};
 use crate::event::{Block, Event, RiskLevel};
+use crate::memory::Memory;
+use crate::router::Router;
 
 // ─── Subagent spawn ─────────────────────────────────────────────────────────────
 
 /// Delegates a subtask to a child AgentRun with its own conversation and sandbox.
 /// §15: "Each subagent gets its own conversation, terminal, and a Python RPC channel."
+///
+/// Holds the router + config (not a parent Engine) so it can build a fresh child
+/// engine per call — this avoids a self-referential Arc<Engine> at registration.
 pub struct SubagentSpawn {
-    engine: Arc<Engine>,
+    router: Arc<dyn Router>,
+    config: Config,
+    memory: Option<Arc<dyn Memory>>,
 }
 
 impl SubagentSpawn {
-    pub fn new(engine: Arc<Engine>) -> Self {
-        Self { engine }
+    pub fn new(router: Arc<dyn Router>, config: Config) -> Self {
+        Self {
+            router,
+            config,
+            memory: None,
+        }
+    }
+
+    pub fn with_memory(mut self, memory: Arc<dyn Memory>) -> Self {
+        self.memory = Some(memory);
+        self
     }
 }
 
@@ -54,7 +71,12 @@ impl Tool for SubagentSpawn {
             context: vec![],
         };
 
-        let engine = self.engine.clone();
+        // Build a fresh child engine for this subagent.
+        let mut child = Engine::new(self.router.clone(), self.config.clone());
+        if let Some(mem) = &self.memory {
+            child = child.with_memory(mem.clone());
+        }
+        let engine = Arc::new(child);
 
         let handle = tokio::spawn(async move {
             match engine.drive(task, tx).await {
