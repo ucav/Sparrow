@@ -26,23 +26,25 @@ Sparrow is inspired by tools like Claude Code, Codex, OpenCode, OpenClaw, and He
 
 ## Status
 
-Sparrow is **alpha software**. The kernel builds and has a real integration suite, but several ambitious surfaces remain partial or experimental.
+Sparrow is **alpha software** with a green cross-platform CI baseline. The kernel, routing core, console surfaces, replay, checkpoints, and memory are wired and tested; external transports and release packaging still need real-world validation.
 
 | Area | Status | Evidence |
 |---|---:|---|
-| Rust build | Stable | `cargo check`, `cargo build` pass locally |
-| Test suite | Stable | 109 tests pass with `cargo test` locally, including 95 integration tests |
-| Engine loop | Alpha | `src/engine/mod.rs`, integration tests, JSON smoke test |
-| Provider routing | Alpha | Ollama + NVIDIA stored-credential discovery tested locally; 92 NVIDIA chat-capable models cached from `/v1/models` |
-| WebView console | Alpha | HTTP + WebSocket console tested on port 9339 |
-| Gateway WebSocket | Alpha | `/status` command roundtrip tested on port 9338 |
-| Telegram/Discord/Slack | Partial | Transport implementations exist; real account tokens required for end-to-end validation |
-| Extra transports | Experimental | WhatsApp/Signal/Email/Feishu/WeCom/QQ/Teams adapters are present but not all fully wired |
-| Cloud sandboxes | Experimental | Modal/Daytona/Vercel/Singularity are placeholders |
-| Image/TTS/LSP | Experimental | Tool shells exist; provider/runtime integration remains future work |
-| TUI cockpit | Alpha | animated terminal cockpit, swarm lanes, checkpoint/diff/cost panels |
-| First-run setup | Alpha | conversational setup agent + fallback interactive setup |
-| Cross-platform release | Planned | workflows exist; no public release artifact yet |
+| CI / Rust build | Green | Latest completed GitHub Actions baseline passes on Ubuntu, macOS, and Windows; `cargo fmt`, `clippy -D warnings`, `check`, and release builds are covered |
+| Test suite | Green | 109 tests pass locally with `cargo test`, including 95 integration tests |
+| Security audit | Green | CI runs `rustsec/audit-check` on Ubuntu, macOS, and Windows |
+| Engine loop | Alpha | `src/engine/mod.rs`, JSON smoke tests, event stream, task classification, and fallback execution are wired |
+| Provider routing | Alpha | Ollama + NVIDIA stored-credential discovery tested locally; 92 NVIDIA chat-capable models cached from `/v1/models`; explicit `nvidia:<model>` routing validated |
+| WebView console | Alpha | HTTP `/`, `/config`, `/run`, live WebSocket events, token/cost counters, route summaries, logo, and swarm cockpit are implemented on port 9339 |
+| TUI cockpit | Alpha | Animated terminal cockpit, canonical ASCII logo, swarm lanes, checkpoint/diff/cost panels, and graceful fallback messages are implemented |
+| Gateway WebSocket | Alpha | `/status` command roundtrip tested on port 9338 with ACK and engine status response |
+| Replay / checkpoints / memory | Stable | Recorder, checkpoint, rewind, transcript, and SQLite memory flows are covered by tests and CLI smoke checks |
+| First-run setup | Alpha | Conversational setup agent plus fallback interactive setup are wired for provider/model configuration |
+| Telegram / Discord / Slack | Partial | Transport implementations exist; real account tokens are still required for end-to-end validation |
+| Extra transports | Experimental | WhatsApp, Signal, Email, Feishu, WeCom, QQ, and Teams adapters are present but not all fully wired |
+| Cloud sandboxes | Experimental | Modal, Daytona, Vercel, and Singularity entries are placeholders |
+| Image / TTS / LSP | Experimental | Tool shells exist; provider/runtime integrations remain future work |
+| Cross-platform release | Planned | Workflows exist; no public signed release artifact has been published yet |
 
 See [docs/AUDIT.md](docs/AUDIT.md) for module-by-module proof.
 
