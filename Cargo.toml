@@ -51,6 +51,9 @@ rpassword = "7"
 # OS keychain
 keyring = { version = "3", optional = true }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+nix = { version = "0.31", features = ["sched"] }
+
 [dev-dependencies]
 criterion = "0.5"
 proptest = "1"

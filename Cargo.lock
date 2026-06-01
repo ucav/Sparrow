@@ -2465,6 +2465,7 @@ dependencies = [
  "headless_chrome",
  "keyring",
  "mime_guess",
+ "nix",
  "parking_lot",
  "pin-project-lite",
  "proptest",
