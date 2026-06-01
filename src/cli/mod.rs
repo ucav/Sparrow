@@ -1,8 +1,6 @@
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-pub mod providers;
-
 #[derive(Parser)]
 #[command(name = "sparrow", about = "one cli · grows with you", version)]
 pub struct Cli {
