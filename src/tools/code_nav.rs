@@ -153,6 +153,58 @@ impl Tool for Symbols {
         }
         let root = ctx.workspace_root.clone();
 
+        #[cfg(feature = "treesitter")]
+        {
+            if mode == "definition" {
+                let index = crate::memory::symbol_index::SymbolIndex::build(&root);
+                let hits: Vec<String> = index
+                    .find_definition(name)
+                    .into_iter()
+                    .take(MAX_RESULTS)
+                    .map(format_symbol_def)
+                    .collect();
+                return if hits.is_empty() {
+                    Ok(ToolResult::text(format!(
+                        "no definition found for '{}'",
+                        name
+                    )))
+                } else {
+                    Ok(ToolResult::ok(vec![Block::Text(hits.join("\n"))]))
+                };
+            }
+            if mode == "outline" {
+                let index = crate::memory::symbol_index::SymbolIndex::build(&root);
+                let requested = Path::new(name);
+                let path = if requested.is_absolute() {
+                    requested
+                        .strip_prefix(&root)
+                        .map(PathBuf::from)
+                        .unwrap_or_else(|_| requested.to_path_buf())
+                } else {
+                    requested.to_path_buf()
+                };
+                let hits: Vec<String> = index
+                    .outline(&path)
+                    .into_iter()
+                    .take(MAX_RESULTS)
+                    .map(|def| {
+                        format!(
+                            "{}:{}: {} {}",
+                            def.file.to_string_lossy().replace('\\', "/"),
+                            def.line,
+                            def.kind.as_str(),
+                            def.signature
+                        )
+                    })
+                    .collect();
+                return if hits.is_empty() {
+                    Ok(ToolResult::text(format!("no symbols in {}", name)))
+                } else {
+                    Ok(ToolResult::ok(vec![Block::Text(hits.join("\n"))]))
+                };
+            }
+        }
+
         // Build the regex for the requested mode.
         let esc = regex::escape(name);
         let pattern = match mode {
@@ -205,6 +257,17 @@ impl Tool for Symbols {
             Ok(ToolResult::ok(vec![Block::Text(hits.join("\n"))]))
         }
     }
+}
+
+#[cfg(feature = "treesitter")]
+fn format_symbol_def(def: &crate::memory::symbol_index::SymbolDef) -> String {
+    format!(
+        "{}:{}: {} {}",
+        def.file.to_string_lossy().replace('\\', "/"),
+        def.line,
+        def.kind.as_str(),
+        def.signature
+    )
 }
 
 fn is_code_file(path: &Path) -> bool {

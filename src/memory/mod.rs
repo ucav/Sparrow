@@ -8,6 +8,9 @@ use crate::event::RunId;
 use crate::provider::Msg;
 use crate::redaction::RedactionFilter;
 
+#[cfg(feature = "treesitter")]
+pub mod symbol_index;
+
 // ─── Repo map ───────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

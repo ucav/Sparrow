@@ -48,8 +48,14 @@ async fn glob_finds_rust_files() {
         .await
         .unwrap();
     let out = text_of(&r);
-    assert!(out.contains("src/lib.rs"), "glob should find src/lib.rs, got: {out}");
-    assert!(!out.contains("README.md"), "glob *.rs must not match README.md");
+    assert!(
+        out.contains("src/lib.rs"),
+        "glob should find src/lib.rs, got: {out}"
+    );
+    assert!(
+        !out.contains("README.md"),
+        "glob *.rs must not match README.md"
+    );
     let _ = std::fs::remove_dir_all(&ws);
 }
 
