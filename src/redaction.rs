@@ -228,7 +228,7 @@ impl ContextManager {
                 topics.push(format!("errors encountered: {}", error_count));
             }
 
-            let summary = if topics.is_empty() {
+            let summary_str = if topics.is_empty() {
                 format!("[{} messages summarized]", middle.len())
             } else {
                 format!("[{} messages summarized. {}]", middle.len(), topics.join("; "))
@@ -236,9 +236,9 @@ impl ContextManager {
 
             compacted.push(Msg {
                 role: "user".into(),
-                content: vec![crate::provider::ContentBlock::Text { text: summary }],
+                content: vec![crate::provider::ContentBlock::Text { text: summary_str.clone() }],
             });
-            used += self.estimate_tokens(&summary);
+            used += self.estimate_tokens(&summary_str);
         }
 
         // Keep last N messages
