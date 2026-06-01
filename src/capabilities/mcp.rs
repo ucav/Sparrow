@@ -412,21 +412,13 @@ impl BasicMcpClient {
                     .filter(|t| allow_list.is_empty() || allow_list.contains(&t.name))
                     .map(|t| {
                         let srv = server_name.clone();
-                        let tool_name = t.name.clone();
-                        let endpoint = url.clone();
+                        // HTTP MCP: create a channel with a no-op sender
+                        let (tx, _rx) = mpsc::channel::<McpRequest>(1);
+                        drop(_rx);
                         Arc::new(McpToolWrapper {
                             server_name: srv.clone(),
                             tool_def: t,
-                            call_fn: Arc::new(move |_, args| {
-                                // In real impl, we'd make an async HTTP call
-                                Ok(ToolResult::text(format!(
-                                    "MCP tool '{}' from '{}' at {} with args: {}",
-                                    tool_name,
-                                    srv,
-                                    endpoint,
-                                    serde_json::to_string_pretty(&args).unwrap_or_default()
-                                )))
-                            }),
+                            request_tx: tx,
                         }) as Arc<dyn Tool>
                     })
                     .collect()
