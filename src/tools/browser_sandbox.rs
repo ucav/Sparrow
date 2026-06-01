@@ -122,6 +122,7 @@ impl SandboxHardener {
         {
             // Linux: use unshare if available to create new namespaces
             // This provides basic isolation without root
+            let _ = workdir;
             use std::os::unix::process::CommandExt;
             unsafe {
                 cmd.pre_exec(|| {
