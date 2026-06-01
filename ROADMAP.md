@@ -20,16 +20,19 @@ Sparrow uses evidence-based status labels:
 | Ollama adapter | Alpha | Native `/api/chat` streaming path; boot-time discovery for local models. |
 | OpenAI-compatible adapter | Alpha | Used for NVIDIA, Groq, DeepSeek, Gemini, and 25+ other providers. |
 | Anthropic adapter | Alpha | Streaming tool-use IDs fixed and tested via build suite. |
-| Routing | Alpha | Budget-aware fallback, local/free preference, tool/vision penalties. `model --set` writes config. |
+| Routing | Stable | Budget-aware fallback, capability-aware scoring (caps inferred from model name), tier-aware latency, `model --set` refreshes base_url/adapter. Model-assisted classification for ambiguous tasks. |
 | Autonomy | Stable | 15-combination matrix; continuous float dial via `--autonomy 0.7`. |
-| Memory | Alpha | SQLite persistence and redaction tests. |
+| Memory | Stable | SQLite persistence + redaction; Distiller wired to the real run event stream and auto-extracts user facts (test: `distiller_facts`). |
+| Session continuity | Alpha | Cross-surface sessions (§8): gateway + CLI share a `SessionStore`, keyed `user:<id>` / `$SPARROW_SESSION`; round-trip test `session_continuity`. CLI↔gateway bridging via `SPARROW_SESSION=user:<id>`. |
 | Checkpoint/rewind | Alpha | Git refs/stash implementation; `diff` and `prune` sub-commands added. |
 | TUI | Alpha | Terminal cockpit connected to engine; input → drive loop working. |
 | WebView console | Alpha | Local HTTP/WebSocket console on port 9339; config persisted on write. |
 | Gateway WebSocket | Alpha | Message response roundtrip tested on port 9338; cron scheduler wired. |
 | Telegram/Discord/Slack | Partial | Real transport implementations exist; account-token E2E validation still needed. |
 | Extra gateway transports | Experimental | WhatsApp/Signal/Email/Feishu adapters present; return explicit unsupported errors. |
-| Swarm orchestrator | Alpha | Planner/Coder/Verifier with real tool dispatch; REWORK→PASS gate integration-tested. |
+| Swarm orchestrator | Stable | Planner/Coder/Verifier with real tool dispatch; per-role `FallbackBrain` survives 404/ratelimit; coder tier floored to Medium; empty-diff guard forces tool use (no false PASS). Proven live: writes files end-to-end. |
+| TUI task folding | Alpha | Collapsible task groups (runs/agents/tool calls): Ctrl+↑/↓ focus, Ctrl+O fold/unfold, `/collapse` `/expand`. |
+| Auth OAuth | Alpha | `auth login <github\|google\|microsoft>` device flow wired to `OAuthFlow` (needs a client id). API-key providers via `auth add`. |
 | Skills/Curator | Alpha | Filesystem skills and relevance path; auto-learn from successful runs. |
 | MCP client | Alpha | stdio/HTTP client surface; `mcp add --command` persists server config. |
 | Scheduler/recorder/replay | Alpha | Runtime cron loop; transcript recording in all run modes; replay + re-execute. |
@@ -41,36 +44,34 @@ Sparrow uses evidence-based status labels:
 | Browser/LSP/Image/TTS | Experimental | Tool shells exist; tree-sitter parser integrated; full backends are future work. |
 | Python kernel | Alpha | Persistent subprocess via `python_rpc` tool; full RPC channel planned for v2. |
 | Rate limiter | Alpha | Per-provider token-bucket rate limiter in `runtime/ratelimit.rs`. |
-| Sessions | Alpha | Session tracking in `runtime/session.rs`. |
 | Release packaging | Planned | CI definitions exist; public release artifacts not yet published. |
 
-## Near-Term Priorities
+## Multimodal / infra — now implemented (configure your own keys)
 
-1. **Gateway E2E validation**
-   - Token-backed manual test guides for Telegram, Discord, and Slack.
-   - Mock gateway tests for command routing and response delivery.
+All implemented as REAL code that returns honest errors when unconfigured —
+never fake success. The user supplies credentials at config time.
 
-2. **CI/release hardening**
-   - Publish `v0.1.0-alpha` binaries with checksums for Linux/macOS/Windows.
-   - Ensure `cargo fmt`, `clippy -D warnings`, and all 91 tests stay green.
+| Item | State | Notes |
+|---|---|---|
+| Image generation | Alpha | `image_generate` tool → OpenAI-compatible `/images/generations`; saves PNG. Key: `IMAGE_API_KEY`/`OPENAI_API_KEY`. |
+| Text-to-speech | Alpha | `text_to_speech` tool → `/audio/speech`; saves audio. Key: `TTS_API_KEY`. |
+| Persistent Python kernel | Alpha | `python_rpc` keeps a long-lived `python3` process; vars/imports persist across calls (JSON-line driver). |
+| SSH sandbox | Alpha | Real remote exec over `ssh`; the primary "remote VM" backend. |
+| Docker sandbox | Alpha | Real container exec. |
+| Cloud sandboxes (modal/daytona/vercel/singularity) | Partial | Shell out to the vendor CLI when installed+authed; otherwise an HONEST exit-127 error pointing to ssh/docker. No fabricated success. |
+| Email inbound (IMAP) | Alpha | `email` feature: polls UNSEEN from allowed senders every 30s → `GatewayMessage`. Outbound SMTP via `lettre`. |
+| Replay TUI scrubber | Alpha | `sparrow replay <id> --scrub` opens a ←/→ event scrubber in the TUI. |
+| Release CI + install.sh | Alpha | 5-platform matrix + checksums + `curl\|sh` installer. Publishing needs a maintainer tag push + signing secrets. |
 
-3. **Hardened sandbox on non-Linux**
-   - Implement Windows Job Objects (`CREATE_NEW_PROCESS_GROUP` + CPU/memory limits) as a real hardening layer.
-   - macOS: use `sandbox-exec` profile or seatbelt.
+## Remaining — genuinely needs external resources
 
-4. **Live `sparrow status`**
-   - Surface active run IDs from `SparrowRuntime::active_runs` map.
-   - Show per-session cost accumulator.
+1. **Gateway E2E with live tokens** — Telegram/Discord/Slack/Email transports are real but need live bot tokens to validate end-to-end. WhatsApp send is real (Graph API); inbound webhooks need a public URL.
+2. **Hardened sandbox on Windows/macOS** — namespace/seccomp is Linux-only; other platforms enforce workspace path-boundary (honest note in `doctor`). Windows Job Objects / macOS seatbelt are future.
+3. **Browser automation** — `headless_chrome` behind the `browser` feature; needs a Chrome binary to run.
+4. **Signed release publishing** — needs the repo's CI signing secrets + a tag push (maintainer action).
 
-5. **Public GitHub polish**
-   - Repository description, website, topics, first alpha release tag.
-   - Screenshots / GIF for WebView console, TUI cockpit, and NDJSON stream.
+## Beyond Alpha (design-level future work)
 
-## Beyond Alpha
-
-- OAuth/device-flow provider setup (Qwen, GitHub Copilot).
-- Persistent Python kernel with real IPC (ZeroMQ or unix socket).
-- Browser automation backend (Playwright/CDP).
-- Real image generation / TTS provider integration.
+- Cross-platform identity unification for sessions (same human across Telegram/Slack ids).
 - Plugin system for providers, tools, and surfaces.
-- Public website and installation script tested on Windows/macOS/Linux.
+- Public website.

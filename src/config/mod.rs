@@ -168,10 +168,19 @@ pub struct EmailSurface {
     pub password_env: String,
     #[serde(default)]
     pub allowed_to: Vec<String>,
+    /// Optional IMAP server for inbound polling.
+    #[serde(default)]
+    pub imap_host: Option<String>,
+    #[serde(default = "default_imap_port")]
+    pub imap_port: u16,
 }
 
 fn default_smtp_port() -> u16 {
     587
+}
+
+fn default_imap_port() -> u16 {
+    993
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -288,8 +288,18 @@ async fn main() -> anyhow::Result<()> {
         }) => {
             handle_schedule(&task, &cron, autonomy, &report, &scheduler).await?;
         }
-        Some(Commands::Replay { run_id }) => {
-            handle_replay(&run_id, &recorder, &config, memory.clone()).await?;
+        Some(Commands::Replay { run_id, scrub }) => {
+            if scrub {
+                match recorder.load(&run_id) {
+                    Some(transcript) => {
+                        let mut tui = Tui::new().with_replay(transcript.events);
+                        tokio::task::spawn_blocking(move || tui.run()).await??;
+                    }
+                    None => eprintln!("Transcript not found: {}", run_id),
+                }
+            } else {
+                handle_replay(&run_id, &recorder, &config, memory.clone()).await?;
+            }
         }
         Some(Commands::Gateway { action }) => {
             handle_gateway(
@@ -397,7 +407,7 @@ async fn main() -> anyhow::Result<()> {
                         .insert("hard".into(), provider_id.clone());
                     if let Some(model) = model_opt {
                         let def = sparrow::config::providers::find_provider(&provider_id);
-                        updated
+                        let entry = updated
                             .providers
                             .entry(provider_id.clone())
                             .or_insert_with(|| ProviderConfig {
@@ -410,9 +420,19 @@ async fn main() -> anyhow::Result<()> {
                                     .map(|d| Some(d.base_url.clone()))
                                     .unwrap_or(None),
                                 models: vec![],
-                                api_key_env: def.and_then(|d| d.api_key_env),
-                            })
-                            .models = vec![model.clone()];
+                                api_key_env: def.as_ref().and_then(|d| d.api_key_env.clone()),
+                            });
+                        // Refresh base_url + adapter from the registry even for an
+                        // EXISTING entry — otherwise a stale/wrong base_url persists
+                        // (the OpenCode `zen.opencode.ai` regression came from here).
+                        if let Some(d) = &def {
+                            entry.adapter = d.adapter.clone();
+                            entry.base_url = Some(d.base_url.clone());
+                            if entry.api_key_env.is_none() {
+                                entry.api_key_env = d.api_key_env.clone();
+                            }
+                        }
+                        entry.models = vec![model.clone()];
                         println!("Routing updated: medium/hard → {}:{}", provider_id, model);
                     } else {
                         if let Some(provider) = updated.providers.get_mut(&provider_id) {
@@ -498,6 +518,12 @@ async fn main() -> anyhow::Result<()> {
                 sparrow::cli::AuthAction::Rm { provider } => {
                     auth.remove(&provider)?;
                     println!("Removed credentials for: {}", provider);
+                }
+                sparrow::cli::AuthAction::Login {
+                    provider,
+                    client_id,
+                } => {
+                    handle_auth_login(&provider, client_id, &auth).await?;
                 }
             }
         }
@@ -1340,6 +1366,50 @@ async fn handle_daemon(
     Ok(())
 }
 
+// ─── OAuth device-flow login (§3.2 Tool Gateway) ─────────────────────────────────
+
+async fn handle_auth_login(
+    provider: &str,
+    client_id: Option<String>,
+    auth: &sparrow::auth::store::ChainedAuthStore,
+) -> anyhow::Result<()> {
+    use sparrow::auth::AuthStore;
+    use sparrow::extras::OAuthFlow;
+
+    let supported = ["github", "google", "microsoft"];
+    if !supported.contains(&provider) {
+        anyhow::bail!(
+            "OAuth device flow not supported for '{}'. Supported: {}.\n\
+             For API-key providers use 'sparrow auth add {}'.",
+            provider,
+            supported.join(", "),
+            provider
+        );
+    }
+
+    let client_id = client_id
+        .or_else(|| std::env::var(format!("{}_CLIENT_ID", provider.to_uppercase())).ok())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "No OAuth client id. Pass --client-id <id> or set {}_CLIENT_ID.\n\
+                 Register an OAuth app with your provider to obtain one.",
+                provider.to_uppercase()
+            )
+        })?;
+
+    println!("Starting OAuth device flow for {}...", provider);
+    let (verification_uri, user_code, device_code) =
+        OAuthFlow::start_device_flow(provider, &client_id).await?;
+    println!("\n  1. Open: {}", verification_uri);
+    println!("  2. Enter code: {}\n", user_code);
+    println!("Waiting for authorization (up to 5 min)...");
+
+    let token = OAuthFlow::poll_token(provider, &client_id, &device_code, 300).await?;
+    auth.set(provider, sparrow::auth::Credential::api_key(token))?;
+    println!("✓ Authenticated. Credential stored for {}.", provider);
+    Ok(())
+}
+
 async fn run_task(
     task: &str,
     config: &sparrow::config::Config,
@@ -1362,9 +1432,32 @@ async fn run_task(
         engine = engine.with_identity(soul.to_identity());
     }
 
+    // ── Session continuity (§8) ───────────────────────────────────────────
+    // Load prior conversation so context follows the user across runs and
+    // surfaces. Key: $SPARROW_SESSION (set it to "user:<id>" to continue a
+    // Telegram/Slack thread) else a per-workspace CLI session.
+    let sessions = sparrow::runtime::session::SessionStore::open(
+        &config.state_dir.join("sessions.db"),
+    )
+    .ok()
+    .map(Arc::new);
+    let session_key = std::env::var("SPARROW_SESSION").unwrap_or_else(|_| {
+        format!(
+            "cli:{}",
+            std::env::current_dir()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| "default".into())
+        )
+    });
+    let prior_msgs: Vec<sparrow::provider::Msg> = sessions
+        .as_ref()
+        .and_then(|s| s.load(&session_key))
+        .and_then(|sess| serde_json::from_str(&sess.messages_json).ok())
+        .unwrap_or_default();
+
     let task_obj = sparrow::engine::Task {
         description: task.to_string(),
-        context: vec![],
+        context: prior_msgs.clone(),
     };
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -1373,7 +1466,11 @@ async fn run_task(
     let config_snapshot = redacted_config_snapshot(config);
     let repo_head = current_repo_head();
     let print_handle = tokio::spawn(async move {
+        let mut full_reply = String::new();
         while let Some(event) = rx.recv().await {
+            if let sparrow::event::Event::ThinkingDelta { text, .. } = &event {
+                full_reply.push_str(text);
+            }
             if let sparrow::event::Event::RunStarted { run, agent, .. } = &event {
                 recorder.start_run(
                     run.0.clone(),
@@ -1434,12 +1531,35 @@ async fn run_task(
                 _ => {}
             }
         }
+        full_reply
     });
 
     println!("Running: {}", task);
     let outcome = engine.drive(task_obj, tx).await?;
-    print_handle.await?;
+    let full_reply = print_handle.await?;
     println!("Status: {}", outcome.status);
+
+    // Persist the turn to the session (prior + user + assistant), capped.
+    if let Some(store) = &sessions {
+        let mut updated = prior_msgs;
+        updated.push(sparrow::provider::Msg {
+            role: "user".into(),
+            content: vec![sparrow::provider::ContentBlock::Text {
+                text: task.to_string(),
+            }],
+        });
+        if !full_reply.trim().is_empty() {
+            updated.push(sparrow::provider::Msg {
+                role: "assistant".into(),
+                content: vec![sparrow::provider::ContentBlock::Text { text: full_reply }],
+            });
+        }
+        let len = updated.len();
+        if len > 40 {
+            updated.drain(..len - 40);
+        }
+        let _ = store.save(&session_key, &updated, None);
+    }
     Ok(())
 }
 
@@ -1964,14 +2084,20 @@ async fn handle_gateway(
                             "  Email    : enabled (SMTP {}:{})",
                             em.smtp_host, em.smtp_port
                         );
-                        transports.push(Box::new(sparrow::gateway::email::EmailTransport::new(
+                        let mut email_transport = sparrow::gateway::email::EmailTransport::new(
                             em.from.clone(),
                             em.smtp_host.clone(),
                             em.smtp_port,
                             user,
                             pass,
                             em.allowed_to.clone(),
-                        )));
+                        );
+                        if let Some(imap_host) = &em.imap_host {
+                            email_transport =
+                                email_transport.with_imap(imap_host.clone(), em.imap_port);
+                            println!("             + IMAP inbound {}:{}", imap_host, em.imap_port);
+                        }
+                        transports.push(Box::new(email_transport));
                     } else {
                         println!(
                             "  Email    : no credentials (set {} + {})",

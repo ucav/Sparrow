@@ -26,6 +26,18 @@ struct LogLine {
     text: String,
     style: LogStyle,
     indent: u16,
+    /// If set, this line is a child of collapsible group N (hidden when collapsed).
+    group: Option<usize>,
+    /// If set, this line IS the collapsible header for group N.
+    header_for: Option<usize>,
+}
+
+/// A collapsible task group in the scroll log (a run, an agent phase, a tool call).
+#[derive(Debug, Clone)]
+struct TaskGroup {
+    title: String,
+    collapsed: bool,
+    style: LogStyle,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -82,6 +94,8 @@ const SLASH_COMMANDS: &[&str] = &[
     "/auth",
     "/help",
     "/clear",
+    "/collapse",
+    "/expand",
     "/exit",
 ];
 
@@ -321,6 +335,19 @@ pub struct Tui {
     /// Token flash counter.
     tok_flash_frames: u32,
     last_tokens: u64,
+
+    // ── Collapsible task groups ───────────────────────────────────────────
+    /// Collapsible task groups; child lines reference these by index.
+    groups: Vec<TaskGroup>,
+    /// Group that new lines are attached to (None = top level).
+    current_group: Option<usize>,
+    /// Group header currently focused for collapse/expand (Ctrl+↑/↓, Ctrl+O).
+    focus_group: Option<usize>,
+
+    // ── Replay scrubber ───────────────────────────────────────────────────
+    /// When set, the TUI is in replay mode: scrub events with ←/→.
+    replay_events: Option<Vec<Event>>,
+    replay_idx: usize,
 }
 
 impl Tui {
@@ -366,7 +393,47 @@ impl Tui {
             last_cost: 0.0,
             tok_flash_frames: 0,
             last_tokens: 0,
+            groups: Vec::new(),
+            current_group: None,
+            focus_group: None,
+            replay_events: None,
+            replay_idx: 0,
         }
+    }
+
+    /// Launch the TUI as a replay scrubber over a recorded transcript.
+    /// ←/→ step through events; Home/End jump to start/end.
+    pub fn with_replay(mut self, events: Vec<Event>) -> Self {
+        self.replay_events = Some(events);
+        self.replay_idx = 0;
+        self.booted = true; // skip boot animation in replay mode
+        self
+    }
+
+    /// Rebuild the log from replay events up to `replay_idx`.
+    fn rebuild_replay(&mut self) {
+        let Some(events) = self.replay_events.clone() else {
+            return;
+        };
+        self.lines.clear();
+        self.groups.clear();
+        self.current_group = None;
+        self.focus_group = None;
+        self.cost_usd = 0.0;
+        self.total_tokens = 0;
+        let upto = self.replay_idx.min(events.len());
+        for ev in events.iter().take(upto) {
+            self.push_event(ev.clone());
+        }
+        let total = events.len();
+        self.add_line(
+            &format!(
+                "── replay {}/{}  (←/→ step · Home/End jump · q quit) ──",
+                upto, total
+            ),
+            LogStyle::Accent,
+            0,
+        );
     }
 
     fn spawn_embers() -> Vec<Ember> {
@@ -448,7 +515,7 @@ impl Tui {
     pub fn push_event(&mut self, event: Event) {
         match &event {
             Event::RunStarted { task, .. } => {
-                self.add_line(&format!("▸ started: {}", task), LogStyle::Brand, 0)
+                self.open_group(&format!("started: {}", task), LogStyle::Brand);
             }
             Event::RouteSelected { chain, .. } => {
                 self.route = chain.join(" → ");
@@ -471,7 +538,7 @@ impl Tui {
             }
             Event::ThinkingDelta { text, .. } => self.add_line(text, LogStyle::Cmd, 1),
             Event::ToolUseProposed { name, .. } => {
-                self.add_line(&format!("◆ {}", name), LogStyle::Steel, 1)
+                self.open_group(&format!("tool · {}", name), LogStyle::Steel);
             }
             Event::ToolOutput { blocks, .. } => {
                 for b in blocks {
@@ -500,7 +567,7 @@ impl Tui {
                     "verifier" => LogStyle::Verifier,
                     _ => LogStyle::Dim,
                 };
-                self.add_line(&format!("◆ {} spawned ({})", role, model), s, 0);
+                self.open_group(&format!("{} ({})", role, model), s);
             }
             Event::AgentStatus {
                 role, note, status, ..
@@ -627,14 +694,17 @@ impl Tui {
                     );
                 }
             }
-            Event::RunFinished { outcome, .. } => self.add_line(
-                &format!(
-                    "✓ done  status: {}  cost: ${:.4}",
-                    outcome.status, outcome.cost_usd
-                ),
-                LogStyle::Ok,
-                0,
-            ),
+            Event::RunFinished { outcome, .. } => {
+                self.close_group();
+                self.add_line(
+                    &format!(
+                        "✓ done  status: {}  cost: ${:.4}",
+                        outcome.status, outcome.cost_usd
+                    ),
+                    LogStyle::Ok,
+                    0,
+                );
+            }
             Event::Error { message, .. } => {
                 if !crate::event::is_local_model_unavailable(message) {
                     self.add_line(message, LogStyle::Err, 0);
@@ -645,12 +715,72 @@ impl Tui {
     }
 
     fn add_line(&mut self, text: &str, style: LogStyle, indent: u16) {
+        let group = self.current_group;
         for line in text.lines() {
             self.lines.push(LogLine {
                 text: line.to_string(),
                 style,
                 indent,
+                group,
+                header_for: None,
             });
+        }
+    }
+
+    /// Open a new collapsible task group; subsequent `add_line` calls attach to it.
+    fn open_group(&mut self, title: &str, style: LogStyle) {
+        let id = self.groups.len();
+        self.groups.push(TaskGroup {
+            title: title.to_string(),
+            collapsed: false,
+            style,
+        });
+        self.lines.push(LogLine {
+            text: title.to_string(),
+            style,
+            indent: 0,
+            group: None,
+            header_for: Some(id),
+        });
+        self.current_group = Some(id);
+        self.focus_group = Some(id);
+    }
+
+    /// Close the active group (subsequent lines go top-level).
+    fn close_group(&mut self) {
+        self.current_group = None;
+    }
+
+    /// Number of child lines belonging to a group (for the "N hidden" hint).
+    fn group_child_count(&self, id: usize) -> usize {
+        self.lines.iter().filter(|l| l.group == Some(id)).count()
+    }
+
+    /// Move focus to the previous/next group header.
+    fn focus_group_step(&mut self, forward: bool) {
+        if self.groups.is_empty() {
+            return;
+        }
+        let last = self.groups.len() - 1;
+        self.focus_group = Some(match self.focus_group {
+            None => last,
+            Some(i) if forward => (i + 1).min(last),
+            Some(i) => i.saturating_sub(1),
+        });
+    }
+
+    /// Toggle collapse on the focused group, or all groups if none focused.
+    fn toggle_group(&mut self) {
+        match self.focus_group {
+            Some(i) if i < self.groups.len() => {
+                self.groups[i].collapsed = !self.groups[i].collapsed;
+            }
+            _ => {
+                let any_open = self.groups.iter().any(|g| !g.collapsed);
+                for g in &mut self.groups {
+                    g.collapsed = any_open;
+                }
+            }
         }
     }
 
@@ -715,6 +845,9 @@ impl Tui {
 
     fn main_loop(&mut self, terminal: &mut CrosstermTerminal) -> io::Result<()> {
         let start = Instant::now();
+        if self.replay_events.is_some() {
+            self.rebuild_replay();
+        }
         loop {
             self.drain_engine_events();
             self.frame += 1;
@@ -732,6 +865,28 @@ impl Tui {
                         KeyCode::Esc => break,
                         KeyCode::Char('c') if ctrl => break,
 
+                        // ── Replay scrubber (active only in replay mode) ─────
+                        KeyCode::Char('q') if self.replay_events.is_some() => break,
+                        KeyCode::Left if self.replay_events.is_some() => {
+                            self.replay_idx = self.replay_idx.saturating_sub(1);
+                            self.rebuild_replay();
+                        }
+                        KeyCode::Right if self.replay_events.is_some() => {
+                            let max =
+                                self.replay_events.as_ref().map(|e| e.len()).unwrap_or(0);
+                            self.replay_idx = (self.replay_idx + 1).min(max);
+                            self.rebuild_replay();
+                        }
+                        KeyCode::Home if self.replay_events.is_some() => {
+                            self.replay_idx = 0;
+                            self.rebuild_replay();
+                        }
+                        KeyCode::End if self.replay_events.is_some() => {
+                            self.replay_idx =
+                                self.replay_events.as_ref().map(|e| e.len()).unwrap_or(0);
+                            self.rebuild_replay();
+                        }
+
                         // Ctrl+L → clear log buffer
                         KeyCode::Char('l') if ctrl => {
                             self.lines.clear();
@@ -745,6 +900,12 @@ impl Tui {
                                 0,
                             );
                         }
+
+                        // ── Collapsible task groups ──────────────────────────
+                        // Ctrl+↑/↓ move focus between task headers; Ctrl+O toggles.
+                        KeyCode::Up if ctrl => self.focus_group_step(false),
+                        KeyCode::Down if ctrl => self.focus_group_step(true),
+                        KeyCode::Char('o') if ctrl => self.toggle_group(),
 
                         // History navigation (only when on first row of input)
                         KeyCode::Up if self.cursor_row == 0 && !self.history.is_empty() => {
@@ -826,6 +987,19 @@ impl Tui {
                                 match task.as_str() {
                                     "/clear" => {
                                         self.lines.clear();
+                                        self.groups.clear();
+                                        self.current_group = None;
+                                        self.focus_group = None;
+                                    }
+                                    "/collapse" => {
+                                        for g in &mut self.groups {
+                                            g.collapsed = true;
+                                        }
+                                    }
+                                    "/expand" => {
+                                        for g in &mut self.groups {
+                                            g.collapsed = false;
+                                        }
                                     }
                                     "/exit" | "/quit" => break,
                                     "/help" => {
@@ -834,8 +1008,12 @@ impl Tui {
                                             self.add_line(c, LogStyle::Dim, 1);
                                         }
                                         self.add_line(
-                                            "Ctrl+I = inject mid-run · Ctrl+L = clear · Shift+Enter = newline · Up/Down = history",
+                                            "Ctrl+I inject · Ctrl+L clear · Ctrl+↑/↓ focus task · Ctrl+O fold/unfold · Shift+Enter newline · Up/Down history",
                                             LogStyle::Dim, 0,
+                                        );
+                                        self.add_line(
+                                            "/collapse · /expand — fold/unfold all tasks",
+                                            LogStyle::Dim, 1,
                                         );
                                     }
                                     _ => {
@@ -1244,7 +1422,49 @@ impl Tui {
         if max_lines == 0 {
             return;
         }
-        let total = self.lines.len();
+        // Filter out child lines of collapsed groups; render headers as toggles.
+        let rendered: Vec<Line> = self
+            .lines
+            .iter()
+            .filter_map(|log| {
+                // Hide children of collapsed groups
+                if let Some(g) = log.group {
+                    if self.groups.get(g).map(|gr| gr.collapsed).unwrap_or(false) {
+                        return None;
+                    }
+                }
+                if let Some(gid) = log.header_for {
+                    // Collapsible header: ▾ expanded / ▸ collapsed + child count + focus mark
+                    let gr = self.groups.get(gid);
+                    let collapsed = gr.map(|g| g.collapsed).unwrap_or(false);
+                    let arrow = if collapsed { "▸" } else { "▾" };
+                    let focused = self.focus_group == Some(gid);
+                    let n = self.group_child_count(gid);
+                    let hint = if collapsed && n > 0 {
+                        format!("  ({} hidden)", n)
+                    } else {
+                        String::new()
+                    };
+                    let marker = if focused { "‣ " } else { "  " };
+                    let mut style = Style::default().fg(log.style.color(&self.theme));
+                    if focused {
+                        style = style.add_modifier(Modifier::BOLD | Modifier::UNDERLINED);
+                    }
+                    Some(Line::from(Span::styled(
+                        format!("{}{} {}{}", marker, arrow, log.text, hint),
+                        style,
+                    )))
+                } else {
+                    let prefix = "  ".repeat(log.indent as usize);
+                    Some(Line::from(Span::styled(
+                        format!("{}{}", prefix, log.text),
+                        Style::default().fg(log.style.color(&self.theme)),
+                    )))
+                }
+            })
+            .collect();
+
+        let total = rendered.len();
         let skip = (self.scroll as usize).min(total.saturating_sub(1));
         let show_logo = self.frame.saturating_sub(70) < 120 && self.scroll == 0;
         let logo_lines: Vec<Line> = if show_logo {
@@ -1261,15 +1481,10 @@ impl Tui {
             Vec::new()
         };
         let remaining = max_lines.saturating_sub(logo_lines.len());
-        let visible = self.lines.iter().rev().skip(skip).take(remaining);
         let mut text_lines: Vec<Line> = logo_lines;
-        text_lines.extend(visible.rev().map(|log| {
-            let prefix = "  ".repeat(log.indent as usize);
-            Line::from(Span::styled(
-                format!("{}{}", prefix, log.text),
-                Style::default().fg(log.style.color(&self.theme)),
-            ))
-        }));
+        let start = total.saturating_sub(skip).saturating_sub(remaining);
+        let end = total.saturating_sub(skip);
+        text_lines.extend(rendered[start..end].iter().cloned());
         f.render_widget(
             Paragraph::new(Text::from(text_lines)).block(
                 Block::default()

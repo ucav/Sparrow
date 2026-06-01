@@ -13,6 +13,7 @@ pub mod exec;
 pub mod extras;
 pub mod fs;
 pub mod git;
+pub mod media;
 pub mod search_and_web;
 pub mod subagent;
 pub mod todo;

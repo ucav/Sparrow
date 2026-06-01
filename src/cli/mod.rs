@@ -152,6 +152,9 @@ pub enum Commands {
     Replay {
         /// Run ID to replay
         run_id: String,
+        /// Open an interactive TUI scrubber (←/→ to step through events)
+        #[arg(long)]
+        scrub: bool,
     },
 
     /// Start/stop gateway daemon
@@ -218,6 +221,13 @@ pub enum AuthAction {
     Add { provider: String },
     List,
     Rm { provider: String },
+    /// Authenticate a provider via OAuth device flow (github/google/microsoft).
+    Login {
+        provider: String,
+        /// OAuth client id (or set <PROVIDER>_CLIENT_ID env var)
+        #[arg(long)]
+        client_id: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
