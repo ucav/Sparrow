@@ -87,6 +87,43 @@ fn console_html_has_dynamic_swarm_hooks() {
 }
 
 #[test]
+fn console_html_has_drawer_with_seven_panels() {
+    let html =
+        std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");
+    // Rail buttons for the 7 panels of Sprint 1 inc 2.
+    for panel in [
+        "sessions",
+        "memory",
+        "plugins",
+        "tools",
+        "permissions",
+        "security",
+        "artifacts",
+    ] {
+        let rail_marker = format!("data-panel=\"{}\"", panel);
+        let body_marker = format!("data-panel-body=\"{}\"", panel);
+        assert!(
+            html.contains(&rail_marker),
+            "rail must expose button for {}",
+            panel
+        );
+        assert!(
+            html.contains(&body_marker),
+            "drawer must expose body for {}",
+            panel
+        );
+    }
+    assert!(
+        html.contains("PANEL_LOADERS"),
+        "panel loader registry must be present"
+    );
+    assert!(
+        html.contains("openPanel"),
+        "openPanel() switch handler must be present"
+    );
+}
+
+#[test]
 fn classify_agent_color_falls_back_to_steel() {
     use sparrow::console::classify_agent_color;
     assert_eq!(classify_agent_color("blue"), "planner");
