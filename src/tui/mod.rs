@@ -357,6 +357,8 @@ pub struct Tui {
     replay_idx: usize,
     /// Strips <think> reasoning blocks from streamed deltas.
     think: crate::event::ThinkStripper,
+    /// Known agent names for `@<name>` autocomplete; populated by the host.
+    agent_names: Vec<String>,
 }
 
 impl Tui {
@@ -413,6 +415,7 @@ impl Tui {
             replay_events: None,
             replay_idx: 0,
             think: crate::event::ThinkStripper::new(),
+            agent_names: Vec::new(),
         }
     }
 
@@ -506,15 +509,70 @@ impl Tui {
     /// Match autocomplete candidates for the current input.
     fn autocomplete_matches(&self) -> Vec<&'static str> {
         let line = &self.input_lines[0];
-        if !line.starts_with('/') {
+        if line.starts_with('/') {
+            return SLASH_COMMANDS
+                .iter()
+                .filter(|c| c.starts_with(line.as_str()) && **c != line.as_str())
+                .copied()
+                .take(5)
+                .collect();
+        }
+        vec![]
+    }
+
+    /// Test hook: mutable access to the first input line.
+    #[doc(hidden)]
+    pub fn debug_first_line_mut(&mut self) -> &mut String {
+        if self.input_lines.is_empty() {
+            self.input_lines.push(String::new());
+        }
+        &mut self.input_lines[0]
+    }
+
+    /// Test hook: set the cursor column.
+    #[doc(hidden)]
+    pub fn debug_set_cursor_col(&mut self, col: usize) {
+        self.cursor_row = 0;
+        self.cursor_col = col;
+    }
+
+    /// `@<name>` agent picker: returns owned strings prefixed with `@`. Separate
+    /// from the slash autocomplete because the candidate list is dynamic.
+    pub fn agent_matches(&self) -> Vec<String> {
+        // Find the last `@` token on the current line.
+        let line = &self.input_lines[self.cursor_row];
+        let upto = line.get(..self.cursor_col).unwrap_or(line);
+        let Some(at_pos) = upto.rfind('@') else {
+            return vec![];
+        };
+        // Don't trigger when `@` is preceded by a non-whitespace char (so e-mails
+        // like foo@example don't fire the picker).
+        if at_pos > 0
+            && !upto[..at_pos]
+                .chars()
+                .last()
+                .map(|c| c.is_whitespace())
+                .unwrap_or(true)
+        {
             return vec![];
         }
-        SLASH_COMMANDS
+        let prefix = &upto[at_pos + 1..];
+        // Bail if the fragment already contains whitespace — picker is over.
+        if prefix.contains(char::is_whitespace) {
+            return vec![];
+        }
+        self.agent_names
             .iter()
-            .filter(|c| c.starts_with(line.as_str()) && **c != line.as_str())
-            .copied()
+            .filter(|n| n.starts_with(prefix))
             .take(5)
+            .map(|n| format!("@{}", n))
             .collect()
+    }
+
+    /// Populate the `@<name>` agent picker with the agents the host knows about.
+    pub fn with_agents(mut self, names: Vec<String>) -> Self {
+        self.agent_names = names;
+        self
     }
 
     pub fn with_channels(
