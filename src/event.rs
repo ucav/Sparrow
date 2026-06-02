@@ -252,6 +252,7 @@ pub enum Event {
     RouteSelected {
         run: RunId,
         chain: Vec<String>,
+        context_window: u64,
     },
     ModelSwitched {
         run: RunId,
