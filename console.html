@@ -331,6 +331,56 @@
   .boot-overlay .b-skip kbd{background:var(--panel2);border:1px solid var(--line);border-radius:4px;
     padding:1px 5px;color:var(--dim);font-family:inherit;font-size:10px}
 
+  /* ─── Sprint 1 inc 6 : event stream typed renderers ──────────────── */
+  /* Tool fold/unfold cards */
+  .tool-card{margin:6px 0 8px;border:1px solid var(--line-hot);border-radius:8px;background:var(--panel);overflow:hidden}
+  .tool-card summary{list-style:none;cursor:pointer;padding:7px 11px;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--dim)}
+  .tool-card summary::-webkit-details-marker{display:none}
+  .tool-card summary .g{color:var(--brand);font-size:12px}
+  .tool-card summary .nm{color:var(--fg);font-weight:500;font-size:11.5px}
+  .tool-card summary .ok{margin-left:auto;color:var(--add);font-size:10.5px}
+  .tool-card summary .chev{color:var(--dimmer);transition:transform .2s;font-size:9px}
+  .tool-card[open] summary .chev{transform:rotate(90deg)}
+  .tool-card[open] summary{border-bottom:1px solid var(--line)}
+  .tool-card .det{padding:9px 12px;font-size:11px;color:var(--dim);background:var(--panel2)}
+  .tool-card .det code{color:var(--fg);background:transparent;font-family:inherit;display:block;white-space:pre-wrap;line-height:1.5;overflow-wrap:anywhere}
+  .tool-card .det .lbl{color:var(--dimmer);text-transform:uppercase;font-size:9px;letter-spacing:1.2px;margin-bottom:3px}
+
+  /* Diff card (line-numbered, +/− with theme-coloured backgrounds) */
+  .diff-card{margin:6px 0 8px;border:1px solid var(--line-hot);border-radius:8px;background:var(--panel);overflow:hidden}
+  .diff-card .h{display:flex;gap:8px;padding:7px 11px;border-bottom:1px solid var(--line);font-size:10.5px;color:var(--dim)}
+  .diff-card .h .p{color:var(--fg);font-weight:500}.diff-card .h .m{margin-left:auto}
+  .diff-card .h .pl{color:var(--add)}.diff-card .h .mn{color:var(--rem)}
+  .diff-card pre{font-size:11.5px;line-height:1.6;padding:6px 0;overflow-x:auto;font-family:inherit}
+  .diff-card .dl{display:block;padding:0 10px;border-left:2px solid transparent;white-space:pre}
+  .diff-card .num{display:inline-block;width:30px;color:var(--dimmer);user-select:none}
+  .diff-card .ctx{color:var(--dim)}
+  .diff-card .pls{color:var(--add);background:color-mix(in srgb,var(--add) 9%,transparent);border-left-color:var(--add)!important}
+  .diff-card .mns{color:var(--rem);background:color-mix(in srgb,var(--rem) 9%,transparent);border-left-color:var(--rem)!important}
+
+  /* Compaction banner */
+  .compact-banner{margin:8px 0;padding:7px 12px;border-radius:8px;
+    background:color-mix(in srgb,var(--brand) 9%,transparent);
+    border:1px solid color-mix(in srgb,var(--brand) 30%,transparent);
+    color:var(--dim);font-size:11px;display:flex;align-items:center;gap:9px}
+  .compact-banner .g{color:var(--brand);font-size:12px}
+  .compact-banner b{color:var(--fg);font-weight:500}
+  .compact-banner a{color:var(--brand);text-decoration:none;margin-left:auto;font-size:10.5px}
+  .compact-banner a:hover{text-decoration:underline}
+
+  /* Skill learned pill */
+  .skill-pop{display:inline-block;padding:2px 8px;border-radius:5px;
+    background:color-mix(in srgb,var(--gold) 12%,transparent);
+    border:1px solid color-mix(in srgb,var(--gold) 35%,transparent);
+    color:var(--gold);font-size:10.5px;font-weight:500;animation:pop-in .3s cubic-bezier(.2,.8,.2,1) both}
+  @keyframes pop-in{from{opacity:0;transform:scale(.7)}to{opacity:1;transform:scale(1)}}
+
+  /* Streaming caret follows the last text node */
+  .streaming{display:inline}
+  .streaming::after{content:"";display:inline-block;width:6px;height:11px;background:var(--agent);
+    margin-left:1px;vertical-align:-1px;animation:caret-blink 1.05s steps(1) infinite}
+  @keyframes caret-blink{50%{opacity:0}}
+
   /* ─── Sprint 1 inc 3 : slash palette + @-picker ──────────────────── */
   .palette{position:fixed;inset:0;align-items:flex-start;justify-content:center;
     background:color-mix(in srgb,var(--bg) 60%,transparent);backdrop-filter:blur(6px);
@@ -1361,7 +1411,83 @@ function connect(){
 }
 connect();
 
+// ─── Sprint 1 inc 6 : typed renderers (tool / diff / compact / stream) ──
+const TOOL_CARDS=new Map(); // tool_use_id → <details>
+function openToolCard(ev){
+  const id=ev.id||ev.tool_use_id||ev.run||cryptoUid();
+  if(TOOL_CARDS.has(id))return;
+  const d=document.createElement('details');d.className='tool-card';d.open=false;
+  const argsStr=ev.args?(typeof ev.args==='string'?ev.args:JSON.stringify(ev.args,null,2)):'';
+  d.innerHTML='<summary><span class="chev">▸</span><span class="g">⚒</span><span class="nm">'+esc(ev.name||'tool')+'</span><span class="ok" data-status>running…</span></summary>'+
+    (argsStr?'<div class="det"><div class="lbl">arguments</div><code>'+esc(argsStr)+'</code></div>':'');
+  term.appendChild(d);TOOL_CARDS.set(id,d);
+  term.scrollTop=term.scrollHeight;
+}
+function closeToolCard(ev){
+  const id=ev.id||ev.tool_use_id||ev.run||'';
+  let d=TOOL_CARDS.get(id);
+  // Fallback: take the most recently appended tool-card if id missing.
+  if(!d){const cards=term.querySelectorAll('.tool-card');d=cards[cards.length-1];}
+  if(!d)return;
+  const st=d.querySelector('[data-status]');
+  if(st){st.textContent=(ev.is_error||ev.error)?'✗ error':'✓ done';st.style.color=(ev.is_error||ev.error)?'var(--rem)':'var(--add)';}
+  const out=(ev.output!==undefined)?ev.output:(ev.text||'');
+  if(out){
+    const det=d.querySelector('.det')||(()=>{const x=document.createElement('div');x.className='det';d.appendChild(x);return x;})();
+    const outStr=typeof out==='string'?out:JSON.stringify(out,null,2);
+    const truncated=outStr.length>1200?outStr.slice(0,1200)+'\n… ['+ (outStr.length-1200) +' more chars]':outStr;
+    det.insertAdjacentHTML('beforeend','<div class="lbl" style="margin-top:8px">result</div><code>'+esc(truncated)+'</code>');
+  }
+  TOOL_CARDS.delete(id);
+}
+function renderDiffCard(ev){
+  const path=ev.file||ev.path||'<unknown>';
+  const patch=ev.patch||ev.diff||'';
+  const applied=(ev.type==='DiffApplied');
+  // Count +/- lines from the patch.
+  let pl=0,mn=0;patch.split(/\r?\n/).forEach(l=>{if(/^\+[^+]/.test(l)||l.startsWith('+ '))pl++;else if(/^-[^-]/.test(l)||l.startsWith('- '))mn++;});
+  let lineNum=0;const dl=patch.split(/\r?\n/).map(l=>{
+    if(/^@@/.test(l))return '<span class="dl ctx" style="color:var(--dimmer)">'+esc(l)+'</span>';
+    let kls='ctx';
+    if(/^\+/.test(l)){kls='pls';lineNum++;}
+    else if(/^-/.test(l)){kls='mns';}
+    else if(l.length){lineNum++;}
+    return '<span class="dl '+kls+'"><span class="num">'+(kls==='mns'?'':lineNum)+'</span>'+esc(l)+'</span>';
+  }).join('\n');
+  const card=document.createElement('div');card.className='diff-card';
+  card.innerHTML='<div class="h">◇ <span class="p">'+esc(path)+'</span><span class="m"><span class="pl">+'+pl+'</span> <span class="mn">−'+mn+'</span> · '+(applied?'<span style="color:var(--add)">applied</span>':'proposed')+'</span></div><pre>'+dl+'</pre>';
+  term.appendChild(card);
+  term.scrollTop=term.scrollHeight;
+  if(applied)chirp(1500,.06);
+}
+function renderCompactBanner(ev){
+  const before=ev.before_chars||0,after=ev.after_chars||0;
+  const path=ev.handoff_path||'';
+  const banner=document.createElement('div');banner.className='compact-banner';
+  banner.innerHTML='<span class="g">⟳</span><span>context compacted · <b>'+before.toLocaleString('fr-FR').replace(/,/g,' ')+' → '+after.toLocaleString('fr-FR').replace(/,/g,' ')+' chars</b> · handoff written</span>'+
+    (path?'<a href="#" title="'+escAttr(path)+'">'+esc(path.split(/[/\\\\]/).pop()||'handoff')+' →</a>':'');
+  term.appendChild(banner);term.scrollTop=term.scrollHeight;
+  chirp(1200,.07);setTimeout(()=>chirp(800,.06),100);
+}
+let STREAM_BUF=null;
+function streamDelta(text){
+  if(!STREAM_BUF||!STREAM_BUF.isConnected){
+    STREAM_BUF=document.createElement('div');STREAM_BUF.className='ln streaming-line';
+    STREAM_BUF.innerHTML='<span class="cmd streaming"></span>';
+    term.appendChild(STREAM_BUF);
+  }
+  const tgt=STREAM_BUF.querySelector('.streaming');
+  if(tgt){tgt.textContent+=text;term.scrollTop=term.scrollHeight;}
+}
+function cryptoUid(){return Math.random().toString(36).slice(2,10)}
+
 function handleEvent(ev){
+  // End the streaming line as soon as a non-delta event arrives.
+  if(STREAM_BUF&&ev.type!=='ThinkingDelta'){
+    const s=STREAM_BUF.querySelector('.streaming');if(s)s.classList.remove('streaming');
+    STREAM_BUF=null;
+  }
+
   switch(ev.type){
     case 'RunStarted':line(`<span class="acc">▸ started:</span> <span class="cmd">analyse de la requête</span>`);resetRunMetrics();resetSwarm();setSwarm('planner','thinking','classifying request and selecting route');ensureTokenMeter();break;
     case 'RouteSelected':{
@@ -1377,8 +1503,12 @@ function handleEvent(ev){
       if(ev.role==='router'){line(`<span class="muted">○ routing · <span class="planner">${esc(ev.text)}</span></span>`)}
       else{line(`<span class="muted">${esc(ev.role)}:</span> <span class="cmd">${esc(ev.text)}</span>`)}
       break;
-    case 'ThinkingDelta':line(`<span class="cmd">${esc(ev.text)}</span>`);break;
-    case 'ToolUseProposed':setSwarm('coder','working','using tool · '+ev.name);line(`<span class="spin-star">✦</span> <span class="verb">Soaring</span> <span class="muted">tool · <span style="color:var(--steel)">${esc(ev.name)}</span></span>`);break;
+    case 'ThinkingDelta':streamDelta(ev.text);break;
+    case 'ToolUseProposed':setSwarm('coder','working','using tool · '+ev.name);openToolCard(ev);break;
+    case 'ToolUseStarted':openToolCard(ev);break;
+    case 'ToolOutput':closeToolCard(ev);break;
+    case 'DiffProposed':case 'DiffApplied':renderDiffCard(ev);break;
+    case 'Compacted':renderCompactBanner(ev);break;
     case 'ApprovalRequested':
       line(`<span class="warn">◌ approval required · ${esc(ev.summary)}</span>`);
       line(`<span class="approval-actions" data-approval="${escAttr(ev.id)}"><button class="approve" onclick="resolveApproval('${escAttr(ev.id)}','approve',this)">approve</button><button class="deny" onclick="resolveApproval('${escAttr(ev.id)}','deny',this)">deny</button></span>`);
@@ -1387,7 +1517,7 @@ function handleEvent(ev){
     case 'AgentSpawned':setSwarm(ev.role,'working',`model ${ev.model} online`);line(`<span class="${roleCls(ev.role)}">◆ ${esc(ev.role)} spawned (${esc(ev.model)})</span>`);break;
     case 'AgentStatus':setSwarm(ev.role,ev.status,ev.note);line(`<span class="${roleCls(ev.role)}">${icon(ev.status)} ${esc(ev.role)} — ${esc(ev.note)}${ev.role==='coder'&&(ev.status==='Working'||ev.status==='Thinking')?'<span class="caret"></span>':''}</span>`);break;
     case 'CheckpointCreated':line(`<span class="acc">● checkpoint:</span> <span class="muted">${esc(ev.label)}</span>`);chirp(1400,.07);break;
-    case 'SkillLearned':line(`<span class="coder learn-toast">✦ skill learned · <b>${esc(ev.name)}</b></span>`);chirp(1100,.05);setTimeout(()=>chirp(1700,.07),80);break;
+    case 'SkillLearned':line(`<span class="skill-pop">✦ skill learned · ${esc(ev.name)}</span>`);chirp(1100,.05);setTimeout(()=>chirp(1700,.07),80);break;
     case 'CostUpdate':setCost(ev.usd);break;
     case 'TokenUsageEstimated':addTokEstimate(ev.input,ev.output);break;
     case 'TokenUsage':addTokActual(ev.input,ev.output);break;

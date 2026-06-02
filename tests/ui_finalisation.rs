@@ -188,6 +188,45 @@ fn console_html_has_slash_palette_and_agent_picker() {
 }
 
 #[test]
+fn console_html_has_typed_event_renderers() {
+    let html =
+        std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");
+    // Sprint 1 inc 6: every Event variant of v0.2.0 that the mockup
+    // promises has a styled renderer must actually have one in the
+    // shipping console.
+    for needle in [
+        ".tool-card",
+        ".diff-card",
+        ".compact-banner",
+        ".skill-pop",
+        ".streaming::after",
+    ] {
+        assert!(
+            html.contains(needle),
+            "console.html must define the `{}` renderer block",
+            needle
+        );
+    }
+    // And the JS dispatch must route the Event types into those renderers.
+    for case in [
+        "case 'ToolUseProposed'",
+        "case 'ToolOutput'",
+        "case 'DiffProposed'",
+        "case 'Compacted'",
+    ] {
+        assert!(
+            html.contains(case),
+            "handleEvent() must wire `{}` into the new renderers",
+            case
+        );
+    }
+    assert!(
+        html.contains("renderDiffCard") && html.contains("renderCompactBanner"),
+        "diff + compact renderers must be implemented"
+    );
+}
+
+#[test]
 fn classify_agent_color_falls_back_to_steel() {
     use sparrow::console::classify_agent_color;
     assert_eq!(classify_agent_color("blue"), "planner");
