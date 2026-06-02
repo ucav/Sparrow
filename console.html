@@ -66,27 +66,48 @@
   .tok.up{color:var(--brand)}
   .pill{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:10.5px;font-weight:600;letter-spacing:.5px;transition:.3s}
   .pill .led{width:6px;height:6px;border-radius:50%}
-  .swarm-cockpit{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;border-bottom:1px solid var(--line);
-    background:linear-gradient(180deg,#17120d,#120f0b);font-size:12px}
-  .lane{display:grid;grid-template-columns:minmax(78px,96px) minmax(70px,84px) minmax(0,1fr);align-items:center;gap:9px;padding:9px clamp(14px,1.5vw,22px);border-right:1px solid var(--line);
-    min-width:0;min-height:40px;animation:lanein .45s ease both}
-  .lane:last-child{border-right:none}
-  .lane .who{font-weight:700;letter-spacing:.4px}
-  .lane.planner .who{color:var(--planner)}.lane.coder .who{color:var(--agent)}.lane.verifier .who{color:var(--verifier)}
-  .lane .st{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--dim);white-space:nowrap}
-  .lane .msg{color:var(--dim);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.35}
+  /* Swarm row — flex-wrap, dynamic, no truncation (Sprint 1 deliverable 1bis).
+     Replaces the rigid 3-column grid: triade fixe + agents installés s'insèrent
+     entre la triade et `#swarm-more`. Messages multi-lignes, hover tooltips. */
+  .swarm-cockpit{display:flex;flex-wrap:wrap;gap:0;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,#17120d,#120f0b);font-size:12px;
+    max-height:200px;overflow-y:auto}
+  .swarm-cockpit::-webkit-scrollbar{width:5px}
+  .swarm-cockpit::-webkit-scrollbar-thumb{background:#2c2419;border-radius:6px}
+  .lane{flex:1 1 220px;min-width:220px;
+    display:flex;flex-direction:column;gap:4px;
+    padding:8px clamp(13px,1.4vw,20px);
+    border-right:1px solid var(--line);
+    border-bottom:1px solid color-mix(in srgb,var(--line) 60%, transparent);
+    animation:lanein .35s ease both}
+  .lane .lane-head{display:flex;align-items:center;gap:8px}
+  .lane .who{font-weight:700;letter-spacing:.4px;font-size:11px}
+  .lane.planner .who{color:var(--planner)}
+  .lane.coder .who{color:var(--agent)}
+  .lane.verifier .who{color:var(--verifier)}
+  .lane.gold .who{color:var(--gold)}
+  .lane.coral .who{color:var(--coral)}
+  .lane.steel .who{color:var(--steel)}
+  .lane .st{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--dim);margin-left:auto;white-space:nowrap}
+  /* No truncation — messages wrap freely */
+  .lane .msg{color:var(--dim);font-size:11px;line-height:1.45;
+    overflow-wrap:anywhere;word-break:break-word;white-space:normal}
   .lane .msg b{color:var(--fg);font-weight:500}
   .lane.working .st{color:var(--agent)}.lane.done .st{color:var(--add)}.lane.idle .st{color:var(--dimmer)}.lane.error .st{color:var(--rem)}
+  .lane.idle-card{opacity:.65}
   .lane .led-mini{width:7px;height:7px;border-radius:50%;background:currentColor;box-shadow:0 0 9px currentColor}
   .lane.working .led-mini{animation:pulse 1.3s ease-in-out infinite}
   @keyframes lanein{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+  .lane-more{flex:0 0 auto;align-self:stretch;display:flex;align-items:center;justify-content:center;
+    padding:0 14px;font-size:10.5px;color:var(--brand);cursor:pointer;
+    background:color-mix(in srgb,var(--brand) 7%, transparent);
+    border-left:1px solid var(--line-hot);font-family:inherit}
+  .lane-more:hover{background:color-mix(in srgb,var(--brand) 14%, transparent)}
   @media(max-width:820px){
     .cockpit{grid-template-columns:1fr 1fr}
     .cmark{grid-column:1/-1;border-right:none;border-bottom:1px solid var(--line)}
     .route-stat{grid-column:1/-1;border-right:none;border-bottom:1px solid var(--line)}
-    .swarm-cockpit{grid-template-columns:1fr}
-    .lane{border-right:none;border-bottom:1px solid var(--line)}
-    .lane:last-child{border-bottom:none}
+    .lane{flex:1 1 100%;border-right:none;border-bottom:1px solid var(--line)}
   }
 
   #term{min-height:0;overflow-y:auto;padding:18px clamp(18px,2vw,34px) 22px;font-size:13px;line-height:1.62;scroll-behavior:smooth}
@@ -341,22 +362,24 @@
     <div class="stat"><span class="k">autonomy</span><span class="pill" id="auto"><span class="led"></span><span id="autotxt">—</span></span></div>
   </div>
 
-  <div class="swarm-cockpit" aria-label="Sparrow swarm cockpit">
-    <div class="lane planner idle" id="swarm-planner">
-      <span class="who">planner</span>
-      <span class="st"><span class="led-mini"></span><span data-role-state>idle</span></span>
+  <div class="swarm-cockpit" id="swarm-cockpit" aria-label="Sparrow swarm cockpit">
+    <!-- Triade fixe planner/coder/verifier (toujours rendue). Les agents
+         installés supplémentaires (FsAgentStore::list) sont insérés
+         dynamiquement entre `swarm-extras-anchor` et `swarm-more`. -->
+    <div class="lane planner idle" id="swarm-planner" title="planner — orchestrator triad">
+      <div class="lane-head"><span class="who">planner</span><span class="st"><span class="led-mini"></span><span data-role-state>idle</span></span></div>
       <span class="msg" data-role-msg>waiting for task decomposition</span>
     </div>
-    <div class="lane coder idle" id="swarm-coder">
-      <span class="who">coder</span>
-      <span class="st"><span class="led-mini"></span><span data-role-state>idle</span></span>
+    <div class="lane coder idle" id="swarm-coder" title="coder — orchestrator triad">
+      <div class="lane-head"><span class="who">coder</span><span class="st"><span class="led-mini"></span><span data-role-state>idle</span></span></div>
       <span class="msg" data-role-msg>ready to edit with checkpoints</span>
     </div>
-    <div class="lane verifier idle" id="swarm-verifier">
-      <span class="who">verifier</span>
-      <span class="st"><span class="led-mini"></span><span data-role-state>idle</span></span>
+    <div class="lane verifier idle" id="swarm-verifier" title="verifier — orchestrator triad">
+      <div class="lane-head"><span class="who">verifier</span><span class="st"><span class="led-mini"></span><span data-role-state>idle</span></span></div>
       <span class="msg" data-role-msg>standing by for adversarial review</span>
     </div>
+    <span id="swarm-extras-anchor" hidden></span>
+    <div class="lane-more" id="swarm-more" hidden></div>
   </div>
 
   <div id="term"></div>
@@ -561,11 +584,65 @@ function resetSwarm(){
   setSwarm('verifier','idle','standing by for adversarial review');
 }
 
+// ─── Dynamic swarm row (Sprint 1 / STATUS2.md item 1bis) ─────────────
+// Fetches every installed agent from `GET /agents` and renders any agent
+// outside the orchestrator triad as an extra lane. Triade always rendered
+// first; extras inserted between #swarm-extras-anchor and #swarm-more.
+const SWARM_TRIAD=new Set(['planner','coder','verifier']);
+const SWARM_MAX_VISIBLE=8;
+async function loadSwarmAgents(){
+  try{
+    const r=await fetch('/agents');
+    if(!r.ok)return;
+    const j=await r.json();
+    renderSwarmExtras(Array.isArray(j.agents)?j.agents:[]);
+  }catch(_){/* silent — endpoint is optional */}
+}
+function renderSwarmExtras(agents){
+  const anchor=document.getElementById('swarm-extras-anchor');
+  const more=document.getElementById('swarm-more');
+  if(!anchor||!more)return;
+  // Remove previously injected lanes (anything between anchor and more
+  // whose id starts with `swarm-extra-`)
+  let n=anchor.nextElementSibling;
+  while(n&&n!==more){const next=n.nextElementSibling;if(n.id&&n.id.startsWith('swarm-extra-'))n.remove();n=next;}
+  const extras=agents.filter(a=>!SWARM_TRIAD.has(a.name.toLowerCase())&&!SWARM_TRIAD.has((a.role||'').toLowerCase()));
+  const visible=extras.slice(0,SWARM_MAX_VISIBLE);
+  const overflow=extras.length-visible.length;
+  visible.forEach(a=>{
+    const lane=document.createElement('div');
+    const colorKey=a.color_key||'steel';
+    lane.className=`lane ${colorKey} ${a.status==='working'?'working':a.status==='done'?'done':a.status==='error'?'error':'idle idle-card'}`;
+    lane.id=`swarm-extra-${cssSlug(a.name)}`;
+    lane.title=`${a.name} — ${a.role||'agent'}${a.description?` · ${a.description}`:''}`;
+    const head=document.createElement('div');head.className='lane-head';
+    const who=document.createElement('span');who.className='who';who.textContent=a.name;
+    const st=document.createElement('span');st.className='st';
+    const led=document.createElement('span');led.className='led-mini';
+    const txt=document.createElement('span');txt.setAttribute('data-role-state','');txt.textContent=a.status||'idle';
+    st.append(led,txt);
+    head.append(who,st);
+    const msg=document.createElement('span');msg.className='msg';msg.setAttribute('data-role-msg','');
+    msg.textContent=(a.msg&&a.msg.length)?a.msg:(a.description||'ready');
+    lane.append(head,msg);
+    anchor.parentNode.insertBefore(lane,more);
+  });
+  if(overflow>0){
+    more.hidden=false;
+    more.textContent=`+${overflow} agent${overflow>1?'s':''}…`;
+    more.title=extras.slice(SWARM_MAX_VISIBLE).map(a=>a.name).join(', ');
+  }else{
+    more.hidden=true;
+    more.textContent='';
+  }
+}
+function cssSlug(s){return String(s).toLowerCase().replace(/[^a-z0-9-]+/g,'-').replace(/^-+|-+$/g,'')||'agent';}
+
 // ─── WebSocket ─────────────────────────────────────────────────────
 let ws;
 function connect(){
   ws=new WebSocket(`ws://${location.host}/ws`);
-  ws.onopen=()=>{$('conn').textContent='live';$('status').className='status on';$('status').textContent='● live';loadConfig()};
+  ws.onopen=()=>{$('conn').textContent='live';$('status').className='status on';$('status').textContent='● live';loadConfig();loadSwarmAgents()};
   ws.onclose=()=>{$('conn').textContent='reconnecting…';$('status').className='status off';$('status').textContent='● disconnected';setTimeout(connect,2000)};
   ws.onmessage=(e)=>{try{handleEvent(JSON.parse(e.data))}catch(err){}};
 }
