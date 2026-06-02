@@ -712,9 +712,11 @@ impl Engine {
             ),
         });
 
+        let primary_ctx = chain.first().map(|b| b.caps().context_window).unwrap_or(128_000);
         let _ = event_tx.send(Event::RouteSelected {
             run: run_id.clone(),
             chain: chain_ids.clone(),
+            context_window: primary_ctx,
         });
 
         if chain.is_empty() {
