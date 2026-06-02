@@ -2,6 +2,56 @@
 
 All notable changes to Sparrow will be documented in this file.
 
+## [Unreleased] — post-0.3.0
+
+### Added — Rust
+- `GET /models` endpoint: returns the full provider registry (35 providers,
+  60+ models) with `context_window`, `cost_in`, `cost_out`, and `recommended`
+  fields — used by the WebView model picker and provider health dots.
+- `RunRequest.model_override`: optional field; when set the backend injects
+  `__model:X__` into the task string.
+- Engine parses and strips `__model:X__` prefix; filters the routing chain to
+  the requested brain ID (falls back to full chain if not found).
+- `list_agents` scans three directories (user config, `agents/`, `.sparrow/agents/`)
+  and deduplicates by name — the 5 repo soul files appear in the Crew panel
+  without any install step.
+- `RouteSelected` event now carries `context_window: u64` from the primary
+  brain's `caps()`, fixing the hardcoded 32k display in the WebView.
+
+### Added — WebView (`console.html`)
+- **Model picker dropdown**: the `⬡ auto` pill expands to a full popover
+  grouped by provider; each model shows context window and cost; provider rows
+  show a green/dim LED based on `has_credential` from `/config`; selection
+  stored in `localStorage` and injected into `POST /run`.
+- **Side diff viewer**: `.diff-panel` slides in from the right on every
+  `DiffApplied` event; shows file path, `+N −M` stats, and colour-coded diff
+  lines; `D` key and `✕` button toggle it; `Esc` closes.
+- **Run summary card**: replaces the bare `✓ done` log line with a structured
+  card showing cost, token count, files edited, checkpoint count, and duration.
+- **Dynamic context bar**: `contextLimit` updates from `RouteSelected.context_window`
+  and shows the real model limit (200k for Claude, 131k for NVIDIA/Llama4, etc.).
+- **Provider health dots**: model picker dropdown renders a green LED next to
+  providers that have a credential configured; dim dot for unconfigured.
+- **Crew panel live status**: `AgentSpawned` and `AgentStatus` events update
+  each agent row's status pill and note in real time via `updateCrewLiveStatus()`.
+- **Checkpoint scrubber**: `addCheckpointNode()` stores checkpoint IDs; each
+  node is clickable — confirms and issues `/rewind <id>` via the composer.
+- **Dynamic home screen**: `bootIntro()` is now async; fetches `/models` and
+  `/config` at startup to show real provider counts and active-provider count.
+- **Hero stats**: `hero-active` shows count of providers with credentials;
+  `hydrateHero()` caches configured provider IDs for the model picker dots.
+- **Keyboard shortcuts**: `D` toggles diff panel; `P` opens model picker;
+  both disabled when focus is inside an input/textarea.
+- **Escape**: closes diff panel and model picker dropdown in addition to
+  existing modals (approval, config, palette, history draft restore).
+
+### Added — Agents / Docs
+- Agent SOUL files enriched: `description`, `color`, `max_turns` added to all
+  five repo agents (planner, coder, verifier, debugger, researcher); prompts
+  tightened with step-by-step rules and better model assignments.
+- `docs/keyboard.md`: updated with new shortcuts (`D`, `P`, `Esc` additions)
+  and a WebView panels reference table with rail icons and descriptions.
+
 ## [0.3.0] — 2026-06-02
 
 WebView Cockpit v0.3.0 is shipped. The console now matches the presentation
