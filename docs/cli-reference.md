@@ -136,6 +136,15 @@ files with frontmatter fields such as `name`, `description`, `role`, `prompt`,
 | `sparrow tools enable <tool>` | Alpha | Remove a tool deny rule and add an allow rule |
 | `sparrow tools disable <tool>` | Alpha | Remove a tool allow rule and add a deny rule |
 
+## Security
+
+| Command | Status | Description |
+|---|---|---|
+| `sparrow security audit` | Alpha | Run a local security audit of permissions/gateway/tools/plugins/hooks/secrets/sandbox and print a scored summary |
+| `sparrow security audit --json` | Alpha | Same audit emitted as stable JSON for tooling |
+
+See [`docs/security.md`](security.md) for the full check matrix and scoring rules.
+
 ## MCP
 
 | Command | Status | Description |
