@@ -8,6 +8,7 @@ use crate::event::{Block, RiskLevel};
 
 pub mod browser_sandbox;
 pub mod builder_tools;
+pub mod code_nav;
 pub mod edit;
 pub mod exec;
 pub mod extras;
