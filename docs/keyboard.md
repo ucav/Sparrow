@@ -21,6 +21,15 @@
 | Shortcut | Action |
 |---|---|
 | `Enter` | Submit input |
+| `Shift+Enter` | Insert a newline in the composer |
+| `Up` / `Down` | Walk through command history |
+| `Cmd/Ctrl+K` | Open the slash command palette |
+| `Shift+Enter` in palette | Insert selected command and submit |
+| `@` after whitespace | Open the inline agent picker |
+| `Esc` | Close picker, palette, config, approval modal, or restore history draft |
+| `Cmd/Ctrl+Shift+L` | Toggle Captain / Paper WebView theme |
+| `Cmd/Ctrl+M` | Mute / unmute WebView chirps |
+| Drag files onto page | Attach files to the current prompt |
 | `/help` | List built-in and project slash commands |
 | `/plan <task>` | Render a read-only plan |
 | `/permissions` | Open the permissions panel |
