@@ -1111,7 +1111,7 @@ function injectHero(){
       '<div class="hi">Welcome back, <b>'+escHtml(navigator.userAgent.includes('Windows')?'Captain':'friend')+'</b></div>'+
       '<div class="tag">one cli · grows with you</div>'+
       '<div class="meta">'+
-        '<span><span class="ok-dot">●</span> router · <b id="hero-providers">…</b> providers</span>'+
+        '<span><span class="ok-dot">●</span> router · <b id="hero-providers">…</b> providers · <b id="hero-active" style="color:var(--add)">…</b> active</span>'+
         '<span><span class="ok-dot">●</span> skills · <b id="hero-skills">…</b></span>'+
         '<span><span class="ok-dot">●</span> facts · <b id="hero-facts">…</b></span>'+
         '<span><span class="ok-dot">●</span> autonomy · <b id="hero-auto">…</b></span>'+
@@ -1124,10 +1124,15 @@ async function hydrateHero(){
     const [cfgR,memR,permR]=await Promise.all([fetch('/config'),fetch('/memory'),fetch('/permissions')]);
     const cfg=await cfgR.json(),mem=await memR.json(),perm=await permR.json();
     const setIf=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=val;};
-    setIf('hero-providers',Array.isArray(cfg.providers)?cfg.providers.length:'—');
+    const allProviders=Array.isArray(cfg.providers)?cfg.providers:[];
+    const activeProviders=allProviders.filter(p=>p.has_credential||p.configured);
+    setIf('hero-providers',allProviders.length||'—');
+    setIf('hero-active',activeProviders.length||'0');
     setIf('hero-facts',(mem.stats&&mem.stats.facts!==undefined)?mem.stats.facts:(mem.facts||[]).length);
     setIf('hero-skills',(cfg.skills_count!==undefined)?cfg.skills_count:'—');
     setIf('hero-auto',(perm.permissions&&perm.permissions.mode)||'—');
+    // Cache configured provider ids for model picker health dots
+    window._configuredProviders=new Set(activeProviders.map(p=>p.name||p.id));
     // Update home screen path if visible
     const hp=document.getElementById('homePath');
     if(hp)hp.textContent=cfg.workdir||location.host;
@@ -1524,12 +1529,14 @@ async function toggleModelPicker(e){
   const list=document.getElementById('modelPickerList');
   const providers=(data.providers||[]).filter(p=>p.models&&p.models.length);
   if(!providers.length){list.innerHTML='<div style="padding:12px 14px;color:var(--dimmer);font-size:11px">no providers configured</div>';return;}
-  list.innerHTML=providers.map(p=>`
-    <div class="mp-section">
-      <div class="mp-provider">${escHtml(p.label)}</div>
+  const configured=window._configuredProviders||new Set();
+  list.innerHTML=providers.map(p=>{
+    const hasKey=configured.has(p.id);
+    const dot=`<span style="width:6px;height:6px;border-radius:50%;flex:0 0 auto;background:${hasKey?'var(--add)':'var(--dimmer)'};box-shadow:${hasKey?'0 0 5px var(--add)':''}" title="${hasKey?'configured':'no API key'}"></span>`;
+    return `<div class="mp-section">
+      <div class="mp-provider" style="display:flex;align-items:center;gap:6px">${dot}${escHtml(p.label)}</div>
       ${p.models.map(m=>{
-        const id=p.id+':'+m.name;
-        const sel=selectedModel===id;
+        const id=p.id+':'+m.name;const sel=selectedModel===id;
         return `<div class="mp-item${sel?' selected':''}" onclick="setModelOverride('${escHtml(id)}','${escHtml(fmtCtxShort(m.context_window))}')">
           <span class="mp-name">${escHtml(m.label||m.name)}</span>
           <span class="mp-ctx">${escHtml(fmtCtxShort(m.context_window))}</span>
@@ -1537,7 +1544,8 @@ async function toggleModelPicker(e){
           ${m.recommended?'<span class="mp-rec">★</span>':''}
         </div>`;
       }).join('')}
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 function setModelOverride(id,ctxLabel){
   selectedModel=id;
@@ -1615,9 +1623,20 @@ document.getElementById('paletteResults').addEventListener('click',e=>{
   PALETTE_SEL=parseInt(row.dataset.i,10);paletteAccept(e.shiftKey);
 });
 document.getElementById('palette').addEventListener('click',e=>{if(e.target.id==='palette')paletteClose()});
-// Cmd/Ctrl+K opens the palette from anywhere.
+// Global shortcuts — only when not typing in an input/textarea.
 document.addEventListener('keydown',e=>{
-  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();paletteOpen();}
+  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();paletteOpen();return;}
+  // D — toggle diff side panel
+  if(e.key.toLowerCase()==='d'&&!e.metaKey&&!e.ctrlKey&&!e.altKey){
+    const dp=document.getElementById('diffPanel');
+    if(dp){dp.classList.toggle('open');return;}
+  }
+  // P — open model picker
+  if(e.key.toLowerCase()==='p'&&!e.metaKey&&!e.ctrlKey&&!e.altKey){
+    const btn=document.getElementById('modelPickerBtn');
+    if(btn)btn.click();
+  }
 });
 
 // ─── Sprint 1 inc 3 : inline @<name> picker on the task input ────────
@@ -1802,15 +1821,29 @@ function renderCompactBanner(ev){
   chirp(1200,.07);setTimeout(()=>chirp(800,.06),100);
 }
 let CHECKPOINT_TIMELINE=null;
-function addCheckpointNode(label){
+let runCheckpointIds=[];
+function addCheckpointNode(label,id){
   if(!CHECKPOINT_TIMELINE||!CHECKPOINT_TIMELINE.isConnected){
     CHECKPOINT_TIMELINE=document.createElement('div');
     CHECKPOINT_TIMELINE.className='checkpoint-timeline';
+    // Add rewind hint text
+    const hint=document.createElement('span');hint.style.cssText='font-size:9px;color:var(--dimmer);letter-spacing:.7px;text-transform:uppercase;margin-right:4px';hint.textContent='checkpoints';
+    CHECKPOINT_TIMELINE.prepend(hint);
     term.appendChild(CHECKPOINT_TIMELINE);
   }
+  if(id)runCheckpointIds.push(id);
   const node=document.createElement('span');
   node.className='checkpoint-node';
-  node.title=label||'checkpoint';
+  node.title=(label||'checkpoint')+(id?` · click to rewind (${id.slice(0,8)}…)`:'');
+  node.style.cursor=id?'pointer':'default';
+  if(id){
+    node.addEventListener('click',()=>{
+      if(confirm(`Rewind to checkpoint: ${label||id}?`)){
+        const input=document.getElementById('taskInput');
+        if(input){input.value=`/rewind ${id}`;document.getElementById('runBtn')?.click();}
+      }
+    });
+  }
   CHECKPOINT_TIMELINE.appendChild(node);
   term.scrollTop=term.scrollHeight;
 }
@@ -1845,7 +1878,7 @@ function handleEvent(ev){
   }
 
   switch(ev.type){
-    case 'RunStarted':line(`<span class="acc">▸ started:</span> <span class="cmd">analyse de la requête</span>`);resetRunMetrics();resetSwarm();runStartMs=Date.now();runDiffsApplied=0;runCheckpoints=0;setSwarm('planner','thinking','classifying request and selecting route');ensureTokenMeter();break;
+    case 'RunStarted':line(`<span class="acc">▸ started:</span> <span class="cmd">analyse de la requête</span>`);resetRunMetrics();resetSwarm();runStartMs=Date.now();runDiffsApplied=0;runCheckpoints=0;runCheckpointIds=[];CHECKPOINT_TIMELINE=null;setSwarm('planner','thinking','classifying request and selecting route');ensureTokenMeter();break;
     case 'RouteSelected':{
       const chain=summarizeChain(ev.chain);
       const compact=compactChain(ev.chain);
@@ -1876,7 +1909,7 @@ function handleEvent(ev){
     case 'ApprovalResolved':line(`<span class="muted">↳ approval: <span class="planner">${esc(ev.decision)}</span></span>`);break;
     case 'AgentSpawned':setSwarm(ev.role,'working',`model ${ev.model} online`);line(`<span class="${roleCls(ev.role)}">◆ ${esc(ev.role)} spawned (${esc(ev.model)})</span>`);updateCrewLiveStatus(ev.role||ev.name,'working',`spawned · ${ev.model}`);break;
     case 'AgentStatus':setSwarm(ev.role,ev.status,ev.note);line(`<span class="${roleCls(ev.role)}">${icon(ev.status)} ${esc(ev.role)} — ${esc(ev.note)}${ev.role==='coder'&&(ev.status==='Working'||ev.status==='Thinking')?'<span class="caret"></span>':''}</span>`);updateCrewLiveStatus(ev.role||ev.name,ev.status,ev.note);break;
-    case 'CheckpointCreated':line(`<span class="acc">● checkpoint:</span> <span class="muted">${esc(ev.label)}</span>`);addCheckpointNode(ev.label);runCheckpoints++;chirp(1400,.07);break;
+    case 'CheckpointCreated':line(`<span class="acc">● checkpoint:</span> <span class="muted">${esc(ev.label)}</span>`);addCheckpointNode(ev.label,ev.id);runCheckpoints++;chirp(1400,.07);break;
     case 'SkillLearned':line(`<span class="skill-pop">✦ skill learned · ${esc(ev.name)}</span>`);chirp(1100,.05);setTimeout(()=>chirp(1700,.07),80);break;
     case 'CostUpdate':setCost(ev.usd);break;
     case 'TokenUsageEstimated':addTokEstimate(ev.input,ev.output);break;

@@ -26,7 +26,9 @@
 | `Cmd/Ctrl+K` | Open the slash command palette |
 | `Shift+Enter` in palette | Insert selected command and submit |
 | `@` after whitespace | Open the inline agent picker |
-| `Esc` | Close picker, palette, config, approval modal, or restore history draft |
+| `Esc` | Close picker, palette, diff panel, model dropdown, config, approval modal, or restore history draft |
+| `D` (outside input) | Toggle the diff side panel |
+| `P` (outside input) | Open the model picker dropdown |
 | `Cmd/Ctrl+Shift+L` | Toggle Captain / Paper WebView theme |
 | `Cmd/Ctrl+M` | Mute / unmute WebView chirps |
 | Drag files onto page | Attach files to the current prompt |
@@ -37,6 +39,20 @@
 | `/sessions` | List persisted sessions |
 | `/tools` | Inspect toolset metadata |
 | `/security` | Run a security audit and render findings |
+| `/crew` | Open the persistent agents (Crew) panel |
+
+## WebView panels (rail icons)
+
+| Icon | Panel | Content |
+|---|---|---|
+| `◈` | Crew | Persistent `.agent.md` agents — name, role, live status |
+| `◷` | Sessions | Recent session list with turn count and timestamp |
+| `✦` | Memory | Bounded `MEMORY.md` / `USER.md` facts |
+| `⌗` | Plugins | Installed plugin manifests |
+| `⚒` | Tools | Tool metadata — toolset, risk, mutation, network flags |
+| `◉` | Permissions | Current permission mode and allow/deny lists |
+| `⛨` | Security | Live security audit score and findings |
+| `◇` | Artifacts | Uploaded files and generated artifacts |
 
 ## Themes
 
