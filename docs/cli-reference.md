@@ -36,6 +36,20 @@ All planned Sparrow commands.
 | `sparrow permissions allow-path <path>` | Alpha | Add an allowed path boundary |
 | `sparrow permissions deny-path <path>` | Alpha | Add a denied path boundary |
 
+## Memory
+
+| Command | Status | Description |
+|---|---|---|
+| `sparrow memory list` | Alpha | Show bounded doc usage and stored facts |
+| `sparrow memory add <key> <value>` | Alpha | Add a durable fact after redaction/injection checks |
+| `sparrow memory replace <id> <key> <value>` | Alpha | Replace an existing fact id |
+| `sparrow memory forget <id>` | Alpha | Remove a durable fact |
+| `sparrow memory recall "<query>" --limit <n>` | Alpha | Search durable facts |
+| `sparrow memory consolidate` | Alpha | Distill facts into bounded `MEMORY.md` / `USER.md` docs |
+| `sparrow memory docs` | Alpha | Print stored bounded memory docs |
+| `sparrow memory search "<query>" --limit <n>` | Alpha | Search saved session turns |
+| `sparrow memory scroll <session> --around <n>` | Alpha | Show neighboring session turns around a hit |
+
 ## Slash Commands
 
 | Command | Status | Description |
@@ -43,7 +57,7 @@ All planned Sparrow commands.
 | `/help` | Alpha | List available built-in, project, user, and skill commands |
 | `/plan <task>` | Alpha | Produce a read-only plan before accepting execution |
 | `/permissions` | Alpha | Open the permission workflow; CLI and WebView mode controls are wired |
-| `/memory` | Alpha | Memory workflow placeholder command |
+| `/memory` | Alpha | Memory workflow entrypoint; CLI/WebView memory APIs are wired |
 | `/compact` | Alpha | Context compaction workflow placeholder command |
 | `/model` | Alpha | Model routing workflow placeholder command |
 | `/agents` | Alpha | Agent workflow placeholder command |

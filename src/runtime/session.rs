@@ -14,6 +14,22 @@ pub struct Session {
     pub updated_at: i64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionSearchHit {
+    pub session_id: String,
+    pub turn_index: usize,
+    pub role: String,
+    pub text: String,
+    pub updated_at: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionSlice {
+    pub session_id: String,
+    pub start: usize,
+    pub messages: Vec<crate::provider::Msg>,
+}
+
 pub struct SessionStore {
     conn: Mutex<Connection>,
 }
@@ -29,7 +45,28 @@ impl SessionStore {
                 name TEXT,
                 status TEXT DEFAULT 'active',
                 messages_json TEXT NOT NULL DEFAULT '[]'
-            );",
+            );
+            CREATE TABLE IF NOT EXISTS session_messages (
+                session_id TEXT NOT NULL,
+                turn_index INTEGER NOT NULL,
+                role TEXT NOT NULL,
+                text TEXT NOT NULL,
+                updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                PRIMARY KEY (session_id, turn_index)
+            );
+            CREATE VIRTUAL TABLE IF NOT EXISTS session_messages_fts USING fts5(
+                role, text, content='session_messages', content_rowid='rowid'
+            );
+            CREATE TRIGGER IF NOT EXISTS session_messages_ai AFTER INSERT ON session_messages BEGIN
+                INSERT INTO session_messages_fts(rowid, role, text) VALUES (new.rowid, new.role, new.text);
+            END;
+            CREATE TRIGGER IF NOT EXISTS session_messages_ad AFTER DELETE ON session_messages BEGIN
+                INSERT INTO session_messages_fts(session_messages_fts, rowid, role, text) VALUES ('delete', old.rowid, old.role, old.text);
+            END;
+            CREATE TRIGGER IF NOT EXISTS session_messages_au AFTER UPDATE ON session_messages BEGIN
+                INSERT INTO session_messages_fts(session_messages_fts, rowid, role, text) VALUES ('delete', old.rowid, old.role, old.text);
+                INSERT INTO session_messages_fts(rowid, role, text) VALUES (new.rowid, new.role, new.text);
+            END;",
         )?;
         Ok(Self {
             conn: Mutex::new(conn),
@@ -42,12 +79,29 @@ impl SessionStore {
         messages: &[crate::provider::Msg],
         name: Option<&str>,
     ) -> anyhow::Result<()> {
-        let conn = self.conn.lock().unwrap();
+        let mut conn = self.conn.lock().unwrap();
         let json = serde_json::to_string(messages)?;
-        conn.execute(
+        let tx = conn.transaction()?;
+        tx.execute(
             "INSERT OR REPLACE INTO sessions (id, name, messages_json, updated_at) VALUES (?1, ?2, ?3, unixepoch())",
             params![id, name, json],
         )?;
+        tx.execute(
+            "DELETE FROM session_messages WHERE session_id = ?1",
+            params![id],
+        )?;
+        for (turn_index, msg) in messages.iter().enumerate() {
+            let text = message_text(msg);
+            if text.trim().is_empty() {
+                continue;
+            }
+            tx.execute(
+                "INSERT INTO session_messages (session_id, turn_index, role, text, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, unixepoch())",
+                params![id, turn_index as i64, msg.role, text],
+            )?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -84,10 +138,125 @@ impl SessionStore {
     }
 
     pub fn delete(&self, id: &str) -> anyhow::Result<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute("DELETE FROM sessions WHERE id = ?1", params![id])?;
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM session_messages WHERE session_id = ?1",
+            params![id],
+        )?;
+        tx.execute("DELETE FROM sessions WHERE id = ?1", params![id])?;
+        tx.commit()?;
         Ok(())
     }
+
+    pub fn search(&self, query: &str, limit: usize) -> Vec<SessionSearchHit> {
+        let query = query.trim();
+        if query.is_empty() {
+            return Vec::new();
+        }
+        let conn = self.conn.lock().unwrap();
+        let pattern = query
+            .split_whitespace()
+            .map(|word| format!("{}*", escape_fts_token(word)))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let result = conn.prepare(
+            "SELECT sm.session_id, sm.turn_index, sm.role, sm.text, sm.updated_at
+             FROM session_messages sm
+             INNER JOIN session_messages_fts fts ON sm.rowid = fts.rowid
+             WHERE session_messages_fts MATCH ?1
+             ORDER BY rank LIMIT ?2",
+        );
+        if let Ok(mut stmt) = result {
+            if let Ok(rows) = stmt.query_map(params![pattern, limit as i64], |row| {
+                Ok(SessionSearchHit {
+                    session_id: row.get(0)?,
+                    turn_index: row.get::<_, i64>(1)? as usize,
+                    role: row.get(2)?,
+                    text: row.get(3)?,
+                    updated_at: row.get(4)?,
+                })
+            }) {
+                return rows.filter_map(|row| row.ok()).collect();
+            }
+        }
+
+        let like_pattern = format!("%{}%", query);
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT session_id, turn_index, role, text, updated_at
+             FROM session_messages
+             WHERE text LIKE ?1
+             ORDER BY updated_at DESC LIMIT ?2",
+        ) else {
+            return Vec::new();
+        };
+        let Ok(rows) = stmt.query_map(params![like_pattern, limit as i64], |row| {
+            Ok(SessionSearchHit {
+                session_id: row.get(0)?,
+                turn_index: row.get::<_, i64>(1)? as usize,
+                role: row.get(2)?,
+                text: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        }) else {
+            return Vec::new();
+        };
+        rows.filter_map(|row| row.ok()).collect()
+    }
+
+    pub fn scroll(
+        &self,
+        id: &str,
+        around: usize,
+        before: usize,
+        after: usize,
+    ) -> Option<SessionSlice> {
+        let session = self.load(id)?;
+        let messages: Vec<crate::provider::Msg> =
+            serde_json::from_str(&session.messages_json).ok()?;
+        let start = around.saturating_sub(before);
+        let end = (around + after + 1).min(messages.len());
+        Some(SessionSlice {
+            session_id: id.to_string(),
+            start,
+            messages: messages[start..end].to_vec(),
+        })
+    }
+}
+
+fn message_text(msg: &crate::provider::Msg) -> String {
+    msg.content
+        .iter()
+        .filter_map(block_text)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn block_text(block: &crate::provider::ContentBlock) -> Option<String> {
+    match block {
+        crate::provider::ContentBlock::Text { text } => Some(text.clone()),
+        crate::provider::ContentBlock::ToolUse { name, .. } => Some(name.clone()),
+        crate::provider::ContentBlock::ToolResult { content, .. } => {
+            let text = content
+                .iter()
+                .filter_map(block_text)
+                .collect::<Vec<_>>()
+                .join("\n");
+            if text.trim().is_empty() {
+                None
+            } else {
+                Some(text)
+            }
+        }
+        crate::provider::ContentBlock::Image { .. } => None,
+    }
+}
+
+fn escape_fts_token(token: &str) -> String {
+    token
+        .chars()
+        .filter(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+        .collect()
 }
 
 // ─── Prometheus metrics (Phase 10 Item 29) ─────────────────────────────────────

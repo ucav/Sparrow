@@ -8,6 +8,7 @@ use crate::capabilities::SkillLibrary;
 use crate::config::{Config, ConfigStore, FsConfigStore, ProviderConfig};
 use crate::engine::{ApprovalHandler, ApprovalRequest};
 use crate::event::{Decision, Event};
+use crate::memory::{Memory, MemoryDocKind};
 use crate::plan::ReadOnlyPlan;
 
 // ─── Embedded HTML ─────────────────────────────────────────────────────────────
@@ -32,6 +33,7 @@ pub struct WebViewServer {
     config: Option<Arc<RwLock<Config>>>,
     approvals: Option<Arc<WebApprovalBroker>>,
     skills: Option<Arc<dyn SkillLibrary>>,
+    memory: Option<Arc<dyn Memory>>,
 }
 
 impl WebViewServer {
@@ -42,6 +44,7 @@ impl WebViewServer {
         config: Option<Arc<RwLock<Config>>>,
         approvals: Option<Arc<WebApprovalBroker>>,
         skills: Option<Arc<dyn SkillLibrary>>,
+        memory: Option<Arc<dyn Memory>>,
     ) -> Self {
         Self {
             addr,
@@ -50,6 +53,7 @@ impl WebViewServer {
             config,
             approvals,
             skills,
+            memory,
         }
     }
 
@@ -68,6 +72,7 @@ impl WebViewServer {
             config: self.config.clone(),
             approvals: self.approvals.clone(),
             skills: self.skills.clone(),
+            memory: self.memory.clone(),
         });
 
         let app = Router::new()
@@ -75,6 +80,7 @@ impl WebViewServer {
             .route("/run", post(run_task))
             .route("/plan", post(plan_task))
             .route("/commands", get(get_commands))
+            .route("/memory", get(get_memory))
             .route("/approval", post(resolve_approval))
             .route("/config", get(get_config).post(save_provider))
             .route("/permissions", get(get_permissions).post(save_permissions))
@@ -104,6 +110,7 @@ struct AppState {
     config: Option<Arc<RwLock<Config>>>,
     approvals: Option<Arc<WebApprovalBroker>>,
     skills: Option<Arc<dyn SkillLibrary>>,
+    memory: Option<Arc<dyn Memory>>,
 }
 
 #[derive(Default)]
@@ -210,6 +217,32 @@ struct PermissionsRequest {
     mode: Option<String>,
 }
 
+#[derive(serde::Serialize)]
+struct MemoryDocView {
+    kind: String,
+    chars: usize,
+    limit: usize,
+    updated_at: String,
+    content: String,
+}
+
+#[derive(serde::Serialize)]
+struct MemoryFactView {
+    id: String,
+    key: String,
+    value: String,
+    updated_at: String,
+}
+
+#[derive(serde::Serialize)]
+struct MemoryResponse {
+    ok: bool,
+    message: String,
+    stats: Option<crate::memory::MemoryStats>,
+    docs: Vec<MemoryDocView>,
+    facts: Vec<MemoryFactView>,
+}
+
 #[derive(serde::Deserialize)]
 struct ProviderRequest {
     #[serde(default)]
@@ -309,6 +342,51 @@ fn commands_for_state(state: &AppState) -> Vec<crate::commands::SlashCommand> {
                 .join("sparrow")
         });
     crate::commands::all_commands(&project_root, &config_dir, state.skills.as_deref())
+}
+
+async fn get_memory(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> axum::extract::Json<MemoryResponse> {
+    let Some(memory) = &state.memory else {
+        return axum::extract::Json(MemoryResponse {
+            ok: false,
+            message: "memory unavailable".into(),
+            stats: None,
+            docs: Vec::new(),
+            facts: Vec::new(),
+        });
+    };
+    let stats = memory.memory_stats();
+    let docs = [MemoryDocKind::Memory, MemoryDocKind::User]
+        .into_iter()
+        .filter_map(|kind| {
+            memory.memory_doc(kind).map(|doc| MemoryDocView {
+                kind: kind.as_str().to_string(),
+                chars: doc.content.chars().count(),
+                limit: kind.limit(),
+                updated_at: doc.updated_at,
+                content: doc.content,
+            })
+        })
+        .collect();
+    let facts = memory
+        .all_facts()
+        .into_iter()
+        .take(25)
+        .map(|fact| MemoryFactView {
+            id: fact.id,
+            key: fact.key,
+            value: fact.value,
+            updated_at: fact.updated_at,
+        })
+        .collect();
+    axum::extract::Json(MemoryResponse {
+        ok: true,
+        message: "loaded".into(),
+        stats: Some(stats),
+        docs,
+        facts,
+    })
 }
 
 async fn resolve_approval(

@@ -837,7 +837,11 @@ impl Tui {
                 "library indexed · self-improving",
                 LogStyle::Accent,
             ),
-            ("memory  ", "4 tiers · sqlite profile", LogStyle::Ok),
+            (
+                "memory  ",
+                "sqlite · bounded docs · session search",
+                LogStyle::Ok,
+            ),
             (
                 "autonomy",
                 "dial: supervised → trusted → autonomous",

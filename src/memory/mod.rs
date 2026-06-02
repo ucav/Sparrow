@@ -1,7 +1,7 @@
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use crate::engine::Identity;
 use crate::event::RunId;
@@ -10,6 +10,9 @@ use crate::redaction::RedactionFilter;
 
 #[cfg(feature = "treesitter")]
 pub mod symbol_index;
+
+pub const MEMORY_MD_LIMIT: usize = 2200;
+pub const USER_MD_LIMIT: usize = 1375;
 
 // ─── Repo map ───────────────────────────────────────────────────────────────────
 
@@ -219,6 +222,97 @@ pub struct Fact {
     pub updated_at: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MemoryDocKind {
+    Memory,
+    User,
+}
+
+impl MemoryDocKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Memory => "MEMORY.md",
+            Self::User => "USER.md",
+        }
+    }
+
+    pub fn limit(self) -> usize {
+        match self {
+            Self::Memory => MEMORY_MD_LIMIT,
+            Self::User => USER_MD_LIMIT,
+        }
+    }
+
+    pub fn parse(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "memory" | "memory.md" => Some(Self::Memory),
+            "user" | "user.md" => Some(Self::User),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryDoc {
+    pub kind: MemoryDocKind,
+    pub content: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemoryStats {
+    pub facts: usize,
+    pub memory_chars: usize,
+    pub memory_limit: usize,
+    pub user_chars: usize,
+    pub user_limit: usize,
+}
+
+pub fn validate_memory_text(label: &str, text: &str, limit: usize) -> anyhow::Result<()> {
+    let chars = text.chars().count();
+    if chars > limit {
+        anyhow::bail!("{label} is too large: {chars}/{limit} chars");
+    }
+    if text.chars().any(is_forbidden_invisible_char) {
+        anyhow::bail!("{label} contains invisible control characters");
+    }
+
+    let lower = text.to_ascii_lowercase();
+    let blocked = [
+        "ignore previous instructions",
+        "ignore all previous instructions",
+        "disregard previous instructions",
+        "reveal your system prompt",
+        "print your system prompt",
+        "exfiltrate",
+        "steal secrets",
+        "dump secrets",
+        "print env",
+        "cat ~/.ssh",
+        "backdoor",
+        "reverse shell",
+        "rm -rf /",
+    ];
+    if blocked.iter().any(|needle| lower.contains(needle)) {
+        anyhow::bail!("{label} looks like prompt injection or credential exfiltration");
+    }
+    Ok(())
+}
+
+fn is_forbidden_invisible_char(c: char) -> bool {
+    matches!(
+        c,
+        '\u{200B}'..='\u{200F}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{206F}'
+            | '\u{FEFF}'
+    ) || (c.is_control() && c != '\n' && c != '\r' && c != '\t')
+}
+
+fn truncate_chars(text: &str, limit: usize) -> String {
+    text.chars().take(limit).collect()
+}
+
 // ─── THE MEMORY TRAIT ───────────────────────────────────────────────────────────
 
 pub trait Memory: Send + Sync {
@@ -235,8 +329,122 @@ pub trait Memory: Send + Sync {
     fn recall(&self, q: &str, k: usize) -> Vec<Fact>;
     fn all_facts(&self) -> Vec<Fact>;
     fn forget(&self, id: &str) -> anyhow::Result<()>;
+    fn memory_doc(&self, _kind: MemoryDocKind) -> Option<MemoryDoc> {
+        None
+    }
+    fn upsert_memory_doc(&self, _kind: MemoryDocKind, _content: &str) -> anyhow::Result<()> {
+        anyhow::bail!("memory documents are not supported by this memory backend")
+    }
+    fn remove_memory_doc(&self, _kind: MemoryDocKind) -> anyhow::Result<()> {
+        anyhow::bail!("memory documents are not supported by this memory backend")
+    }
+    fn memory_stats(&self) -> MemoryStats {
+        MemoryStats {
+            facts: self.all_facts().len(),
+            memory_chars: 0,
+            memory_limit: MEMORY_MD_LIMIT,
+            user_chars: 0,
+            user_limit: USER_MD_LIMIT,
+        }
+    }
+    fn consolidate_memory(&self) -> anyhow::Result<()> {
+        anyhow::bail!("memory consolidation is not supported by this memory backend")
+    }
     fn cache_discovered_models(&self, provider_id: &str, models: &[String]) -> anyhow::Result<()>;
     fn get_discovered_models(&self, provider_id: &str) -> Vec<String>;
+}
+
+pub trait MemoryProvider: Send + Sync {
+    fn name(&self) -> &str;
+    fn remember(&self, fact: Fact) -> anyhow::Result<()>;
+    fn recall(&self, query: &str, limit: usize) -> anyhow::Result<Vec<Fact>>;
+    fn memory_doc(&self, kind: MemoryDocKind) -> anyhow::Result<Option<MemoryDoc>>;
+    fn upsert_memory_doc(&self, kind: MemoryDocKind, content: &str) -> anyhow::Result<()>;
+}
+
+pub struct LocalMemoryProvider {
+    memory: Arc<dyn Memory>,
+}
+
+impl LocalMemoryProvider {
+    pub fn new(memory: Arc<dyn Memory>) -> Self {
+        Self { memory }
+    }
+}
+
+impl MemoryProvider for LocalMemoryProvider {
+    fn name(&self) -> &str {
+        "local"
+    }
+
+    fn remember(&self, fact: Fact) -> anyhow::Result<()> {
+        self.memory.remember(fact)
+    }
+
+    fn recall(&self, query: &str, limit: usize) -> anyhow::Result<Vec<Fact>> {
+        Ok(self.memory.recall(query, limit))
+    }
+
+    fn memory_doc(&self, kind: MemoryDocKind) -> anyhow::Result<Option<MemoryDoc>> {
+        Ok(self.memory.memory_doc(kind))
+    }
+
+    fn upsert_memory_doc(&self, kind: MemoryDocKind, content: &str) -> anyhow::Result<()> {
+        self.memory.upsert_memory_doc(kind, content)
+    }
+}
+
+pub struct ExternalMemoryProvider {
+    name: String,
+}
+
+impl ExternalMemoryProvider {
+    pub fn mem0() -> Self {
+        Self {
+            name: "mem0".into(),
+        }
+    }
+
+    pub fn honcho() -> Self {
+        Self {
+            name: "honcho".into(),
+        }
+    }
+
+    pub fn supermemory() -> Self {
+        Self {
+            name: "supermemory".into(),
+        }
+    }
+
+    fn not_configured(&self) -> anyhow::Error {
+        anyhow::anyhow!(
+            "external memory provider '{}' is not configured; use local SQLite memory or configure a connector first",
+            self.name
+        )
+    }
+}
+
+impl MemoryProvider for ExternalMemoryProvider {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn remember(&self, _fact: Fact) -> anyhow::Result<()> {
+        Err(self.not_configured())
+    }
+
+    fn recall(&self, _query: &str, _limit: usize) -> anyhow::Result<Vec<Fact>> {
+        Err(self.not_configured())
+    }
+
+    fn memory_doc(&self, _kind: MemoryDocKind) -> anyhow::Result<Option<MemoryDoc>> {
+        Err(self.not_configured())
+    }
+
+    fn upsert_memory_doc(&self, _kind: MemoryDocKind, _content: &str) -> anyhow::Result<()> {
+        Err(self.not_configured())
+    }
 }
 
 // ─── SQLite-backed memory implementation ────────────────────────────────────────
@@ -298,6 +506,11 @@ impl SqliteMemory {
                 model_name TEXT NOT NULL,
                 fetched_at TEXT NOT NULL,
                 PRIMARY KEY (provider_id, model_name)
+            );
+            CREATE TABLE IF NOT EXISTS memory_docs (
+                kind TEXT PRIMARY KEY,
+                content TEXT NOT NULL,
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
             -- FTS5 full-text search for memory recall (M1)
             CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts USING fts5(
@@ -441,12 +654,27 @@ impl Memory for SqliteMemory {
 
     fn remember(&self, fact: Fact) -> anyhow::Result<()> {
         let redaction = RedactionFilter::new();
+        validate_memory_text("fact key", &fact.key, 256)?;
+        validate_memory_text("fact value", &fact.value, 1200)?;
         let safe_value = redaction.redact_str(&fact.value);
         let safe_key = redaction.redact_str(&fact.key);
         if redaction.contains_secret(&fact.value) {
             tracing::warn!("Redacted secret from memory fact: {}", fact.key);
         }
         let conn = self.conn.lock().unwrap();
+        let existing: Option<String> = conn
+            .query_row(
+                "SELECT id FROM facts WHERE key = ?1",
+                params![safe_key.clone()],
+                |row| row.get(0),
+            )
+            .ok();
+        if existing.as_deref().is_some_and(|id| id != fact.id) {
+            anyhow::bail!(
+                "memory fact '{}' already exists; use replace/consolidate",
+                safe_key
+            );
+        }
         conn.execute(
             "INSERT OR REPLACE INTO facts (id, key, value, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)",
             params![fact.id, safe_key, safe_value, fact.created_at, fact.updated_at],
@@ -529,6 +757,87 @@ impl Memory for SqliteMemory {
     fn forget(&self, id: &str) -> anyhow::Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM facts WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    fn memory_doc(&self, kind: MemoryDocKind) -> Option<MemoryDoc> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT content, updated_at FROM memory_docs WHERE kind = ?1",
+            params![kind.as_str()],
+            |row| {
+                Ok(MemoryDoc {
+                    kind,
+                    content: row.get(0)?,
+                    updated_at: row.get(1)?,
+                })
+            },
+        )
+        .ok()
+    }
+
+    fn upsert_memory_doc(&self, kind: MemoryDocKind, content: &str) -> anyhow::Result<()> {
+        validate_memory_text(kind.as_str(), content, kind.limit())?;
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT OR REPLACE INTO memory_docs (kind, content, updated_at)
+             VALUES (?1, ?2, datetime('now'))",
+            params![kind.as_str(), content],
+        )?;
+        Ok(())
+    }
+
+    fn remove_memory_doc(&self, kind: MemoryDocKind) -> anyhow::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM memory_docs WHERE kind = ?1",
+            params![kind.as_str()],
+        )?;
+        Ok(())
+    }
+
+    fn memory_stats(&self) -> MemoryStats {
+        let memory_chars = self
+            .memory_doc(MemoryDocKind::Memory)
+            .map(|doc| doc.content.chars().count())
+            .unwrap_or(0);
+        let user_chars = self
+            .memory_doc(MemoryDocKind::User)
+            .map(|doc| doc.content.chars().count())
+            .unwrap_or(0);
+        MemoryStats {
+            facts: self.all_facts().len(),
+            memory_chars,
+            memory_limit: MEMORY_MD_LIMIT,
+            user_chars,
+            user_limit: USER_MD_LIMIT,
+        }
+    }
+
+    fn consolidate_memory(&self) -> anyhow::Result<()> {
+        let facts = self.all_facts();
+        let mut memory_lines = Vec::new();
+        memory_lines.push("# MEMORY.md".to_string());
+        memory_lines.push("Durable Sparrow memory distilled from accepted facts.".to_string());
+        for fact in facts.iter().take(40) {
+            memory_lines.push(format!("- {}: {}", fact.key, fact.value));
+        }
+        let memory = truncate_chars(&memory_lines.join("\n"), MEMORY_MD_LIMIT);
+        self.upsert_memory_doc(MemoryDocKind::Memory, &memory)?;
+
+        let mut user_lines = Vec::new();
+        user_lines.push("# USER.md".to_string());
+        for fact in facts
+            .iter()
+            .filter(|fact| fact.key.starts_with("user"))
+            .take(24)
+        {
+            user_lines.push(format!("- {}: {}", fact.key, fact.value));
+        }
+        if user_lines.len() > 1 {
+            let user = truncate_chars(&user_lines.join("\n"), USER_MD_LIMIT);
+            self.upsert_memory_doc(MemoryDocKind::User, &user)?;
+        }
         Ok(())
     }
 
