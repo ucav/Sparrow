@@ -87,6 +87,7 @@ impl WebViewServer {
             .route("/config", get(get_config).post(save_provider))
             .route("/permissions", get(get_permissions).post(save_permissions))
             .route("/security", get(get_security))
+            .route("/sessions", get(list_sessions))
             .route("/upload", post(upload_attachment))
             .route("/artifacts", get(list_artifacts))
             .route(
@@ -878,6 +879,34 @@ async fn list_artifacts() -> axum::extract::Json<serde_json::Value> {
         "ok": true,
         "items": items,
         "dir": dir.to_string_lossy().to_string(),
+    }))
+}
+
+async fn list_sessions() -> axum::extract::Json<serde_json::Value> {
+    // Resolve the same DB path the CLI uses. Failures degrade to an empty list
+    // rather than 500'ing the WebView panel.
+    let state_dir = dirs::state_dir()
+        .or_else(dirs::data_local_dir)
+        .or_else(dirs::data_dir)
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("sparrow");
+    let db_path = state_dir.join("sessions.db");
+    let store = match crate::runtime::session::SessionStore::open(&db_path) {
+        Ok(s) => s,
+        Err(e) => {
+            return axum::extract::Json(serde_json::json!({
+                "ok": false,
+                "message": format!("could not open session db: {}", e),
+                "db_path": db_path.to_string_lossy(),
+                "sessions": [],
+            }));
+        }
+    };
+    let sessions = store.list();
+    axum::extract::Json(serde_json::json!({
+        "ok": true,
+        "db_path": db_path.to_string_lossy(),
+        "sessions": sessions,
     }))
 }
 

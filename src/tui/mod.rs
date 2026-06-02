@@ -372,8 +372,13 @@ impl Tui {
             .map(|s| s.lines().map(String::from).collect())
             .unwrap_or_default();
 
+        // Pick theme from $SPARROW_THEME or default to `captain`.
+        let theme = std::env::var("SPARROW_THEME")
+            .ok()
+            .map(|n| crate::tui::theme::by_name(&n))
+            .unwrap_or_default();
         Self {
-            theme: Theme::default(),
+            theme,
             lines: Vec::new(),
             route: "idle".into(),
             cost_usd: 0.0,
