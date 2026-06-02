@@ -623,6 +623,23 @@ impl Engine {
         run_id: RunId,
         mut inject_rx: Option<mpsc::UnboundedReceiver<String>>,
     ) -> anyhow::Result<OutcomeSummary> {
+        // Parse and strip optional __model:X__ override prefix injected by the WebView.
+        let model_override: Option<String>;
+        let clean_description: String;
+        if let Some(rest) = task.description.strip_prefix("__model:") {
+            if let Some(end) = rest.find("__ ") {
+                model_override = Some(rest[..end].to_string());
+                clean_description = rest[end + 3..].to_string();
+            } else {
+                model_override = None;
+                clean_description = task.description.clone();
+            }
+        } else {
+            model_override = None;
+            clean_description = task.description.clone();
+        }
+        let task = Task { description: clean_description, context: task.context };
+
         let mut messages: Vec<Msg> = task.context.clone();
 
         // Classify task (heuristic first)
@@ -646,6 +663,18 @@ impl Engine {
         };
 
         let mut chain = self.router.select(&need, &budget);
+
+        // Apply WebView model override: keep only the requested brain if found.
+        if let Some(ref override_id) = model_override {
+            let filtered: Vec<_> = chain
+                .iter()
+                .filter(|b| b.id() == override_id.as_str())
+                .cloned()
+                .collect();
+            if !filtered.is_empty() {
+                chain = filtered;
+            }
+        }
 
         // §3.6: model-assisted refinement for genuinely ambiguous tasks. Only the
         // length-based Medium guess qualifies — short tasks stay Trivial without
