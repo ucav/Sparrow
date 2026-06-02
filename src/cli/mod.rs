@@ -164,6 +164,19 @@ pub enum Commands {
         action: GithubAction,
     },
 
+    /// Compact context and write a durable handoff doc
+    Compact {
+        /// Task description (recorded in the handoff)
+        #[arg(long)]
+        task: Option<String>,
+        /// Output path (default: .sparrow/handoff/<timestamp>.md)
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Emit JSON instead of Markdown to stdout (the file is always Markdown)
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Manage MCP connectors
     Mcp {
         #[command(subcommand)]
