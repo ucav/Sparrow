@@ -185,6 +185,12 @@ pub enum Commands {
         action: GatewayAction,
     },
 
+    /// Manage saved sessions
+    Sessions {
+        #[command(subcommand)]
+        action: SessionAction,
+    },
+
     /// Interactive tutorial
     Learn,
 
@@ -356,7 +362,22 @@ pub enum CheckpointAction {
 pub enum GatewayAction {
     Start,
     Status,
+    Health,
+    Abort { run: String },
     Stop,
+}
+
+#[derive(Subcommand)]
+pub enum SessionAction {
+    List,
+    Export {
+        id: String,
+        path: Option<PathBuf>,
+    },
+    Cleanup {
+        #[arg(long, default_value_t = 30)]
+        older_than_days: u64,
+    },
 }
 
 #[derive(Subcommand)]

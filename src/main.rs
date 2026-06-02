@@ -374,6 +374,9 @@ async fn main() -> anyhow::Result<()> {
             )
             .await?;
         }
+        Some(Commands::Sessions { action }) => {
+            handle_sessions(action, &active_state_dir)?;
+        }
         Some(Commands::Model { set, list }) => {
             if list {
                 refresh_discovery_cache(memory.clone(), &config, false, false).await;
@@ -2792,6 +2795,43 @@ async fn handle_gateway(
             }
             Ok(())
         }
+        sparrow::cli::GatewayAction::Health => {
+            let pid = read_gateway_pid(state_dir);
+            let pid_running = pid.is_some_and(process_is_running);
+            let ws_open = gateway_ws_port_open();
+            println!("Gateway health");
+            println!(
+                "  pid_file : {}",
+                if pid.is_some() { "present" } else { "absent" }
+            );
+            println!(
+                "  process  : {}",
+                if pid_running { "running" } else { "stopped" }
+            );
+            println!(
+                "  ws       : {}",
+                if ws_open { "online" } else { "offline" }
+            );
+            println!(
+                "  sessions : {}",
+                config.state_dir.join("sessions.db").display()
+            );
+            if pid.is_some() && !pid_running && !ws_open {
+                println!("  warning  : stale gateway pid file");
+            }
+            Ok(())
+        }
+        sparrow::cli::GatewayAction::Abort { run } => {
+            let abort_dir = state_dir.join("gateway-abort");
+            std::fs::create_dir_all(&abort_dir)?;
+            std::fs::write(
+                abort_dir.join(format!("{}.abort", sanitize_file_component(&run))),
+                chrono::Utc::now().to_rfc3339(),
+            )?;
+            println!("Gateway abort requested for run '{}'.", run);
+            println!("Abort signal: {}", abort_dir.display());
+            Ok(())
+        }
         sparrow::cli::GatewayAction::Stop => {
             match read_gateway_pid(state_dir) {
                 Some(pid) if process_is_running(pid) => {
@@ -2834,6 +2874,26 @@ fn remove_gateway_pid(state_dir: &std::path::Path) -> std::io::Result<()> {
         std::fs::remove_file(path)?;
     }
     Ok(())
+}
+
+fn sanitize_file_component(value: &str) -> String {
+    let cleaned = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('_')
+        .to_string();
+    if cleaned.is_empty() {
+        "run".into()
+    } else {
+        cleaned
+    }
 }
 
 fn gateway_ws_port_open() -> bool {
@@ -2883,6 +2943,60 @@ fn stop_gateway_process(pid: u32) -> anyhow::Result<()> {
             .status()?;
         if !status.success() {
             anyhow::bail!("kill failed for PID {}", pid);
+        }
+    }
+    Ok(())
+}
+
+fn handle_sessions(
+    action: sparrow::cli::SessionAction,
+    state_dir: &std::path::Path,
+) -> anyhow::Result<()> {
+    let store = sparrow::runtime::session::SessionStore::open(&state_dir.join("sessions.db"))?;
+    match action {
+        sparrow::cli::SessionAction::List => {
+            let sessions = store.list();
+            if sessions.is_empty() {
+                println!("No sessions stored.");
+            } else {
+                println!("Sessions ({}):", sessions.len());
+                for session in sessions {
+                    println!(
+                        "  {} | status:{} | updated:{} | {} bytes",
+                        session.id,
+                        session.status,
+                        session.updated_at,
+                        session.messages_json.len()
+                    );
+                }
+            }
+        }
+        sparrow::cli::SessionAction::Export { id, path } => {
+            let Some(session) = store.load(&id) else {
+                anyhow::bail!("session '{}' not found", id);
+            };
+            let output = path.unwrap_or_else(|| {
+                state_dir.join(format!("session-{}.json", sanitize_file_component(&id)))
+            });
+            if let Some(parent) = output.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(&output, serde_json::to_string_pretty(&session)?)?;
+            println!("Exported session '{}' to {}", id, output.display());
+        }
+        sparrow::cli::SessionAction::Cleanup { older_than_days } => {
+            let cutoff = chrono::Utc::now().timestamp() - (older_than_days as i64 * 86_400);
+            let mut removed = 0usize;
+            for session in store.list() {
+                if session.updated_at < cutoff {
+                    store.delete(&session.id)?;
+                    removed += 1;
+                }
+            }
+            println!(
+                "Removed {} session(s) older than {} day(s).",
+                removed, older_than_days
+            );
         }
     }
     Ok(())
