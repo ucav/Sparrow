@@ -60,6 +60,22 @@ commands by name. Skills are exposed as slash commands for reusable workflows.
 |---|---|---|
 | `sparrow swarm "<task>"` | ✅ | Planner → Coder → Verifier pipeline |
 
+## Agents
+
+| Command | Status | Description |
+|---|---|---|
+| `sparrow agent create <name>` | ✅ | Create a persistent SOUL TOML agent |
+| `sparrow agent list` | ✅ | List configured agents and visible tool constraints |
+| `sparrow agent edit <name>` | ✅ | Open an agent definition in the editor |
+| `sparrow agent rm <name>` | ✅ | Remove an agent definition |
+| `sparrow agent run <name> "<task>"` | Alpha | Run a task as a named agent with identity/model/permission hints |
+| `sparrow agent mention <name> "<message>"` | Alpha | Send an `@agent` style message to a named agent |
+
+Agents can be declared as existing `*.soul.toml` files or as `*.agent.md`
+files with frontmatter fields such as `name`, `description`, `role`, `prompt`,
+`tools`, `disallowed_tools`, `model`, `permission_mode`, `mcp_servers`,
+`max_turns`, `memory`, `background`, `isolation`, and `color`.
+
 ## Schedule
 
 | Command | Status | Description |

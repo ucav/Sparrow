@@ -230,6 +230,7 @@ pub enum AgentAction {
     Edit { name: String },
     Rm { name: String },
     Run { name: String, task: String },
+    Mention { name: String, message: String },
 }
 
 #[derive(Subcommand)]
