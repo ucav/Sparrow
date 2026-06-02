@@ -87,6 +87,8 @@ impl WebViewServer {
             .route("/config", get(get_config).post(save_provider))
             .route("/permissions", get(get_permissions).post(save_permissions))
             .route("/security", get(get_security))
+            .route("/upload", post(upload_attachment))
+            .route("/artifacts", get(list_artifacts))
             .route(
                 "/ws",
                 get(
@@ -722,6 +724,161 @@ async fn save_provider(
         ok: true,
         message: format!("provider '{}' saved", name),
     })
+}
+
+/// Hard cap for WebView attachments (10 MB).
+pub const MAX_ATTACHMENT_BYTES: usize = 10 * 1024 * 1024;
+
+/// Where attachments are stored, relative to the current working directory.
+pub fn attachments_dir() -> std::path::PathBuf {
+    std::env::current_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .join(".sparrow")
+        .join("attachments")
+}
+
+#[derive(serde::Serialize)]
+pub struct AttachmentMetadata {
+    pub name: String,
+    pub path: String,
+    pub size: u64,
+    pub mime: String,
+    pub kind: &'static str,
+}
+
+pub fn classify_attachment(mime: &str, ext: &str) -> &'static str {
+    let ext = ext.to_ascii_lowercase();
+    if mime.starts_with("image/")
+        || matches!(
+            ext.as_str(),
+            "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp"
+        )
+    {
+        "image"
+    } else if mime.starts_with("audio/")
+        || matches!(ext.as_str(), "mp3" | "wav" | "m4a" | "ogg" | "flac")
+    {
+        "audio"
+    } else if mime == "application/pdf" || ext == "pdf" {
+        "pdf"
+    } else if mime.starts_with("text/")
+        || matches!(
+            ext.as_str(),
+            "md" | "txt" | "csv" | "json" | "toml" | "yml" | "yaml"
+        )
+    {
+        "text"
+    } else {
+        "file"
+    }
+}
+
+async fn upload_attachment(
+    mut multipart: axum::extract::Multipart,
+) -> axum::extract::Json<serde_json::Value> {
+    let dir = attachments_dir();
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        return axum::extract::Json(serde_json::json!({
+            "ok": false,
+            "message": format!("could not create attachments dir: {}", e),
+        }));
+    }
+    let mut accepted: Vec<AttachmentMetadata> = Vec::new();
+    let mut rejected: Vec<serde_json::Value> = Vec::new();
+    while let Ok(Some(field)) = multipart.next_field().await {
+        let original = field
+            .file_name()
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "upload.bin".into());
+        let content_type = field
+            .content_type()
+            .unwrap_or("application/octet-stream")
+            .to_string();
+        let data = match field.bytes().await {
+            Ok(b) => b,
+            Err(e) => {
+                rejected.push(
+                    serde_json::json!({"name": original, "reason": format!("read error: {}", e)}),
+                );
+                continue;
+            }
+        };
+        if data.len() > MAX_ATTACHMENT_BYTES {
+            rejected.push(serde_json::json!({
+                "name": original,
+                "reason": format!("too large: {} bytes > limit {}", data.len(), MAX_ATTACHMENT_BYTES),
+            }));
+            continue;
+        }
+        // Sanitize filename: strip directory components.
+        let safe = std::path::Path::new(&original)
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "upload.bin".into());
+        let dest = dir.join(&safe);
+        if let Err(e) = std::fs::write(&dest, &data) {
+            rejected
+                .push(serde_json::json!({"name": safe, "reason": format!("write error: {}", e)}));
+            continue;
+        }
+        let ext = std::path::Path::new(&safe)
+            .extension()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let kind = classify_attachment(&content_type, &ext);
+        accepted.push(AttachmentMetadata {
+            name: safe.clone(),
+            path: dest.to_string_lossy().to_string(),
+            size: data.len() as u64,
+            mime: content_type,
+            kind,
+        });
+    }
+
+    axum::extract::Json(serde_json::json!({
+        "ok": !accepted.is_empty(),
+        "accepted": accepted,
+        "rejected": rejected,
+        "limit_bytes": MAX_ATTACHMENT_BYTES,
+    }))
+}
+
+async fn list_artifacts() -> axum::extract::Json<serde_json::Value> {
+    let dir = attachments_dir();
+    let mut items: Vec<AttachmentMetadata> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            let name = path
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let ext = path
+                .extension()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
+            let mime = mime_guess::from_path(&path)
+                .first_or_octet_stream()
+                .to_string();
+            let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+            let kind = classify_attachment(&mime, &ext);
+            items.push(AttachmentMetadata {
+                name,
+                path: path.to_string_lossy().to_string(),
+                size,
+                mime,
+                kind,
+            });
+        }
+    }
+    axum::extract::Json(serde_json::json!({
+        "ok": true,
+        "items": items,
+        "dir": dir.to_string_lossy().to_string(),
+    }))
 }
 
 async fn get_security(
