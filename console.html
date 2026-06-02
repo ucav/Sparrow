@@ -374,9 +374,10 @@
   .tool-card summary .chev{color:var(--dimmer);transition:transform .2s;font-size:9px}
   .tool-card[open] summary .chev{transform:rotate(90deg)}
   .tool-card[open] summary{border-bottom:1px solid var(--line)}
-  .tool-card .det{padding:9px 12px;font-size:11px;color:var(--dim);background:var(--panel2)}
+  .tool-card .det{padding:9px 12px;font-size:11px;color:var(--dim);background:var(--panel2);animation:fold-in .18s ease both}
   .tool-card .det code{color:var(--fg);background:transparent;font-family:inherit;display:block;white-space:pre-wrap;line-height:1.5;overflow-wrap:anywhere}
   .tool-card .det .lbl{color:var(--dimmer);text-transform:uppercase;font-size:9px;letter-spacing:1.2px;margin-bottom:3px}
+  @keyframes fold-in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
 
   /* Diff card (line-numbered, +/− with theme-coloured backgrounds) */
   .diff-card{margin:6px 0 8px;border:1px solid var(--line-hot);border-radius:8px;background:var(--panel);overflow:hidden}
@@ -399,6 +400,11 @@
   .compact-banner b{color:var(--fg);font-weight:500}
   .compact-banner a{color:var(--brand);text-decoration:none;margin-left:auto;font-size:10.5px}
   .compact-banner a:hover{text-decoration:underline}
+  .checkpoint-timeline{display:flex;align-items:center;gap:7px;margin:8px 0 10px 18px;min-height:20px;color:var(--dimmer);font-size:10px}
+  .checkpoint-timeline::before{content:"checkpoints";text-transform:uppercase;letter-spacing:1.4px;margin-right:3px}
+  .checkpoint-node{width:10px;height:10px;border-radius:50%;background:var(--brand);box-shadow:0 0 0 1px color-mix(in srgb,var(--brand) 45%,transparent),0 0 14px rgba(242,169,60,.35);animation:checkpoint-drop .25s ease both,checkpoint-ping .7s ease-out .05s 1}
+  @keyframes checkpoint-drop{from{opacity:0;transform:translateY(-8px) scale(.6)}to{opacity:1;transform:none}}
+  @keyframes checkpoint-ping{0%{box-shadow:0 0 0 0 rgba(242,169,60,.35)}100%{box-shadow:0 0 0 12px transparent}}
 
   /* Skill learned pill */
   .skill-pop{display:inline-block;padding:2px 8px;border-radius:5px;
@@ -489,10 +495,30 @@
   .approval-actions button{font-family:inherit;font-size:11px;padding:5px 12px;border-radius:7px;cursor:pointer}
   .approval-actions .approve{color:var(--add);background:rgba(116,194,88,.1);border:1px solid rgba(116,194,88,.35)}
   .approval-actions .deny{color:var(--rem);background:rgba(217,106,99,.1);border:1px solid rgba(217,106,99,.35)}
+  .approval-modal{position:fixed;inset:0;z-index:1100;display:none;align-items:center;justify-content:center;background:color-mix(in srgb,var(--bg) 68%,transparent);backdrop-filter:blur(8px)}
+  .approval-modal.show{display:flex;animation:fadein .16s ease both}
+  .approval-card{width:min(520px,92vw);border:1px solid var(--line-hot);border-radius:12px;background:var(--panel);box-shadow:0 30px 90px rgba(0,0,0,.75);padding:18px;animation:popin .2s cubic-bezier(.2,.8,.2,1) both}
+  .approval-card h3{font-size:13px;color:var(--brand);letter-spacing:1.8px;text-transform:uppercase;margin-bottom:8px}
+  .approval-card p{font-size:12px;color:var(--dim);line-height:1.55;overflow-wrap:anywhere}
+  .approval-card .risk{display:inline-flex;margin:10px 0 14px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--gold);font-size:10px;text-transform:uppercase;letter-spacing:1px}
+  .approval-card .actions{display:flex;gap:10px;justify-content:flex-end}
+  .approval-card button{font-family:inherit;font-size:12px;border-radius:8px;padding:8px 14px;cursor:pointer}
+  .approval-card .approve{color:var(--add);background:rgba(116,194,88,.12);border:1px solid rgba(116,194,88,.4)}
+  .approval-card .deny{color:var(--rem);background:rgba(217,106,99,.12);border:1px solid rgba(217,106,99,.38)}
+  .error-banner{margin:8px 0;padding:9px 12px;border-radius:8px;background:rgba(217,106,99,.1);border:1px solid rgba(217,106,99,.32);color:var(--dim);font-size:11px;line-height:1.45}
+  .error-banner .title{color:var(--rem);font-weight:700;text-transform:uppercase;letter-spacing:1px;font-size:10px;margin-bottom:3px}
+  .error-banner .fix{color:var(--steel);margin-top:4px}
+  .error-banner a{color:var(--brand);text-decoration:none}
   .learn-toast{animation:learnpop 4.2s ease}
   @keyframes learnpop{0%{opacity:0;transform:translateY(5px)}10%{opacity:1;transform:none}82%{opacity:1}100%{opacity:0;transform:translateY(-5px)}}
   .boot-line{opacity:0;animation:fin .35s ease forwards}
   @keyframes fin{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
+    .ember{display:none!important}
+    .streaming::after{animation:none!important;opacity:1}
+    .boot-overlay{display:none!important}
+  }
 </style>
 </head>
 <body>
@@ -775,6 +801,18 @@
 
 <!-- Sprint 1 inc 3: inline @-picker (positioned relative to taskInput) -->
 <div class="picker hidden" id="agentPicker" role="listbox" aria-label="Agent picker"></div>
+
+<div class="approval-modal" id="approvalModal" role="dialog" aria-modal="true" aria-label="Approval required">
+  <div class="approval-card">
+    <h3>Approval required</h3>
+    <p id="approvalSummary">Sparrow is asking before it acts.</p>
+    <span class="risk" id="approvalRisk">risk: unknown</span>
+    <div class="actions">
+      <button class="deny" id="approvalDeny">deny</button>
+      <button class="approve" id="approvalApprove">approve</button>
+    </div>
+  </div>
+</div>
 
 <div class="status off" id="status">● disconnected</div>
 <div class="drop-zone" id="dropZone">drop files to attach to Sparrow</div>
@@ -1534,6 +1572,30 @@ function renderCompactBanner(ev){
   term.appendChild(banner);term.scrollTop=term.scrollHeight;
   chirp(1200,.07);setTimeout(()=>chirp(800,.06),100);
 }
+let CHECKPOINT_TIMELINE=null;
+function addCheckpointNode(label){
+  if(!CHECKPOINT_TIMELINE||!CHECKPOINT_TIMELINE.isConnected){
+    CHECKPOINT_TIMELINE=document.createElement('div');
+    CHECKPOINT_TIMELINE.className='checkpoint-timeline';
+    term.appendChild(CHECKPOINT_TIMELINE);
+  }
+  const node=document.createElement('span');
+  node.className='checkpoint-node';
+  node.title=label||'checkpoint';
+  CHECKPOINT_TIMELINE.appendChild(node);
+  term.scrollTop=term.scrollHeight;
+}
+
+function showError(title,cause,fix,doc){
+  const banner=document.createElement('div');
+  banner.className='error-banner';
+  banner.innerHTML='<div class="title">'+esc(title||'Error')+'</div>'+
+    '<div>'+esc(cause||'Something went wrong.')+'</div>'+
+    (fix?'<div class="fix">'+esc(fix)+(doc?' · <a href="'+escAttr(doc)+'">docs</a>':'')+'</div>':'');
+  term.appendChild(banner);
+  term.scrollTop=term.scrollHeight;
+}
+
 let STREAM_BUF=null;
 function streamDelta(text){
   if(!STREAM_BUF||!STREAM_BUF.isConnected){
@@ -1576,12 +1638,12 @@ function handleEvent(ev){
     case 'Compacted':renderCompactBanner(ev);break;
     case 'ApprovalRequested':
       line(`<span class="warn">◌ approval required · ${esc(ev.summary)}</span>`);
-      line(`<span class="approval-actions" data-approval="${escAttr(ev.id)}"><button class="approve" onclick="resolveApproval('${escAttr(ev.id)}','approve',this)">approve</button><button class="deny" onclick="resolveApproval('${escAttr(ev.id)}','deny',this)">deny</button></span>`);
+      showApprovalModal(ev);
       break;
     case 'ApprovalResolved':line(`<span class="muted">↳ approval: <span class="planner">${esc(ev.decision)}</span></span>`);break;
     case 'AgentSpawned':setSwarm(ev.role,'working',`model ${ev.model} online`);line(`<span class="${roleCls(ev.role)}">◆ ${esc(ev.role)} spawned (${esc(ev.model)})</span>`);break;
     case 'AgentStatus':setSwarm(ev.role,ev.status,ev.note);line(`<span class="${roleCls(ev.role)}">${icon(ev.status)} ${esc(ev.role)} — ${esc(ev.note)}${ev.role==='coder'&&(ev.status==='Working'||ev.status==='Thinking')?'<span class="caret"></span>':''}</span>`);break;
-    case 'CheckpointCreated':line(`<span class="acc">● checkpoint:</span> <span class="muted">${esc(ev.label)}</span>`);chirp(1400,.07);break;
+    case 'CheckpointCreated':line(`<span class="acc">● checkpoint:</span> <span class="muted">${esc(ev.label)}</span>`);addCheckpointNode(ev.label);chirp(1400,.07);break;
     case 'SkillLearned':line(`<span class="skill-pop">✦ skill learned · ${esc(ev.name)}</span>`);chirp(1100,.05);setTimeout(()=>chirp(1700,.07),80);break;
     case 'CostUpdate':setCost(ev.usd);break;
     case 'TokenUsageEstimated':addTokEstimate(ev.input,ev.output);break;
@@ -1596,7 +1658,9 @@ function handleEvent(ev){
       setSwarm('verifier','done','run closed · metrics captured');
       line(`<span class="ok">✓ done</span> <span class="muted">${esc(ev.outcome.status)} · cost <span class="cost">$${ev.outcome.cost_usd.toFixed(4)}</span></span>`);chirp(900,.05);setTimeout(()=>chirp(1400,.07),100);break;
     case 'Error':
-      if(!String(ev.message||'').includes('Ollama API error 404')){line(`<span class="err">Error: ${esc(ev.message)}</span>`)}
+      if(!String(ev.message||'').includes('Ollama API error 404')){
+        showError('Runtime error',ev.message,'Check config, provider availability, or retry after fixing the reported cause.','docs/troubleshooting.md')
+      }
       break;
     default:line(`<span class="dimd">${esc(JSON.stringify(ev))}</span>`);break;
   }
@@ -1811,7 +1875,7 @@ async function attachFiles(files){
   let usedChars=attachedFiles.reduce((sum,f)=>sum+(f.content||'').length,0);
   for(const file of files){
     if(file.size>MAX_ATTACHMENT_BYTES){
-      line(`<span class="err">Upload rejected: ${esc(file.name)} too large: ${file.size} bytes > limit ${MAX_ATTACHMENT_BYTES}</span>`);
+      showError('Upload rejected',`${file.name} too large: ${file.size} bytes > limit ${MAX_ATTACHMENT_BYTES}`,'Attach a smaller file or compress it before retrying.','docs/media.md');
       continue;
     }
     const isText=file.type.startsWith('text/')||/\.(md|txt|json|rs|js|ts|tsx|jsx|py|toml|yaml|yml|html|css|csv)$/i.test(file.name);
@@ -1843,14 +1907,14 @@ async function uploadFile(file){
     const r=await fetch('/upload',{method:'POST',body:form});
     const j=await r.json();
     const rejected=Array.isArray(j.rejected)?j.rejected:[];
-    rejected.forEach(x=>line(`<span class="err">Upload rejected: ${esc(x.name||file.name)} ${esc(x.reason||'')}</span>`));
+    rejected.forEach(x=>showError('Upload rejected',`${x.name||file.name} ${x.reason||''}`,'Attach a smaller or supported file and retry.','docs/media.md'));
     const accepted=Array.isArray(j.accepted)?j.accepted:[];
     if(accepted[0]){
       loadArtifacts();
       return accepted[0];
     }
   }catch(e){
-    line(`<span class="err">Upload failed: ${esc(e.message)}</span>`);
+    showError('Upload failed',e.message,'Check that the WebView server is still running.');
   }
   return null;
 }
@@ -1892,21 +1956,21 @@ async function runTask(){
   try{
     const r=await fetch('/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task:payload})});
     const j=await r.json();
-    if(!j.ok)line(`<span class="err">Error: ${esc(j.message)}</span>`);
+    if(!j.ok)showError('Run failed',j.message,'Check the command channel and retry.');
     else{rememberSubmitted(task||'analyse attached files');attachedFiles=[];renderAttachments();updateContextMeter();}
-  }catch(e){line(`<span class="err">Error: ${esc(e.message)}</span>`)}
+  }catch(e){showError('Run failed',e.message,'Check that the WebView server is still connected.')}
 }
 
 async function showCommands(){
   try{
     const r=await fetch('/commands');
     const j=await r.json();
-    if(!j.ok){line(`<span class="err">Error: ${esc(j.message)}</span>`);return;}
+    if(!j.ok){showError('Commands failed',j.message,'Reload the WebView or run `sparrow commands` in the terminal.');return;}
     line('<span class="acc">/help</span> <span class="muted">available slash commands</span>');
     (j.commands||[]).forEach(cmd=>{
       line(`<span class="planner">${esc(cmd.name)}</span> <span class="muted">— ${esc(cmd.description)} · ${esc(cmd.source)}</span>`);
     });
-  }catch(e){line(`<span class="err">Error: ${esc(e.message)}</span>`)}
+  }catch(e){showError('Commands failed',e.message,'Reload the WebView or run `sparrow commands` in the terminal.')}
 }
 
 async function loadMemory(){
@@ -1934,9 +1998,9 @@ async function planTask(task){
   try{
     const r=await fetch('/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task:payload})});
     const j=await r.json();
-    if(!j.ok||!j.plan){line(`<span class="err">Error: ${esc(j.message)}</span>`);return;}
+    if(!j.ok||!j.plan){showError('Plan failed',j.message,'Try a more specific task or check provider configuration.');return;}
     renderPlan(j.plan,task);
-  }catch(e){line(`<span class="err">Error: ${esc(e.message)}</span>`)}
+  }catch(e){showError('Plan failed',e.message,'Check that the WebView server is still connected.')}
 }
 
 function renderPlan(plan,task){
@@ -1962,6 +2026,47 @@ function editPlan(task){
   $('taskInput').focus();
   updateContextMeter();
 }
+
+function showApprovalModal(ev){
+  const modal=$('approvalModal');
+  modal.dataset.id=ev.id||'';
+  $('approvalSummary').textContent=ev.summary||'Sparrow is asking before it acts.';
+  $('approvalRisk').textContent='risk: '+(ev.risk||'unknown');
+  modal.classList.add('show');
+  setTimeout(()=>$('approvalApprove').focus(),40);
+}
+
+function closeApprovalModal(){
+  const modal=$('approvalModal');
+  modal.classList.remove('show');
+  modal.dataset.id='';
+}
+
+async function resolveApprovalFromModal(decision){
+  const modal=$('approvalModal');
+  const id=modal.dataset.id;
+  if(!id)return;
+  [...modal.querySelectorAll('button')].forEach(b=>b.disabled=true);
+  try{
+    const r=await fetch('/approval',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,decision})});
+    const j=await r.json();
+    if(j.ok){
+      closeApprovalModal();
+      line(`<span class="${decision==='approve'?'ok':'warn'}">approval ${decision==='approve'?'approved':'denied'}</span>`);
+    }else{
+      showError('Approval failed',j.message,'The request may have expired; retry the action if it is still needed.');
+    }
+  }catch(e){
+    showError('Approval failed',e.message,'Check that the WebView server is still connected.');
+  }finally{
+    [...modal.querySelectorAll('button')].forEach(b=>b.disabled=false);
+  }
+}
+
+$('approvalApprove').addEventListener('click',()=>resolveApprovalFromModal('approve'));
+$('approvalDeny').addEventListener('click',()=>resolveApprovalFromModal('deny'));
+$('approvalModal').addEventListener('click',e=>{if(e.target.id==='approvalModal')closeApprovalModal()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('approvalModal').classList.contains('show'))closeApprovalModal()});
 
 async function resolveApproval(id,decision,btn){
   const wrap=btn.closest('.approval-actions');
