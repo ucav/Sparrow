@@ -1,0 +1,87 @@
+name: "Sparrow"
+description: "Run Sparrow on issues/PRs from inside a GitHub Action"
+author: "Sparrow"
+branding:
+  icon: "feather"
+  color: "blue"
+
+inputs:
+  prompt:
+    description: "The task prompt for Sparrow to execute. Required unless `mode` is `review` (which derives the prompt from the PR diff)."
+    required: false
+  mode:
+    description: "One of: run | review | status. Defaults to `run`."
+    required: false
+    default: "run"
+  pr:
+    description: "PR number when `mode: review`. Defaults to `github.event.pull_request.number`."
+    required: false
+  model:
+    description: "Override the model id (e.g. claude-opus-4-7). Optional."
+    required: false
+  allowed-tools:
+    description: "Comma-separated tool allow-list for this run. Empty inherits the repo config."
+    required: false
+  github-token:
+    description: "Token with `pull-requests: write` and `contents: read`."
+    required: true
+  sparrow-version:
+    description: "Sparrow version/ref to install. Defaults to `master`."
+    required: false
+    default: "master"
+  dry-run:
+    description: "If `true`, print the plan but never call the model or post comments."
+    required: false
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Validate secrets
+      shell: bash
+      run: |
+        if [ -z "${{ inputs.github-token }}" ]; then
+          echo "::error::github-token input is required (a PAT or GITHUB_TOKEN with pull-requests: write)."
+          exit 1
+        fi
+
+    - name: Install Sparrow
+      shell: bash
+      run: |
+        cargo install --git https://github.com/ucav/Sparrow.git --branch "${{ inputs.sparrow-version }}" sparrow || \
+          (echo "::error::Sparrow install failed" && exit 1)
+
+    - name: Run Sparrow
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        SPARROW_MODEL: ${{ inputs.model }}
+      run: |
+        set -euo pipefail
+        case "${{ inputs.mode }}" in
+          review)
+            PR="${{ inputs.pr }}"
+            if [ -z "$PR" ]; then PR="${{ github.event.pull_request.number }}"; fi
+            if [ -z "$PR" ]; then
+              echo "::error::review mode requires a PR number"; exit 1
+            fi
+            ARGS=(github review "$PR")
+            if [ "${{ inputs.dry-run }}" = "true" ]; then ARGS+=(--dry-run); fi
+            if [ -n "${{ inputs.model }}" ]; then ARGS+=(--model "${{ inputs.model }}"); fi
+            if [ -n "${{ inputs.allowed-tools }}" ]; then ARGS+=(--allowed-tools "${{ inputs.allowed-tools }}"); fi
+            sparrow "${ARGS[@]}"
+            ;;
+          status)
+            sparrow github status
+            ;;
+          run)
+            if [ -z "${{ inputs.prompt }}" ]; then
+              echo "::error::prompt input is required for mode=run"; exit 1
+            fi
+            EXTRA=()
+            if [ -n "${{ inputs.model }}" ]; then EXTRA+=(--model "${{ inputs.model }}"); fi
+            sparrow run "${EXTRA[@]}" -- "${{ inputs.prompt }}"
+            ;;
+          *)
+            echo "::error::unknown mode: ${{ inputs.mode }}"; exit 1 ;;
+        esac

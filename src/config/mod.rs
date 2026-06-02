@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::event::AutonomyLevel;
+use crate::permissions::PermissionConfig;
 
 pub mod providers;
 pub mod validate;
@@ -22,6 +23,10 @@ pub struct Config {
     pub surfaces: SurfaceConfig,
     #[serde(default)]
     pub skills: SkillsConfig,
+    #[serde(default)]
+    pub permissions: PermissionConfig,
+    #[serde(default)]
+    pub hooks: Vec<crate::hooks::Hook>,
     #[serde(default)]
     pub theme: String,
     #[serde(default = "default_config_dir")]
@@ -234,6 +239,8 @@ impl Default for Config {
             providers: std::collections::HashMap::new(),
             surfaces: SurfaceConfig::default(),
             skills: SkillsConfig::default(),
+            permissions: PermissionConfig::default(),
+            hooks: Vec::new(),
             theme: "captain".into(),
             config_dir: default_config_dir(),
             state_dir: default_state_dir(),
@@ -312,6 +319,8 @@ impl ConfigStore for FsConfigStore {
                 providers: HashMap::new(),
                 surfaces: SurfaceConfig::default(),
                 skills: SkillsConfig::default(),
+                permissions: PermissionConfig::default(),
+                hooks: Vec::new(),
                 theme: "captain".into(),
                 config_dir: self.config_dir.clone(),
                 state_dir: default_state_dir(),
