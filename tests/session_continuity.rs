@@ -55,3 +55,48 @@ fn session_round_trips_messages_across_reopen() {
 
     let _ = std::fs::remove_file(&path);
 }
+
+#[test]
+fn session_search_and_scroll_find_old_turns() {
+    let path = temp_db("session-search");
+    let key = "user:search";
+    let store = SessionStore::open(&path).unwrap();
+    let msgs = vec![
+        Msg {
+            role: "user".into(),
+            content: vec![ContentBlock::Text {
+                text: "first turn about routing".into(),
+            }],
+        },
+        Msg {
+            role: "assistant".into(),
+            content: vec![ContentBlock::Text {
+                text: "routing is noted".into(),
+            }],
+        },
+        Msg {
+            role: "user".into(),
+            content: vec![ContentBlock::Text {
+                text: "later mention phoenix-context-window".into(),
+            }],
+        },
+        Msg {
+            role: "assistant".into(),
+            content: vec![ContentBlock::Text {
+                text: "found the old context marker".into(),
+            }],
+        },
+    ];
+    store.save(key, &msgs, Some("search test")).unwrap();
+
+    let hits = store.search("phoenix context", 5);
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].session_id, key);
+    assert_eq!(hits[0].turn_index, 2);
+
+    let slice = store.scroll(key, hits[0].turn_index, 1, 1).unwrap();
+    assert_eq!(slice.start, 1);
+    assert_eq!(slice.messages.len(), 3);
+
+    let _ = std::fs::remove_file(&path);
+}

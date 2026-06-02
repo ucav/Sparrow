@@ -778,7 +778,11 @@ async fn main() -> anyhow::Result<()> {
             )?;
         }
         Some(Commands::Memory { action }) => {
-            handle_memory(action, &(memory.clone() as Arc<dyn Memory>))?;
+            handle_memory(
+                action,
+                &(memory.clone() as Arc<dyn Memory>),
+                &active_state_dir,
+            )?;
         }
         Some(Commands::Config { edit }) => {
             if edit {
@@ -2755,10 +2759,16 @@ fn handle_profile(
 fn handle_memory(
     action: sparrow::cli::MemoryAction,
     memory: &Arc<dyn Memory>,
+    state_dir: &std::path::Path,
 ) -> anyhow::Result<()> {
     match action {
         sparrow::cli::MemoryAction::List => {
             let facts = memory.all_facts();
+            let stats = memory.memory_stats();
+            println!(
+                "Memory docs: MEMORY.md {}/{} chars, USER.md {}/{} chars",
+                stats.memory_chars, stats.memory_limit, stats.user_chars, stats.user_limit
+            );
             if facts.is_empty() {
                 println!("No facts stored. Facts are auto-distilled from successful runs.");
             } else {
@@ -2782,6 +2792,93 @@ fn handle_memory(
             };
             memory.remember(fact)?;
             println!("Fact added.");
+        }
+        sparrow::cli::MemoryAction::Replace { id, key, value } => {
+            let fact = sparrow::memory::Fact {
+                id: id.clone(),
+                key,
+                value,
+                created_at: chrono::Utc::now().to_rfc3339(),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+            };
+            memory.remember(fact)?;
+            println!("Fact '{}' replaced.", id);
+        }
+        sparrow::cli::MemoryAction::Recall { query, limit } => {
+            let facts = memory.recall(&query, limit);
+            if facts.is_empty() {
+                println!("No facts match '{}'.", query);
+            } else {
+                println!("Matching facts ({}):", facts.len());
+                for f in &facts {
+                    println!("  {}  {}: {}", f.id, f.key, f.value);
+                }
+            }
+        }
+        sparrow::cli::MemoryAction::Consolidate => {
+            memory.consolidate_memory()?;
+            println!("Memory consolidated into bounded MEMORY.md/USER.md docs.");
+        }
+        sparrow::cli::MemoryAction::Docs => {
+            let mut found = false;
+            for kind in [
+                sparrow::memory::MemoryDocKind::Memory,
+                sparrow::memory::MemoryDocKind::User,
+            ] {
+                if let Some(doc) = memory.memory_doc(kind) {
+                    found = true;
+                    println!("## {} ({})", kind.as_str(), doc.updated_at);
+                    println!("{}", doc.content);
+                    println!();
+                }
+            }
+            if !found {
+                println!("No MEMORY.md/USER.md docs stored yet.");
+            }
+        }
+        sparrow::cli::MemoryAction::Search { query, limit } => {
+            let store =
+                sparrow::runtime::session::SessionStore::open(&state_dir.join("sessions.db"))?;
+            let hits = store.search(&query, limit);
+            if hits.is_empty() {
+                println!("No sessions match '{}'.", query);
+            } else {
+                for hit in hits {
+                    println!(
+                        "{} #{} [{}] {}",
+                        hit.session_id,
+                        hit.turn_index,
+                        hit.role,
+                        hit.text.replace('\n', " ")
+                    );
+                }
+            }
+        }
+        sparrow::cli::MemoryAction::Scroll {
+            session,
+            around,
+            before,
+            after,
+        } => {
+            let store =
+                sparrow::runtime::session::SessionStore::open(&state_dir.join("sessions.db"))?;
+            if let Some(slice) = store.scroll(&session, around, before, after) {
+                for (offset, msg) in slice.messages.iter().enumerate() {
+                    let idx = slice.start + offset;
+                    let text = msg
+                        .content
+                        .iter()
+                        .filter_map(|block| match block {
+                            sparrow::provider::ContentBlock::Text { text } => Some(text.as_str()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    println!("#{} [{}] {}", idx, msg.role, text.replace('\n', " "));
+                }
+            } else {
+                println!("Session '{}' not found.", session);
+            }
         }
     }
     Ok(())
@@ -3210,6 +3307,7 @@ async fn handle_webview(
         Some(shared_config),
         Some(approvals),
         Some(skills),
+        Some(memory.clone()),
     );
     server.serve().await?;
 
@@ -3348,8 +3446,15 @@ fn handle_status(
     }
 
     // Memory & model cache
-    let facts = memory.all_facts();
-    println!("Memory     : {} facts stored", facts.len());
+    let mem_stats = memory.memory_stats();
+    println!(
+        "Memory     : {} facts | MEMORY.md {}/{} | USER.md {}/{} chars",
+        mem_stats.facts,
+        mem_stats.memory_chars,
+        mem_stats.memory_limit,
+        mem_stats.user_chars,
+        mem_stats.user_limit
+    );
     let total_discovered: usize = sparrow::config::providers::provider_registry()
         .iter()
         .map(|p| {

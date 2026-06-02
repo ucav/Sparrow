@@ -41,7 +41,7 @@ Sparrow is **alpha software** with a green cross-platform CI baseline. The kerne
 | Permissions / hooks | Alpha | `sparrow permissions`, persisted permission modes, tool/path/provider/surface rules, WebView mode control, and lifecycle hooks around checkpoint/tool execution are wired |
 | Declarative agents | Alpha | SOUL TOML plus Markdown frontmatter agents support role, prompt, model, permission mode, tool allow/deny metadata, `agent run`, and `agent mention` |
 | Gateway WebSocket | Alpha | `/status` command roundtrip tested on port 9338 with ACK and engine status response |
-| Replay / checkpoints / memory | Stable | Recorder, checkpoint, rewind, transcript, and SQLite memory flows are covered by tests and CLI smoke checks |
+| Replay / checkpoints / memory | Alpha | Recorder, checkpoint, rewind, transcript, SQLite facts, bounded `MEMORY.md` / `USER.md`, memory tool, and session search are wired with tests |
 | First-run setup | Alpha | Conversational setup agent plus fallback interactive setup are wired for provider/model configuration |
 | Telegram / Discord / Slack | Partial | Transport implementations exist; real account tokens are still required for end-to-end validation |
 | Extra transports | Experimental | WhatsApp, Signal, Email, Feishu, WeCom, QQ, and Teams adapters are present but not all fully wired |

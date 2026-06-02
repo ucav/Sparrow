@@ -326,8 +326,39 @@ pub enum ImportSource {
 #[derive(Subcommand)]
 pub enum MemoryAction {
     List,
-    Forget { id: String },
-    Add { key: String, value: String },
+    Forget {
+        id: String,
+    },
+    Add {
+        key: String,
+        value: String,
+    },
+    Replace {
+        id: String,
+        key: String,
+        value: String,
+    },
+    Recall {
+        query: String,
+        #[arg(long, default_value_t = 10)]
+        limit: usize,
+    },
+    Consolidate,
+    Docs,
+    Search {
+        query: String,
+        #[arg(long, default_value_t = 10)]
+        limit: usize,
+    },
+    Scroll {
+        session: String,
+        #[arg(long, default_value_t = 0)]
+        around: usize,
+        #[arg(long, default_value_t = 3)]
+        before: usize,
+        #[arg(long, default_value_t = 3)]
+        after: usize,
+    },
 }
 
 #[derive(Subcommand)]
