@@ -26,6 +26,65 @@ Sparrow is a single-binary CLI agent written in Rust. It routes each task to the
 
 ---
 
+<div align="center">
+<sub>⚡ Powered by &amp; created with</sub>
+
+<br/><br/>
+
+<table>
+  <tr>
+    <td align="center" width="20%">
+      <a href="https://www.nvidia.com/en-us/ai/">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="https://cdn.simpleicons.org/nvidia/76B900">
+          <img src="https://cdn.simpleicons.org/nvidia/555555" height="40" alt="NVIDIA">
+        </picture>
+        <br/><sub><b>NVIDIA NIM</b></sub>
+      </a>
+    </td>
+    <td align="center" width="20%">
+      <a href="https://openai.com/">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="https://cdn.simpleicons.org/openai/ffffff">
+          <img src="https://cdn.simpleicons.org/openai/000000" height="40" alt="OpenAI">
+        </picture>
+        <br/><sub><b>OpenAI</b></sub>
+      </a>
+    </td>
+    <td align="center" width="20%">
+      <a href="https://openai.com/codex">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="https://cdn.simpleicons.org/openai/a78bfa">
+          <img src="https://cdn.simpleicons.org/openai/412991" height="40" alt="Codex">
+        </picture>
+        <br/><sub><b>Codex</b></sub>
+      </a>
+    </td>
+    <td align="center" width="20%">
+      <a href="https://anthropic.com/">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="https://cdn.simpleicons.org/anthropic/d4a574">
+          <img src="https://cdn.simpleicons.org/anthropic/191919" height="40" alt="Anthropic Claude">
+        </picture>
+        <br/><sub><b>Claude</b></sub>
+      </a>
+    </td>
+    <td align="center" width="20%">
+      <a href="https://github.com/features/copilot">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="https://cdn.simpleicons.org/githubcopilot/ffffff">
+          <img src="https://cdn.simpleicons.org/githubcopilot/000000" height="40" alt="GitHub Copilot">
+        </picture>
+        <br/><sub><b>GitHub Copilot</b></sub>
+      </a>
+    </td>
+  </tr>
+</table>
+
+</div>
+
+---
+
 ## ✨ What's New — v0.3.0
 
 > **WebView Cockpit** — the console is now a real local control surface, not a mockup.
