@@ -8,6 +8,7 @@ pub enum SlashCommandSource {
     Project(PathBuf),
     User(PathBuf),
     Skill(String),
+    Plugin(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -135,10 +136,57 @@ pub fn all_commands(
             by_name.insert(cmd.name.clone(), cmd);
         }
     }
+    for cmd in plugin_commands(project_root, config_dir) {
+        by_name.insert(cmd.name.clone(), cmd);
+    }
     for cmd in load_markdown_commands(project_root, config_dir) {
         by_name.insert(cmd.name.clone(), cmd);
     }
     by_name.into_values().collect()
+}
+
+pub fn plugin_commands(project_root: &Path, config_dir: &Path) -> Vec<SlashCommand> {
+    let dirs = [
+        project_root.join(".sparrow").join("plugins"),
+        config_dir.join("plugins"),
+    ];
+    let mut out = Vec::new();
+    for dir in dirs {
+        let registry = crate::capabilities::plugin::PluginRegistry::new(dir);
+        for plugin in registry.scan() {
+            let audit = registry.audit(&plugin);
+            if !audit.allowed {
+                continue;
+            }
+            for command in &plugin.manifest.commands {
+                out.push(SlashCommand {
+                    name: crate::capabilities::plugin::namespace(
+                        &plugin.manifest.name,
+                        &command.name,
+                    ),
+                    description: if command.description.is_empty() {
+                        format!("Plugin command from {}", plugin.manifest.name)
+                    } else {
+                        command.description.clone()
+                    },
+                    body: command.body.clone(),
+                    source: SlashCommandSource::Plugin(plugin.manifest.name.clone()),
+                });
+            }
+            for skill in &plugin.manifest.skills {
+                out.push(SlashCommand {
+                    name: crate::capabilities::plugin::namespace(
+                        &plugin.manifest.name,
+                        &skill.name,
+                    ),
+                    description: format!("Plugin skill from {}", plugin.manifest.name),
+                    body: format!("Invoke plugin skill '{}'.", skill.name),
+                    source: SlashCommandSource::Plugin(plugin.manifest.name.clone()),
+                });
+            }
+        }
+    }
+    out
 }
 
 fn skill_to_command(skill: Skill) -> SlashCommand {
@@ -243,6 +291,12 @@ mod tests {
         fn get(&self, _name: &str) -> Option<Skill> {
             None
         }
+        fn invoke(
+            &self,
+            _name: &str,
+        ) -> anyhow::Result<Option<crate::capabilities::SkillInvocation>> {
+            Ok(None)
+        }
         fn remove(&self, _name: &str) -> anyhow::Result<bool> {
             Ok(false)
         }
@@ -287,6 +341,10 @@ mod tests {
             created_at: "2026-06-02".into(),
             score: 0.8,
             auto_generated: false,
+            references: Vec::new(),
+            templates: Vec::new(),
+            scripts: Vec::new(),
+            assets: Vec::new(),
         }]));
         let commands = all_commands(Path::new("."), Path::new("."), Some(&skills));
         assert!(commands.iter().any(|c| c.name == "fix-ci"));

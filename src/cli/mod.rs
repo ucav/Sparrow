@@ -140,6 +140,12 @@ pub enum Commands {
         action: SkillsAction,
     },
 
+    /// Manage local Sparrow plugins
+    Plugins {
+        #[command(subcommand)]
+        action: PluginsAction,
+    },
+
     /// Manage MCP connectors
     Mcp {
         #[command(subcommand)]
@@ -254,11 +260,33 @@ pub enum AuthAction {
 #[derive(Subcommand)]
 pub enum SkillsAction {
     List,
+    View {
+        name: String,
+    },
     Create {
+        name: String,
+    },
+    Install {
+        source: String,
+    },
+    Update {
         name: String,
     },
     Prune,
     /// Remove a skill by name (e.g. to delete junk auto-learned skills)
+    Rm {
+        name: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum PluginsAction {
+    List,
+    Install {
+        source: String,
+        #[arg(long)]
+        allow: bool,
+    },
     Rm {
         name: String,
     },

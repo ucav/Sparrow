@@ -81,6 +81,7 @@ impl WebViewServer {
             .route("/plan", post(plan_task))
             .route("/commands", get(get_commands))
             .route("/memory", get(get_memory))
+            .route("/plugins", get(get_plugins))
             .route("/approval", post(resolve_approval))
             .route("/config", get(get_config).post(save_provider))
             .route("/permissions", get(get_permissions).post(save_permissions))
@@ -243,6 +244,25 @@ struct MemoryResponse {
     facts: Vec<MemoryFactView>,
 }
 
+#[derive(serde::Serialize)]
+struct PluginView {
+    name: String,
+    version: String,
+    description: String,
+    commands: usize,
+    skills: usize,
+    hooks: usize,
+    allowed: bool,
+    warnings: Vec<String>,
+}
+
+#[derive(serde::Serialize)]
+struct PluginsResponse {
+    ok: bool,
+    message: String,
+    plugins: Vec<PluginView>,
+}
+
 #[derive(serde::Deserialize)]
 struct ProviderRequest {
     #[serde(default)]
@@ -320,6 +340,7 @@ async fn get_commands(
                     format!("user:{}", path.display())
                 }
                 crate::commands::SlashCommandSource::Skill(name) => format!("skill:{}", name),
+                crate::commands::SlashCommandSource::Plugin(name) => format!("plugin:{}", name),
             },
         })
         .collect();
@@ -386,6 +407,49 @@ async fn get_memory(
         stats: Some(stats),
         docs,
         facts,
+    })
+}
+
+async fn get_plugins(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> axum::extract::Json<PluginsResponse> {
+    let config_dir = state
+        .config
+        .as_ref()
+        .and_then(|cfg| cfg.read().ok().map(|cfg| cfg.config_dir.clone()))
+        .unwrap_or_else(|| {
+            dirs::config_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join("sparrow")
+        });
+    let dirs = [
+        std::env::current_dir()
+            .unwrap_or_default()
+            .join(".sparrow")
+            .join("plugins"),
+        config_dir.join("plugins"),
+    ];
+    let mut plugins = Vec::new();
+    for dir in dirs {
+        let registry = crate::capabilities::plugin::PluginRegistry::new(dir);
+        for plugin in registry.scan() {
+            let audit = registry.audit(&plugin);
+            plugins.push(PluginView {
+                name: plugin.manifest.name,
+                version: plugin.manifest.version,
+                description: plugin.manifest.description,
+                commands: plugin.manifest.commands.len(),
+                skills: plugin.manifest.skills.len(),
+                hooks: plugin.manifest.hooks.len(),
+                allowed: audit.allowed,
+                warnings: audit.warnings,
+            });
+        }
+    }
+    axum::extract::Json(PluginsResponse {
+        ok: true,
+        message: "loaded".into(),
+        plugins,
     })
 }
 
