@@ -82,6 +82,7 @@ impl WebViewServer {
             .route("/commands", get(get_commands))
             .route("/memory", get(get_memory))
             .route("/plugins", get(get_plugins))
+            .route("/tools", get(get_tools))
             .route("/approval", post(resolve_approval))
             .route("/config", get(get_config).post(save_provider))
             .route("/permissions", get(get_permissions).post(save_permissions))
@@ -261,6 +262,14 @@ struct PluginsResponse {
     ok: bool,
     message: String,
     plugins: Vec<PluginView>,
+}
+
+#[derive(serde::Serialize)]
+struct ToolsResponse {
+    ok: bool,
+    message: String,
+    toolsets: Vec<String>,
+    tools: Vec<crate::tools::ToolMetadata>,
 }
 
 #[derive(serde::Deserialize)]
@@ -450,6 +459,18 @@ async fn get_plugins(
         ok: true,
         message: "loaded".into(),
         plugins,
+    })
+}
+
+async fn get_tools() -> axum::extract::Json<ToolsResponse> {
+    axum::extract::Json(ToolsResponse {
+        ok: true,
+        message: "loaded".into(),
+        toolsets: crate::tools::TOOLSETS
+            .iter()
+            .map(|set| set.to_string())
+            .collect(),
+        tools: crate::tools::known_tool_metadata(None),
     })
 }
 

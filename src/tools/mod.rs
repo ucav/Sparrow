@@ -101,7 +101,113 @@ pub trait Tool: Send + Sync {
     fn description(&self) -> &str;
     fn schema(&self) -> serde_json::Value;
     fn risk(&self) -> RiskLevel;
+    fn metadata(&self) -> ToolMetadata {
+        metadata_for(self.name(), self.risk())
+    }
     async fn call(&self, args: serde_json::Value, ctx: &ToolCtx) -> anyhow::Result<ToolResult>;
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ToolMetadata {
+    pub name: String,
+    pub toolset: String,
+    pub risk: RiskLevel,
+    pub requires_auth: bool,
+    pub mutates_files: bool,
+    pub network: bool,
+    pub exec: bool,
+}
+
+pub const TOOLSETS: &[&str] = &[
+    "safe",
+    "web",
+    "file",
+    "terminal",
+    "media",
+    "debug",
+    "skills",
+    "memory",
+    "session_search",
+    "mcp",
+    "gateway",
+];
+
+pub const KNOWN_TOOLS: &[(&str, RiskLevel)] = &[
+    ("fs_read", RiskLevel::ReadOnly),
+    ("fs_list", RiskLevel::ReadOnly),
+    ("fs_write", RiskLevel::Mutating),
+    ("edit", RiskLevel::Mutating),
+    ("multi_edit", RiskLevel::Mutating),
+    ("search", RiskLevel::Network),
+    ("web_search", RiskLevel::Network),
+    ("web_fetch", RiskLevel::Network),
+    ("git", RiskLevel::Exec),
+    ("todo", RiskLevel::ReadOnly),
+    ("exec", RiskLevel::Exec),
+    ("image_gen", RiskLevel::Network),
+    ("tts", RiskLevel::Network),
+    ("python_rpc", RiskLevel::Exec),
+    ("glob", RiskLevel::ReadOnly),
+    ("symbols", RiskLevel::ReadOnly),
+    ("memory", RiskLevel::Mutating),
+    ("subagent_spawn", RiskLevel::Exec),
+];
+
+pub fn known_tool_metadata(surface: Option<&str>) -> Vec<ToolMetadata> {
+    KNOWN_TOOLS
+        .iter()
+        .map(|(name, risk)| metadata_for(name, risk.clone()))
+        .filter(|meta| surface.map(|s| surface_allows(s, meta)).unwrap_or(true))
+        .collect()
+}
+
+pub fn metadata_for(name: &str, risk: RiskLevel) -> ToolMetadata {
+    let lower = name.to_ascii_lowercase();
+    let toolset = if matches!(lower.as_str(), "fs_read" | "fs_list" | "glob" | "symbols") {
+        "file"
+    } else if matches!(lower.as_str(), "fs_write" | "edit" | "multi_edit") {
+        "file"
+    } else if matches!(lower.as_str(), "search" | "web_search" | "web_fetch") {
+        "web"
+    } else if lower == "exec" || lower == "git" {
+        "terminal"
+    } else if matches!(lower.as_str(), "image_gen" | "tts") {
+        "media"
+    } else if lower == "memory" {
+        "memory"
+    } else if lower.contains("session") {
+        "session_search"
+    } else if lower.contains("mcp") || lower.contains("python_rpc") {
+        "mcp"
+    } else if lower.contains("subagent") || lower == "todo" {
+        "skills"
+    } else {
+        "safe"
+    };
+    ToolMetadata {
+        name: name.to_string(),
+        toolset: toolset.to_string(),
+        requires_auth: matches!(toolset, "web" | "media" | "mcp" | "gateway"),
+        mutates_files: matches!(risk, RiskLevel::Mutating | RiskLevel::Destructive)
+            || matches!(lower.as_str(), "fs_write" | "edit" | "multi_edit"),
+        network: matches!(risk, RiskLevel::Network) || matches!(toolset, "web" | "mcp" | "gateway"),
+        exec: matches!(risk, RiskLevel::Exec) || toolset == "terminal",
+        risk,
+    }
+}
+
+pub fn surface_allows(surface: &str, metadata: &ToolMetadata) -> bool {
+    match surface.trim().to_ascii_lowercase().as_str() {
+        "gateway" => {
+            !metadata.exec
+                && !metadata.mutates_files
+                && !matches!(metadata.risk, RiskLevel::Destructive)
+                && !matches!(metadata.toolset.as_str(), "terminal" | "file")
+        }
+        "subagent" => !matches!(metadata.risk, RiskLevel::Destructive),
+        "cli" | "tui" | "webview" | "" => true,
+        _ => true,
+    }
 }
 
 // ─── Tool registry (ToolSet) ────────────────────────────────────────────────────
@@ -131,6 +237,29 @@ impl ToolRegistry {
 
     pub fn names(&self) -> Vec<String> {
         self.tools.keys().cloned().collect()
+    }
+
+    pub fn metadata(&self) -> Vec<ToolMetadata> {
+        self.tools.values().map(|tool| tool.metadata()).collect()
+    }
+
+    pub fn metadata_for_surface(&self, surface: &str) -> Vec<ToolMetadata> {
+        self.metadata()
+            .into_iter()
+            .filter(|meta| surface_allows(surface, meta))
+            .collect()
+    }
+
+    pub fn to_specs_for_surface(&self, surface: &str) -> Vec<super::provider::ToolSpec> {
+        self.tools
+            .values()
+            .filter(|tool| surface_allows(surface, &tool.metadata()))
+            .map(|t| super::provider::ToolSpec {
+                name: t.name().to_string(),
+                description: t.description().to_string(),
+                input_schema: t.schema(),
+            })
+            .collect()
     }
 
     pub fn to_specs(&self) -> Vec<super::provider::ToolSpec> {
