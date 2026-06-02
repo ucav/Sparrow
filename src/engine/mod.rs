@@ -813,6 +813,7 @@ impl Engine {
         registry.register(Arc::new(crate::tools::exec::Exec::new(sandbox.clone())));
         registry.register(Arc::new(crate::tools::media::ImageGen::new()));
         registry.register(Arc::new(crate::tools::media::Tts::new()));
+        registry.register(Arc::new(crate::tools::media::Transcribe::new()));
         registry.register(Arc::new(crate::tools::subagent::PythonRpc::new()));
         registry.register(Arc::new(crate::tools::code_nav::Glob));
         registry.register(Arc::new(crate::tools::code_nav::Symbols));
