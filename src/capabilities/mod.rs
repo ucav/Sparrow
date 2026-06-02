@@ -174,6 +174,8 @@ pub trait SkillLibrary: Send + Sync {
     fn curate(&self) -> anyhow::Result<()>;
     fn prune(&self, min_score: f64) -> anyhow::Result<usize>;
     fn get(&self, name: &str) -> Option<Skill>;
+    /// Remove a skill by name (any kind). Returns true if it existed.
+    fn remove(&self, name: &str) -> anyhow::Result<bool>;
 }
 
 // ─── Filesystem-backed skill library ────────────────────────────────────────────
@@ -305,6 +307,16 @@ impl SkillLibrary for FsSkillLibrary {
 
     fn get(&self, name: &str) -> Option<Skill> {
         self.scan().into_iter().find(|s| s.name == name)
+    }
+
+    fn remove(&self, name: &str) -> anyhow::Result<bool> {
+        // Skills live under a directory equal to their name. Remove it.
+        let skill_dir = self.skills_dir.join(name);
+        let existed = skill_dir.exists();
+        if existed {
+            std::fs::remove_dir_all(&skill_dir)?;
+        }
+        Ok(existed)
     }
 }
 
