@@ -358,4 +358,12 @@ pub enum Event {
         run: RunId,
         message: String,
     },
+    /// A compaction pass has just completed. Surfaces the before/after sizes
+    /// (in chars) and the path of the handoff doc, if any.
+    Compacted {
+        run: RunId,
+        before_chars: usize,
+        after_chars: usize,
+        handoff_path: Option<String>,
+    },
 }

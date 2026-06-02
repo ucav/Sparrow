@@ -145,6 +145,17 @@ files with frontmatter fields such as `name`, `description`, `role`, `prompt`,
 
 See [`docs/security.md`](security.md) for the full check matrix and scoring rules.
 
+## Compaction
+
+| Command | Status | Description |
+|---|---|---|
+| `sparrow compact` | Alpha | Write a `HandoffDoc` Markdown to `.sparrow/handoff/<ts>.md` |
+| `sparrow compact --task "<text>"` | Alpha | Record a task description in the handoff |
+| `sparrow compact --out <path>` | Alpha | Override the output path |
+| `sparrow compact --json` | Alpha | Emit JSON to stdout (the file is always Markdown) |
+
+See [`docs/compaction.md`](compaction.md) for the `ContextMeter` shape and the `PreCompact`/`PostCompact` hook events.
+
 ## GitHub
 
 | Command | Status | Description |
