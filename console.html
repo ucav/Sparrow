@@ -247,6 +247,51 @@
     .drawer{width:min(292px,calc(100vw - 48px))}
   }
 
+  /* ─── Sprint 1 inc 3 : slash palette + @-picker ──────────────────── */
+  .palette{position:fixed;inset:0;align-items:flex-start;justify-content:center;
+    background:color-mix(in srgb,var(--bg) 60%,transparent);backdrop-filter:blur(6px);
+    z-index:1000;padding-top:14vh;display:none}
+  .palette.open{display:flex;animation:fadein .2s ease both}
+  @keyframes fadein{from{opacity:0}to{opacity:1}}
+  .palette .box{width:min(560px,90vw);background:var(--panel);border:1px solid var(--line-hot);
+    border-radius:12px;box-shadow:0 30px 80px -20px rgba(0,0,0,.75);overflow:hidden;
+    animation:popin .22s cubic-bezier(.2,.8,.2,1) both}
+  @keyframes popin{from{opacity:0;transform:translateY(-8px) scale(.98)}to{opacity:1;transform:none}}
+  .palette .pinput{display:flex;align-items:center;gap:10px;padding:14px 17px;border-bottom:1px solid var(--line)}
+  .palette .pinput svg{flex:0 0 auto;filter:drop-shadow(0 0 6px rgba(242,169,60,.45))}
+  .palette .pinput input{flex:1;background:transparent;border:none;outline:none;color:var(--fg);
+    font-family:inherit;font-size:14px;letter-spacing:.2px}
+  .palette .pinput input::placeholder{color:var(--dim)}
+  .palette .res-list{max-height:50vh;overflow-y:auto;padding:6px 6px 10px}
+  .palette .res-list::-webkit-scrollbar{width:6px}
+  .palette .res-list::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--line-hot) 70%,var(--bg));border-radius:6px}
+  .palette .res{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:7px;cursor:pointer;font-size:12.5px}
+  .palette .res.sel,.palette .res:hover{background:color-mix(in srgb,var(--brand) 12%,transparent)}
+  .palette .res .nm{color:var(--fg);font-weight:500;min-width:140px;overflow-wrap:anywhere;word-break:break-word}
+  .palette .res .src{color:var(--dimmer);font-size:9px;letter-spacing:.8px;text-transform:uppercase;
+    padding:1px 6px;border-radius:4px;background:color-mix(in srgb,var(--line-hot) 60%,transparent)}
+  .palette .res.builtin .src{background:color-mix(in srgb,var(--brand) 18%,transparent);color:var(--brand)}
+  .palette .res.skill .src{background:color-mix(in srgb,var(--gold) 18%,transparent);color:var(--gold)}
+  .palette .res.plugin .src{background:color-mix(in srgb,var(--agent) 18%,transparent);color:var(--agent)}
+  .palette .res .desc{color:var(--dim);flex:1;font-size:11px;overflow-wrap:anywhere;word-break:break-word}
+  .palette .pfoot{display:flex;gap:14px;padding:8px 16px;border-top:1px solid var(--line);
+    font-size:10.5px;color:var(--dimmer);align-items:center}
+  .palette .pfoot kbd{background:var(--panel2);border:1px solid var(--line);border-radius:4px;
+    padding:1px 5px;color:var(--dim);font-family:inherit;font-size:10px}
+  .palette .pempty{padding:18px;text-align:center;color:var(--dimmer);font-size:12px;font-style:italic}
+
+  .picker{position:absolute;background:var(--panel);border:1px solid var(--line-hot);
+    border-radius:9px;box-shadow:0 12px 40px -10px rgba(0,0,0,.6);
+    min-width:240px;max-width:340px;padding:5px;z-index:200;
+    animation:popin .18s cubic-bezier(.2,.8,.2,1) both}
+  .picker .head{font-size:9px;color:var(--dimmer);letter-spacing:1.4px;text-transform:uppercase;padding:5px 8px 7px}
+  .picker .opt{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:6px;cursor:pointer;font-size:11.5px}
+  .picker .opt.sel,.picker .opt:hover{background:color-mix(in srgb,var(--brand) 12%,transparent)}
+  .picker .opt .at{color:var(--brand);font-weight:600}
+  .picker .opt .nm{color:var(--fg);font-weight:500}
+  .picker .opt .role{margin-left:auto;color:var(--dim);font-size:10px}
+  .picker.hidden{display:none}
+
   .config-panel{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:200;
     background:var(--panel);border:1px solid var(--line);border-radius:14px;width:min(700px,90vw);max-height:80vh;
     overflow-y:auto;padding:18px 20px;box-shadow:0 30px 80px rgba(0,0,0,.9)}
@@ -514,6 +559,26 @@
     <div class="attachments" id="attachments"></div>
   </div>
 </div>
+<!-- Sprint 1 inc 3: slash palette modal -->
+<div class="palette" id="palette" role="dialog" aria-label="Slash command palette">
+  <div class="box">
+    <div class="pinput">
+      <svg width="22" height="22" aria-label="Sparrow"><use href="#sparrow"/></svg>
+      <input type="text" id="paletteInput" placeholder="Type / to filter commands, skills, agents…" autocomplete="off">
+    </div>
+    <div class="res-list" id="paletteResults"></div>
+    <div class="pfoot">
+      <span><kbd>↑↓</kbd> nav</span>
+      <span><kbd>↵</kbd> insert</span>
+      <span><kbd>⇧↵</kbd> insert + run</span>
+      <span style="margin-left:auto"><kbd>esc</kbd> close</span>
+    </div>
+  </div>
+</div>
+
+<!-- Sprint 1 inc 3: inline @-picker (positioned relative to taskInput) -->
+<div class="picker hidden" id="agentPicker" role="listbox" aria-label="Agent picker"></div>
+
 <div class="status off" id="status">● disconnected</div>
 
 <script>
@@ -881,11 +946,175 @@ function renderSwarmExtras(agents){
 }
 function cssSlug(s){return String(s).toLowerCase().replace(/[^a-z0-9-]+/g,'-').replace(/^-+|-+$/g,'')||'agent';}
 
+// ─── Sprint 1 inc 3 : slash palette (Cmd+K) ──────────────────────────
+let PALETTE_CMDS=[];     // cached `/commands` payload
+let PALETTE_AGENTS=[];   // cached `/agents` payload (also used by @-picker)
+let PALETTE_FILTERED=[];
+let PALETTE_SEL=0;
+async function loadCommandsCache(){
+  try{
+    const r=await fetch('/commands');const j=await r.json();
+    PALETTE_CMDS=Array.isArray(j.commands)?j.commands:[];
+  }catch(_){}
+}
+async function loadAgentsCache(){
+  try{
+    const r=await fetch('/agents');const j=await r.json();
+    PALETTE_AGENTS=Array.isArray(j.agents)?j.agents:[];
+  }catch(_){}
+}
+function paletteOpen(){
+  document.getElementById('palette').classList.add('open');
+  const inp=document.getElementById('paletteInput');
+  inp.value='';PALETTE_SEL=0;
+  paletteFilter('');
+  setTimeout(()=>inp.focus(),20);
+}
+function paletteClose(){document.getElementById('palette').classList.remove('open')}
+function paletteFilter(q){
+  const norm=q.toLowerCase().replace(/^\//,'');
+  const items=[];
+  // commands first
+  PALETTE_CMDS.forEach(c=>{
+    const name=(c.name||'').toLowerCase();
+    if(!norm||name.includes(norm)||(c.description||'').toLowerCase().includes(norm)){
+      items.push({kind:c.source||'builtin',label:'/'+(c.name||''),desc:c.description||'',insert:'/'+(c.name||'')});
+    }
+  });
+  // agents as @-mentions
+  PALETTE_AGENTS.forEach(a=>{
+    const name=(a.name||'').toLowerCase();
+    if(!norm||name.includes(norm)||(a.role||'').toLowerCase().includes(norm)){
+      items.push({kind:'agent',label:'@'+(a.name||''),desc:a.description||a.role||'',insert:'@'+(a.name||'')+' '});
+    }
+  });
+  PALETTE_FILTERED=items.slice(0,40);
+  PALETTE_SEL=Math.min(PALETTE_SEL,Math.max(0,PALETTE_FILTERED.length-1));
+  paletteRender();
+}
+function paletteRender(){
+  const host=document.getElementById('paletteResults');
+  if(!PALETTE_FILTERED.length){host.innerHTML='<div class="pempty">No matches.</div>';return;}
+  host.innerHTML=PALETTE_FILTERED.map((it,i)=>{
+    const kindClass=({builtin:'builtin',user:'builtin',project:'builtin',skill:'skill',plugin:'plugin',agent:'plugin'})[it.kind]||'';
+    return `<div class="res ${kindClass} ${i===PALETTE_SEL?'sel':''}" data-i="${i}"><div class="nm">${escHtml(it.label)}</div><div class="src">${escHtml(it.kind)}</div><div class="desc">${escHtml(it.desc)}</div></div>`;
+  }).join('');
+  const sel=host.querySelector('.res.sel');
+  if(sel)sel.scrollIntoView({block:'nearest'});
+}
+function paletteAccept(submit){
+  const it=PALETTE_FILTERED[PALETTE_SEL];if(!it)return;
+  const ti=document.getElementById('taskInput');
+  // Insert at cursor or replace if input is empty / starts with a sigil.
+  if(!ti.value||/^[/@]\S*$/.test(ti.value))ti.value=it.insert;
+  else ti.value=(ti.value.trimEnd()+' '+it.insert).trimStart();
+  paletteClose();
+  ti.focus();
+  if(submit){const btn=document.getElementById('runBtn');if(btn)btn.click();}
+}
+document.getElementById('paletteInput').addEventListener('input',e=>{paletteFilter(e.target.value)});
+document.getElementById('paletteInput').addEventListener('keydown',e=>{
+  if(e.key==='ArrowDown'){e.preventDefault();PALETTE_SEL=Math.min(PALETTE_FILTERED.length-1,PALETTE_SEL+1);paletteRender();}
+  else if(e.key==='ArrowUp'){e.preventDefault();PALETTE_SEL=Math.max(0,PALETTE_SEL-1);paletteRender();}
+  else if(e.key==='Enter'){e.preventDefault();paletteAccept(e.shiftKey);}
+  else if(e.key==='Escape'){e.preventDefault();paletteClose();}
+});
+document.getElementById('paletteResults').addEventListener('click',e=>{
+  const row=e.target.closest('.res');if(!row)return;
+  PALETTE_SEL=parseInt(row.dataset.i,10);paletteAccept(e.shiftKey);
+});
+document.getElementById('palette').addEventListener('click',e=>{if(e.target.id==='palette')paletteClose()});
+// Cmd/Ctrl+K opens the palette from anywhere.
+document.addEventListener('keydown',e=>{
+  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();paletteOpen();}
+});
+
+// ─── Sprint 1 inc 3 : inline @<name> picker on the task input ────────
+function agentPickerState(input){
+  // Find the last "@" token before the caret. Mirrors the TUI logic.
+  const value=input.value;const caret=input.selectionStart??value.length;
+  const upto=value.slice(0,caret);
+  const at=upto.lastIndexOf('@');
+  if(at<0)return null;
+  // Only fire after whitespace (avoids matching e-mails).
+  if(at>0){
+    const prev=upto[at-1];if(prev&&!/\s/.test(prev))return null;
+  }
+  const frag=upto.slice(at+1);
+  if(/\s/.test(frag))return null;
+  return {at,frag};
+}
+function agentPickerMatches(frag){
+  const f=frag.toLowerCase();
+  return PALETTE_AGENTS.filter(a=>(a.name||'').toLowerCase().startsWith(f)).slice(0,6);
+}
+let PICKER_SEL=0;
+function agentPickerShow(){
+  const inp=document.getElementById('taskInput');
+  const state=agentPickerState(inp);
+  const picker=document.getElementById('agentPicker');
+  if(!state){picker.classList.add('hidden');return;}
+  const matches=agentPickerMatches(state.frag);
+  if(!matches.length){picker.classList.add('hidden');return;}
+  PICKER_SEL=Math.min(PICKER_SEL,matches.length-1);
+  picker.dataset.matches=JSON.stringify(matches);
+  picker.dataset.at=String(state.at);
+  picker.innerHTML='<div class="head">agent picker · '+matches.length+' match'+(matches.length>1?'es':'')+'</div>'+
+    matches.map((a,i)=>`<div class="opt ${i===PICKER_SEL?'sel':''}" data-i="${i}"><span class="at">@</span><span class="nm">${escHtml(a.name)}</span><span class="role">${escHtml(a.role||'agent')}</span></div>`).join('');
+  // Position above the input.
+  const r=inp.getBoundingClientRect();
+  picker.style.left=(r.left)+'px';
+  picker.style.bottom=(window.innerHeight-r.top+6)+'px';
+  picker.classList.remove('hidden');
+}
+function agentPickerAccept(){
+  const picker=document.getElementById('agentPicker');
+  if(picker.classList.contains('hidden'))return false;
+  const matches=JSON.parse(picker.dataset.matches||'[]');
+  const at=parseInt(picker.dataset.at||'-1',10);
+  const m=matches[PICKER_SEL];if(!m||at<0)return false;
+  const inp=document.getElementById('taskInput');
+  const before=inp.value.slice(0,at);
+  const after=inp.value.slice(inp.selectionStart??inp.value.length);
+  const tail=after.startsWith(' ')?after:' '+after;
+  inp.value=before+'@'+m.name+tail;
+  const newCaret=(before+'@'+m.name+' ').length;
+  inp.selectionStart=inp.selectionEnd=newCaret;
+  picker.classList.add('hidden');
+  inp.focus();
+  return true;
+}
+document.getElementById('taskInput').addEventListener('input',()=>{PICKER_SEL=0;agentPickerShow()});
+document.getElementById('taskInput').addEventListener('click',()=>agentPickerShow());
+document.getElementById('taskInput').addEventListener('keydown',e=>{
+  const picker=document.getElementById('agentPicker');
+  const open=!picker.classList.contains('hidden');
+  if(!open)return;
+  if(e.key==='ArrowDown'){const m=JSON.parse(picker.dataset.matches||'[]');if(m.length){e.preventDefault();PICKER_SEL=Math.min(m.length-1,PICKER_SEL+1);agentPickerShow();}}
+  else if(e.key==='ArrowUp'){const m=JSON.parse(picker.dataset.matches||'[]');if(m.length){e.preventDefault();PICKER_SEL=Math.max(0,PICKER_SEL-1);agentPickerShow();}}
+  else if(e.key==='Enter'||e.key==='Tab'){if(agentPickerAccept())e.preventDefault();}
+  else if(e.key==='Escape'){picker.classList.add('hidden');}
+});
+document.getElementById('agentPicker').addEventListener('click',e=>{
+  const opt=e.target.closest('.opt');if(!opt)return;
+  PICKER_SEL=parseInt(opt.dataset.i,10);agentPickerAccept();
+});
+document.addEventListener('click',e=>{
+  if(!e.target.closest('#taskInput')&&!e.target.closest('#agentPicker'))document.getElementById('agentPicker').classList.add('hidden');
+});
+
 // ─── WebSocket ─────────────────────────────────────────────────────
 let ws;
 function connect(){
   ws=new WebSocket(`ws://${location.host}/ws`);
-  ws.onopen=()=>{$('conn').textContent='live';$('status').className='status on';$('status').textContent='● live';loadConfig();loadSwarmAgents();restoreActivePanel()};
+  ws.onopen=()=>{
+    $('conn').textContent='live';$('status').className='status on';$('status').textContent='● live';
+    loadConfig();
+    loadSwarmAgents();
+    loadAgentsCache();
+    loadCommandsCache();
+    restoreActivePanel();
+  };
   ws.onclose=()=>{$('conn').textContent='reconnecting…';$('status').className='status off';$('status').textContent='● disconnected';setTimeout(connect,2000)};
   ws.onmessage=(e)=>{try{handleEvent(JSON.parse(e.data))}catch(err){}};
 }

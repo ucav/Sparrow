@@ -124,6 +124,39 @@ fn console_html_has_drawer_with_seven_panels() {
 }
 
 #[test]
+fn console_html_has_slash_palette_and_agent_picker() {
+    let html =
+        std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");
+    // Slash palette modal + Cmd+K wiring.
+    assert!(
+        html.contains("id=\"palette\""),
+        "console.html must declare the slash palette modal"
+    );
+    assert!(
+        html.contains("paletteOpen") && html.contains("paletteFilter"),
+        "palette open / filter functions must be present"
+    );
+    assert!(
+        html.contains("key.toLowerCase()==='k'"),
+        "Cmd/Ctrl+K shortcut must be wired"
+    );
+    // Inline @-picker.
+    assert!(
+        html.contains("id=\"agentPicker\""),
+        "console.html must declare the inline @-picker"
+    );
+    assert!(
+        html.contains("agentPickerState") && html.contains("agentPickerAccept"),
+        "@-picker state/accept helpers must be present"
+    );
+    // Caches load on connect.
+    assert!(
+        html.contains("loadCommandsCache") && html.contains("loadAgentsCache"),
+        "both /commands and /agents must be pre-fetched on connect"
+    );
+}
+
+#[test]
 fn classify_agent_color_falls_back_to_steel() {
     use sparrow::console::classify_agent_color;
     assert_eq!(classify_agent_color("blue"), "planner");
