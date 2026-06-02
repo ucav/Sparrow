@@ -83,6 +83,7 @@ impl WebViewServer {
             .route("/memory", get(get_memory))
             .route("/plugins", get(get_plugins))
             .route("/tools", get(get_tools))
+            .route("/models", get(list_models))
             .route("/approval", post(resolve_approval))
             .route("/config", get(get_config).post(save_provider))
             .route("/permissions", get(get_permissions).post(save_permissions))
@@ -155,6 +156,8 @@ impl ApprovalHandler for WebApprovalBroker {
 #[derive(serde::Deserialize)]
 struct RunRequest {
     task: String,
+    #[serde(default)]
+    model_override: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -317,8 +320,14 @@ async fn run_task(
         });
     }
 
+    // Prepend model override hint so the engine can parse it.
+    let dispatch = if let Some(m) = req.model_override.filter(|s| !s.is_empty()) {
+        format!("__model:{m}__ {task}")
+    } else {
+        task
+    };
     match &state.command_tx {
-        Some(tx) if tx.send(task).is_ok() => axum::extract::Json(RunResponse {
+        Some(tx) if tx.send(dispatch).is_ok() => axum::extract::Json(RunResponse {
             ok: true,
             message: "queued".into(),
         }),
@@ -490,6 +499,31 @@ async fn get_tools() -> axum::extract::Json<ToolsResponse> {
             .collect(),
         tools: crate::tools::known_tool_metadata(None),
     })
+}
+
+async fn list_models() -> axum::extract::Json<serde_json::Value> {
+    use crate::config::providers::provider_registry;
+    let providers = provider_registry();
+    let out: Vec<serde_json::Value> = providers
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "id": p.id,
+                "label": p.label,
+                "tags": p.tags,
+                "models": p.models.iter().map(|m| serde_json::json!({
+                    "name": m.name,
+                    "label": m.label,
+                    "tags": m.tags,
+                    "context_window": m.context_window,
+                    "cost_in": m.cost_input_per_mtok,
+                    "cost_out": m.cost_output_per_mtok,
+                    "recommended": m.recommended,
+                })).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+    axum::extract::Json(serde_json::json!({ "ok": true, "providers": out }))
 }
 
 async fn resolve_approval(
@@ -908,8 +942,28 @@ async fn list_agents() -> axum::extract::Json<serde_json::Value> {
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("sparrow")
         .join("agents");
+
+    // Collect souls from user config dir + local repo `agents/` dir + `.sparrow/agents/`.
+    let extra_dirs: Vec<std::path::PathBuf> = [
+        std::env::current_dir().ok().map(|d| d.join("agents")),
+        std::env::current_dir().ok().map(|d| d.join(".sparrow").join("agents")),
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|p| p.is_dir())
+    .collect();
+
     let store = FsAgentStore::new(agents_dir.clone());
-    let souls = store.list();
+    let mut souls = store.list();
+    let mut seen: std::collections::HashSet<String> = souls.iter().map(|s| s.name.clone()).collect();
+    for dir in &extra_dirs {
+        let extra = FsAgentStore::new(dir.clone()).list();
+        for s in extra {
+            if seen.insert(s.name.clone()) {
+                souls.push(s);
+            }
+        }
+    }
 
     let items: Vec<serde_json::Value> = souls
         .into_iter()

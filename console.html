@@ -348,6 +348,25 @@
   .composer-hints kbd{background:var(--panel2);border:1px solid var(--line);border-radius:4px;
     padding:1px 5px;font-family:inherit;font-size:10px;color:var(--dim)}
 
+  /* model picker dropdown */
+  .mp-drop{position:absolute;bottom:calc(100% + 8px);left:0;z-index:200;
+    background:var(--panel);border:1px solid var(--line-hot);border-radius:12px;
+    box-shadow:0 24px 64px -12px rgba(0,0,0,.8);width:340px;overflow:hidden;
+    animation:in .14s ease}
+  .mp-drop-head{padding:9px 14px 7px;font-size:9px;letter-spacing:2px;text-transform:uppercase;
+    color:var(--dimmer);border-bottom:1px solid var(--line)}
+  .mp-section{padding:4px 0}
+  .mp-provider{padding:4px 14px 2px;font-size:9px;letter-spacing:1.8px;text-transform:uppercase;color:var(--dimmer)}
+  .mp-item{display:flex;align-items:center;gap:10px;padding:6px 14px;cursor:pointer;transition:.12s}
+  .mp-item:hover{background:color-mix(in srgb,var(--brand) 8%,transparent)}
+  .mp-item.selected{background:color-mix(in srgb,var(--brand) 12%,transparent)}
+  .mp-item.selected .mp-name{color:var(--brand)}
+  .mp-name{font-size:11.5px;color:var(--fg);font-weight:500;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mp-ctx{font-size:9.5px;color:var(--dimmer);white-space:nowrap}
+  .mp-cost{font-size:9px;color:var(--agent);white-space:nowrap}
+  .mp-rec{font-size:8px;color:var(--brand);border:1px solid color-mix(in srgb,var(--brand) 40%,transparent);border-radius:999px;padding:0 5px;letter-spacing:.5px}
+  .mp-auto{padding:6px 14px;border-top:1px solid var(--line);font-size:10.5px;color:var(--dim);cursor:pointer;transition:.12s}
+  .mp-auto:hover{color:var(--fg);background:color-mix(in srgb,var(--brand) 5%,transparent)}
   /* boot animation overlay */
   .boot-overlay{position:fixed;inset:0;background:radial-gradient(900px 600px at 50% 50%, color-mix(in srgb,var(--brand) 15%, var(--bg)), var(--bg) 70%);
     z-index:5000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
@@ -513,6 +532,20 @@
   .approval-actions button{font-family:inherit;font-size:11px;padding:5px 12px;border-radius:7px;cursor:pointer}
   .approval-actions .approve{color:var(--add);background:rgba(116,194,88,.1);border:1px solid rgba(116,194,88,.35)}
   .approval-actions .deny{color:var(--rem);background:rgba(217,106,99,.1);border:1px solid rgba(217,106,99,.35)}
+  /* side diff viewer panel */
+  .diff-panel{position:fixed;top:0;right:0;bottom:0;width:min(480px,48vw);z-index:500;
+    background:var(--panel);border-left:1px solid var(--line-hot);
+    display:flex;flex-direction:column;
+    transform:translateX(100%);transition:transform .26s cubic-bezier(.2,.8,.2,1);
+    box-shadow:-20px 0 60px -12px rgba(0,0,0,.7)}
+  .diff-panel.open{transform:none}
+  .diff-panel-head{display:flex;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);flex:0 0 auto}
+  .diff-panel-head .dp-path{flex:1;font-size:11px;color:var(--fg);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .diff-panel-head .dp-close{border:none;background:transparent;color:var(--dimmer);cursor:pointer;font-size:16px;padding:2px 6px;font-family:inherit;border-radius:4px;transition:.12s}
+  .diff-panel-head .dp-close:hover{color:var(--fg);background:var(--panel2)}
+  .diff-panel-body{flex:1;overflow:auto;padding:4px 0;font-size:11px;line-height:1.6;font-family:inherit}
+  .diff-panel-body::-webkit-scrollbar{width:6px}.diff-panel-body::-webkit-scrollbar-thumb{background:#2c2419;border-radius:6px}
+  .diff-panel-stats{padding:6px 14px;border-top:1px solid var(--line);font-size:10px;color:var(--dimmer);flex:0 0 auto;display:flex;gap:14px}
   .approval-modal{position:fixed;inset:0;z-index:1100;display:none;align-items:center;justify-content:center;background:color-mix(in srgb,var(--bg) 68%,transparent);backdrop-filter:blur(8px)}
   .approval-modal.show{display:flex;animation:fadein .16s ease both}
   .approval-card{width:min(520px,92vw);border:1px solid var(--line-hot);border-radius:12px;background:var(--panel);box-shadow:0 30px 90px rgba(0,0,0,.75);padding:18px;animation:popin .2s cubic-bezier(.2,.8,.2,1) both}
@@ -770,7 +803,14 @@
 
   <div class="composer-hints">
     <span><span class="ok-dot" style="color:var(--add)">●</span> context <b id="ctxHintPct" style="color:var(--fg)">—</b></span>
-    <button id="modelPickerBtn" title="Switch model — opens command palette" style="font-family:inherit;font-size:10px;color:var(--planner);background:color-mix(in srgb,var(--planner) 10%,transparent);border:1px solid color-mix(in srgb,var(--planner) 35%,transparent);padding:2px 9px;border-radius:999px;cursor:pointer;letter-spacing:.3px;transition:.15s" onclick="openPalette()">⬡ <span id="modelPickerLabel">auto</span></button>
+    <div style="position:relative">
+      <button id="modelPickerBtn" title="Switch model" style="font-family:inherit;font-size:10px;color:var(--planner);background:color-mix(in srgb,var(--planner) 10%,transparent);border:1px solid color-mix(in srgb,var(--planner) 35%,transparent);padding:2px 9px;border-radius:999px;cursor:pointer;letter-spacing:.3px;transition:.15s" onclick="toggleModelPicker(event)">⬡ <span id="modelPickerLabel">auto</span></button>
+      <div class="mp-drop" id="modelPickerDrop" style="display:none">
+        <div class="mp-drop-head">select model</div>
+        <div id="modelPickerList"><div style="padding:12px 14px;color:var(--dimmer);font-size:11px">loading…</div></div>
+        <div class="mp-auto" onclick="setModelOverride(null)">⟳ auto-route (recommended)</div>
+      </div>
+    </div>
     <span class="kbds">
       <kbd>⌘K</kbd>commands
       <kbd>@</kbd>agent
@@ -797,6 +837,17 @@
 
   </section><!-- /.main -->
 </div><!-- /.win -->
+
+<!-- Side diff viewer panel -->
+<div class="diff-panel" id="diffPanel" aria-label="Diff viewer">
+  <div class="diff-panel-head">
+    <span style="color:var(--coral);font-size:12px">◇</span>
+    <span class="dp-path" id="dpPath">—</span>
+    <span id="dpStats" style="font-size:9.5px;color:var(--dimmer)"></span>
+    <button class="dp-close" onclick="closeDiffPanel()" title="Close">✕</button>
+  </div>
+  <div class="diff-panel-body" id="dpBody"></div>
+</div>
 <!-- Sprint 1 inc 4: boot animation overlay (skippable) -->
 <div class="boot-overlay" id="bootOverlay" hidden>
   <svg class="b-logo" width="120" height="120" aria-label="Sparrow"><use href="#sparrow"/></svg>
@@ -1205,6 +1256,20 @@ function restoreActivePanel(){
 }
 function escHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 
+function updateCrewLiveStatus(name,status,note){
+  const list=document.getElementById('drw-crew-list');if(!list)return;
+  const items=list.querySelectorAll('[data-agent-name]');
+  items.forEach(el=>{
+    if(el.dataset.agentName===name){
+      const pill=el.querySelector('[data-crew-status]');
+      if(pill){pill.textContent=status;
+        const stMap={working:'var(--agent)',done:'var(--add)',error:'var(--rem)',idle:'var(--dimmer)'};
+        pill.style.color=stMap[(status||'').toLowerCase()]||'var(--steel)';
+        if(note){const nd=el.querySelector('[data-crew-note]');if(nd)nd.textContent=note.slice(0,40);}
+      }
+    }
+  });
+}
 async function loadCrewPanel(){
   const host=document.getElementById('drw-crew-list');
   try{
@@ -1215,15 +1280,16 @@ async function loadCrewPanel(){
     const colorMap={planner:'var(--planner)',coder:'var(--agent)',verifier:'var(--verifier)',gold:'var(--gold)',coral:'var(--coral)',steel:'var(--steel)'};
     host.innerHTML=agents.map(a=>{
       const col=colorMap[a.color_key]||'var(--steel)';
-      return `<div style="padding:9px 10px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:3px">
+      return `<div data-agent-name="${escHtml(a.name)}" style="padding:9px 10px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:3px">
         <div style="display:flex;align-items:center;gap:7px">
           <span style="width:7px;height:7px;border-radius:50%;background:${col};box-shadow:0 0 7px ${col};flex:0 0 auto"></span>
           <span style="font-weight:600;font-size:11.5px;color:${col}">${escHtml(a.name)}</span>
           <span style="margin-left:auto;font-size:9.5px;color:var(--dimmer);letter-spacing:.5px">${escHtml(a.role)}</span>
         </div>
         ${a.description?`<div style="font-size:10.5px;color:var(--dim);padding-left:14px;line-height:1.4">${escHtml(a.description)}</div>`:''}
-        <div style="padding-left:14px;margin-top:2px">
-          <span style="font-size:9px;color:var(--dimmer);background:color-mix(in srgb,${col} 10%,transparent);border:1px solid color-mix(in srgb,${col} 25%,transparent);padding:1px 7px;border-radius:999px">${escHtml(a.status||'idle')}</span>
+        <div style="padding-left:14px;margin-top:3px;display:flex;gap:6px;align-items:center">
+          <span data-crew-status style="font-size:9px;color:var(--dimmer);background:color-mix(in srgb,${col} 10%,transparent);border:1px solid color-mix(in srgb,${col} 25%,transparent);padding:1px 7px;border-radius:999px">${escHtml(a.status||'idle')}</span>
+          <span data-crew-note style="font-size:9.5px;color:var(--dimmer)"></span>
         </div>
       </div>`;
     }).join('');
@@ -1408,6 +1474,61 @@ async function loadHistoryCache(){
     HISTORY_INPUTS=Array.isArray(j.inputs)?j.inputs:[];
   }catch(_){HISTORY_INPUTS=[]}
 }
+// ─── Model picker ─────────────────────────────────────────────────────────
+let selectedModel=localStorage.getItem('sparrow-model')||null;
+let modelsCache=null;
+function fmtCtxShort(n){if(n>=1000000)return(n/1e6).toFixed(0)+'M';if(n>=1000)return Math.round(n/1000)+'k';return String(n);}
+function fmtCost(c){return c===0?'free':'$'+(c).toFixed(2)+'/Mtok';}
+function applyModelPickerLabel(){
+  const lbl=document.getElementById('modelPickerLabel');
+  if(!lbl)return;
+  lbl.textContent=selectedModel?selectedModel.replace(/^[^:]+:/,'').slice(0,22):
+    (document.getElementById('modelPickerLabel').dataset.live||'auto');
+}
+async function loadModels(){
+  if(modelsCache)return modelsCache;
+  try{const r=await fetch('/models');modelsCache=await r.json();}catch{modelsCache={providers:[]};}
+  return modelsCache;
+}
+async function toggleModelPicker(e){
+  e.stopPropagation();
+  const drop=document.getElementById('modelPickerDrop');
+  if(drop.style.display!=='none'){drop.style.display='none';return;}
+  drop.style.display='block';
+  const data=await loadModels();
+  const list=document.getElementById('modelPickerList');
+  const providers=(data.providers||[]).filter(p=>p.models&&p.models.length);
+  if(!providers.length){list.innerHTML='<div style="padding:12px 14px;color:var(--dimmer);font-size:11px">no providers configured</div>';return;}
+  list.innerHTML=providers.map(p=>`
+    <div class="mp-section">
+      <div class="mp-provider">${escHtml(p.label)}</div>
+      ${p.models.map(m=>{
+        const id=p.id+':'+m.name;
+        const sel=selectedModel===id;
+        return `<div class="mp-item${sel?' selected':''}" onclick="setModelOverride('${escHtml(id)}','${escHtml(fmtCtxShort(m.context_window))}')">
+          <span class="mp-name">${escHtml(m.label||m.name)}</span>
+          <span class="mp-ctx">${escHtml(fmtCtxShort(m.context_window))}</span>
+          <span class="mp-cost">${escHtml(m.cost_in===0?'free':'$'+m.cost_in+'/M')}</span>
+          ${m.recommended?'<span class="mp-rec">★</span>':''}
+        </div>`;
+      }).join('')}
+    </div>`).join('');
+}
+function setModelOverride(id,ctxLabel){
+  selectedModel=id;
+  if(id)localStorage.setItem('sparrow-model',id);
+  else localStorage.removeItem('sparrow-model');
+  document.getElementById('modelPickerDrop').style.display='none';
+  const lbl=document.getElementById('modelPickerLabel');
+  if(lbl)lbl.textContent=id?id.replace(/^[^:]+:/,'').slice(0,22):'auto';
+  if(id&&ctxLabel){contextLimit=parseInt(ctxLabel)*1000||contextLimit;updateContextMeter();}
+}
+document.addEventListener('click',e=>{
+  if(!e.target.closest('#modelPickerBtn')&&!e.target.closest('#modelPickerDrop')){
+    const d=document.getElementById('modelPickerDrop');if(d)d.style.display='none';
+  }
+});
+// ──────────────────────────────────────────────────────────────────────────
 function paletteOpen(){
   document.getElementById('palette').classList.add('open');
   const inp=document.getElementById('paletteInput');
@@ -1606,6 +1727,26 @@ function closeToolCard(ev){
   }
   TOOL_CARDS.delete(id);
 }
+function openDiffPanel(ev){
+  const path=ev.file||ev.path||'<unknown>';
+  const patch=ev.patch||ev.diff||'';
+  let pl=0,mn=0;
+  patch.split(/\r?\n/).forEach(l=>{if(/^\+[^+]/.test(l))pl++;else if(/^-[^-]/.test(l))mn++;});
+  let lineNum=0;
+  const dl=patch.split(/\r?\n/).map(l=>{
+    if(/^@@/.test(l))return '<span class="dl ctx" style="padding:0 10px;display:block;color:var(--dimmer);background:rgba(255,255,255,.03)">'+esc(l)+'</span>';
+    let kls='ctx',col='var(--dim)',bg='transparent',border='transparent';
+    if(/^\+/.test(l)){kls='pls';col='var(--add)';bg='color-mix(in srgb,var(--add) 8%,transparent)';border='var(--add)';lineNum++;}
+    else if(/^-/.test(l)){kls='mns';col='var(--rem)';bg='color-mix(in srgb,var(--rem) 8%,transparent)';border='var(--rem)';}
+    else if(l.length){lineNum++;}
+    return `<span style="display:block;padding:0 10px;background:${bg};border-left:2px solid ${border}"><span style="display:inline-block;width:28px;color:var(--dimmer);user-select:none;font-size:10px">${kls==='mns'?'':lineNum||''}</span><span style="color:${col}">${esc(l)}</span></span>`;
+  }).join('');
+  document.getElementById('dpPath').textContent=path;
+  document.getElementById('dpStats').textContent=`+${pl} −${mn}`;
+  document.getElementById('dpBody').innerHTML=`<div style="font-family:inherit">${dl}</div>`;
+  document.getElementById('diffPanel').classList.add('open');
+}
+function closeDiffPanel(){document.getElementById('diffPanel').classList.remove('open');}
 function renderDiffCard(ev){
   const path=ev.file||ev.path||'<unknown>';
   const patch=ev.patch||ev.diff||'';
@@ -1700,15 +1841,16 @@ function handleEvent(ev){
     case 'ToolUseProposed':setSwarm('coder','working','using tool · '+ev.name);openToolCard(ev);break;
     case 'ToolUseStarted':openToolCard(ev);break;
     case 'ToolOutput':closeToolCard(ev);break;
-    case 'DiffProposed':case 'DiffApplied':renderDiffCard(ev);break;
+    case 'DiffProposed':renderDiffCard(ev);break;
+    case 'DiffApplied':renderDiffCard(ev);openDiffPanel(ev);break;
     case 'Compacted':renderCompactBanner(ev);break;
     case 'ApprovalRequested':
       line(`<span class="warn">◌ approval required · ${esc(ev.summary)}</span>`);
       showApprovalModal(ev);
       break;
     case 'ApprovalResolved':line(`<span class="muted">↳ approval: <span class="planner">${esc(ev.decision)}</span></span>`);break;
-    case 'AgentSpawned':setSwarm(ev.role,'working',`model ${ev.model} online`);line(`<span class="${roleCls(ev.role)}">◆ ${esc(ev.role)} spawned (${esc(ev.model)})</span>`);break;
-    case 'AgentStatus':setSwarm(ev.role,ev.status,ev.note);line(`<span class="${roleCls(ev.role)}">${icon(ev.status)} ${esc(ev.role)} — ${esc(ev.note)}${ev.role==='coder'&&(ev.status==='Working'||ev.status==='Thinking')?'<span class="caret"></span>':''}</span>`);break;
+    case 'AgentSpawned':setSwarm(ev.role,'working',`model ${ev.model} online`);line(`<span class="${roleCls(ev.role)}">◆ ${esc(ev.role)} spawned (${esc(ev.model)})</span>`);updateCrewLiveStatus(ev.role||ev.name,'working',`spawned · ${ev.model}`);break;
+    case 'AgentStatus':setSwarm(ev.role,ev.status,ev.note);line(`<span class="${roleCls(ev.role)}">${icon(ev.status)} ${esc(ev.role)} — ${esc(ev.note)}${ev.role==='coder'&&(ev.status==='Working'||ev.status==='Thinking')?'<span class="caret"></span>':''}</span>`);updateCrewLiveStatus(ev.role||ev.name,ev.status,ev.note);break;
     case 'CheckpointCreated':line(`<span class="acc">● checkpoint:</span> <span class="muted">${esc(ev.label)}</span>`);addCheckpointNode(ev.label);chirp(1400,.07);break;
     case 'SkillLearned':line(`<span class="skill-pop">✦ skill learned · ${esc(ev.name)}</span>`);chirp(1100,.05);setTimeout(()=>chirp(1700,.07),80);break;
     case 'CostUpdate':setCost(ev.usd);break;
@@ -2020,7 +2162,9 @@ async function runTask(){
   const attachNote=attachedFiles.length?` <span class="muted">+ ${attachedFiles.length} file${attachedFiles.length>1?'s':''}</span>`:'';
   line(`<span class="prompt">sparrow ›</span> <span class="cmd">${esc(task||'analyse attached files')}</span>${attachNote}`);
   try{
-    const r=await fetch('/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task:payload})});
+    const runBody={task:payload};
+    if(selectedModel)runBody.model_override=selectedModel;
+    const r=await fetch('/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(runBody)});
     const j=await r.json();
     if(!j.ok)showError('Run failed',j.message,'Check the command channel and retry.');
     else{rememberSubmitted(task||'analyse attached files');attachedFiles=[];renderAttachments();updateContextMeter();}
