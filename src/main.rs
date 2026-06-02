@@ -1833,6 +1833,13 @@ fn handle_skills(
             let skills = library.all();
             println!("Library now has {} skills.", skills.len());
         }
+        sparrow::cli::SkillsAction::Rm { name } => {
+            if library.remove(&name)? {
+                println!("Removed skill '{}'.", name);
+            } else {
+                println!("No skill named '{}'. Run 'sparrow skills list' to see names.", name);
+            }
+        }
     }
     Ok(())
 }
