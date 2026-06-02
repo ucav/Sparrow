@@ -556,6 +556,20 @@
   .approval-card button{font-family:inherit;font-size:12px;border-radius:8px;padding:8px 14px;cursor:pointer}
   .approval-card .approve{color:var(--add);background:rgba(116,194,88,.12);border:1px solid rgba(116,194,88,.4)}
   .approval-card .deny{color:var(--rem);background:rgba(217,106,99,.12);border:1px solid rgba(217,106,99,.38)}
+  /* run summary card */
+  .run-summary{margin:10px 0;border:1px solid var(--line-hot);border-radius:10px;background:var(--panel);overflow:hidden;animation:in .2s ease}
+  .run-summary .rs-head{display:flex;align-items:center;gap:10px;padding:8px 13px;border-bottom:1px solid var(--line);font-size:10.5px}
+  .run-summary .rs-head .rs-ok{color:var(--add);font-size:13px}
+  .run-summary .rs-head .rs-status{color:var(--fg);font-weight:500;flex:1}
+  .run-summary .rs-head .rs-dur{color:var(--dimmer);font-size:10px}
+  .run-summary .rs-grid{display:grid;grid-template-columns:repeat(4,1fr);padding:10px 13px;gap:6px}
+  .run-summary .rs-stat{display:flex;flex-direction:column;gap:2px}
+  .run-summary .rs-stat .k{font-size:9px;text-transform:uppercase;letter-spacing:1.2px;color:var(--dimmer)}
+  .run-summary .rs-stat .v{font-size:12px;font-weight:600;font-variant-numeric:tabular-nums}
+  .run-summary .rs-stat .v.cost{color:var(--brand)}
+  .run-summary .rs-stat .v.tok{color:var(--agent)}
+  .run-summary .rs-stat .v.files{color:var(--planner)}
+  .run-summary .rs-stat .v.checks{color:var(--gold)}
   .error-banner{margin:8px 0;padding:9px 12px;border-radius:8px;background:rgba(217,106,99,.1);border:1px solid rgba(217,106,99,.32);color:var(--dim);font-size:11px;line-height:1.45}
   .error-banner .title{color:var(--rem);font-weight:700;text-transform:uppercase;letter-spacing:1px;font-size:10px;margin-bottom:3px}
   .error-banner .fix{color:var(--steel);margin-top:4px}
@@ -896,6 +910,7 @@
 const term=document.getElementById('term');
 const $=id=>document.getElementById(id);
 let costV=0,tokV=0,tokInV=0,tokOutV=0,sessionTok=0,sessionCost=0;
+let runStartMs=0,runDiffsApplied=0,runCheckpoints=0;
 let actualInV=0,actualOutV=0,estInV=0,estOutV=0;
 let tokenMeter=null,tokenMeterTimer=null;
 let demoTokenInterval=null;
@@ -1113,6 +1128,16 @@ async function hydrateHero(){
     setIf('hero-facts',(mem.stats&&mem.stats.facts!==undefined)?mem.stats.facts:(mem.facts||[]).length);
     setIf('hero-skills',(cfg.skills_count!==undefined)?cfg.skills_count:'—');
     setIf('hero-auto',(perm.permissions&&perm.permissions.mode)||'—');
+    // Update home screen path if visible
+    const hp=document.getElementById('homePath');
+    if(hp)hp.textContent=cfg.workdir||location.host;
+    // Update memory summary in home panel
+    const ms=document.getElementById('memorySummary');
+    if(ms){
+      const facts=(mem.stats&&mem.stats.facts!==undefined)?mem.stats.facts:(mem.facts||[]).length;
+      const mode=(perm.permissions&&perm.permissions.mode)||'supervised';
+      ms.textContent=`${facts} facts stored · permission mode: ${mode}`;
+    }
   }catch(_){}
 }
 
@@ -1820,7 +1845,7 @@ function handleEvent(ev){
   }
 
   switch(ev.type){
-    case 'RunStarted':line(`<span class="acc">▸ started:</span> <span class="cmd">analyse de la requête</span>`);resetRunMetrics();resetSwarm();setSwarm('planner','thinking','classifying request and selecting route');ensureTokenMeter();break;
+    case 'RunStarted':line(`<span class="acc">▸ started:</span> <span class="cmd">analyse de la requête</span>`);resetRunMetrics();resetSwarm();runStartMs=Date.now();runDiffsApplied=0;runCheckpoints=0;setSwarm('planner','thinking','classifying request and selecting route');ensureTokenMeter();break;
     case 'RouteSelected':{
       const chain=summarizeChain(ev.chain);
       const compact=compactChain(ev.chain);
@@ -1842,7 +1867,7 @@ function handleEvent(ev){
     case 'ToolUseStarted':openToolCard(ev);break;
     case 'ToolOutput':closeToolCard(ev);break;
     case 'DiffProposed':renderDiffCard(ev);break;
-    case 'DiffApplied':renderDiffCard(ev);openDiffPanel(ev);break;
+    case 'DiffApplied':renderDiffCard(ev);openDiffPanel(ev);runDiffsApplied++;break;
     case 'Compacted':renderCompactBanner(ev);break;
     case 'ApprovalRequested':
       line(`<span class="warn">◌ approval required · ${esc(ev.summary)}</span>`);
@@ -1851,7 +1876,7 @@ function handleEvent(ev){
     case 'ApprovalResolved':line(`<span class="muted">↳ approval: <span class="planner">${esc(ev.decision)}</span></span>`);break;
     case 'AgentSpawned':setSwarm(ev.role,'working',`model ${ev.model} online`);line(`<span class="${roleCls(ev.role)}">◆ ${esc(ev.role)} spawned (${esc(ev.model)})</span>`);updateCrewLiveStatus(ev.role||ev.name,'working',`spawned · ${ev.model}`);break;
     case 'AgentStatus':setSwarm(ev.role,ev.status,ev.note);line(`<span class="${roleCls(ev.role)}">${icon(ev.status)} ${esc(ev.role)} — ${esc(ev.note)}${ev.role==='coder'&&(ev.status==='Working'||ev.status==='Thinking')?'<span class="caret"></span>':''}</span>`);updateCrewLiveStatus(ev.role||ev.name,ev.status,ev.note);break;
-    case 'CheckpointCreated':line(`<span class="acc">● checkpoint:</span> <span class="muted">${esc(ev.label)}</span>`);addCheckpointNode(ev.label);chirp(1400,.07);break;
+    case 'CheckpointCreated':line(`<span class="acc">● checkpoint:</span> <span class="muted">${esc(ev.label)}</span>`);addCheckpointNode(ev.label);runCheckpoints++;chirp(1400,.07);break;
     case 'SkillLearned':line(`<span class="skill-pop">✦ skill learned · ${esc(ev.name)}</span>`);chirp(1100,.05);setTimeout(()=>chirp(1700,.07),80);break;
     case 'CostUpdate':setCost(ev.usd);break;
     case 'TokenUsageEstimated':addTokEstimate(ev.input,ev.output);break;
@@ -1861,10 +1886,29 @@ function handleEvent(ev){
       setSwarm('verifier',ev.failed>0?'error':'done',ev.failed>0?`${ev.failed} failing tests`:`${ev.passed} tests passed`);
       if(ev.failed>0){line(`<span class="warn">⚠ tests ${ev.passed} passed · ${ev.failed} failed</span>`)}
       else{line(`<span class="ok">✓ tests ${ev.passed} passed</span>`)}break;
-    case 'RunFinished':
+    case 'RunFinished':{
       setSwarm('coder','done','response completed');
       setSwarm('verifier','done','run closed · metrics captured');
-      line(`<span class="ok">✓ done</span> <span class="muted">${esc(ev.outcome.status)} · cost <span class="cost">$${ev.outcome.cost_usd.toFixed(4)}</span></span>`);chirp(900,.05);setTimeout(()=>chirp(1400,.07),100);break;
+      const durMs=runStartMs?Date.now()-runStartMs:0;
+      const durStr=durMs>60000?Math.floor(durMs/60000)+'m '+Math.round((durMs%60000)/1000)+'s':durMs>1000?(durMs/1000).toFixed(1)+'s':durMs+'ms';
+      const finalCost=ev.outcome?.cost_usd??costV;
+      const finalTok=ev.outcome?.tokens?.input+ev.outcome?.tokens?.output||tokV;
+      const card=document.createElement('div');card.className='run-summary';
+      card.innerHTML=`<div class="rs-head">
+        <span class="rs-ok">✓</span>
+        <span class="rs-status">${esc(ev.outcome?.status||'done')}</span>
+        <span class="rs-dur">${durStr}</span>
+      </div>
+      <div class="rs-grid">
+        <div class="rs-stat"><span class="k">cost</span><span class="v cost">$${finalCost.toFixed(4)}</span></div>
+        <div class="rs-stat"><span class="k">tokens</span><span class="v tok">${(finalTok||tokV).toLocaleString()}</span></div>
+        <div class="rs-stat"><span class="k">files edited</span><span class="v files">${runDiffsApplied}</span></div>
+        <div class="rs-stat"><span class="k">checkpoints</span><span class="v checks">${runCheckpoints}</span></div>
+      </div>`;
+      term.appendChild(card);term.scrollTop=term.scrollHeight;
+      chirp(900,.05);setTimeout(()=>chirp(1400,.07),100);
+      break;
+    }
     case 'Error':
       if(!String(ev.message||'').includes('Ollama API error 404')){
         showError('Runtime error',ev.message,'Check config, provider availability, or retry after fixing the reported cause.','docs/troubleshooting.md')
@@ -1879,31 +1923,40 @@ function escAttr(s){return esc(s).replace(/"/g,'&quot;');}
 function roleCls(r){return r==='planner'?'planner':r==='coder'?'coder':r==='verifier'?'verifier':'muted';}
 function icon(s){const m={Done:'✓',Working:'●',Thinking:'○',Error:'✗'};return m[s]||'◌';}
 
-function bootIntro(){
+async function bootIntro(){
   if(term.childElementCount>0)return;
+  // Fetch providers and models for the home screen
+  let providerSummary='loading…';
+  try{
+    const mr=await fetch('/models');const md=await mr.json();
+    const ps=md.providers||[];
+    const total=ps.reduce((s,p)=>s+p.models.length,0);
+    providerSummary=`${ps.length} providers · ${total} models available`;
+  }catch{providerSummary='provider catalog unavailable';}
+
   const home=document.createElement('div');
   home.className='home-panel';
   home.innerHTML=`
     <section class="home-left">
       <svg class="hero-logo" viewBox="0 0 240 240" aria-label="Sparrow logo"><use href="#sparrow"/></svg>
       <div>
-        <div class="home-title">Welcome back Abdou!</div>
+        <div class="home-title">cockpit ready</div>
         <div class="home-sub"><b>SPARROW</b><br>one cli · grows with you</div>
-        <div class="home-path">C:\\Sparrow</div>
+        <div class="home-path" id="homePath">—</div>
       </div>
     </section>
     <section class="home-right">
       <div class="home-block">
         <h3>Route cockpit</h3>
-        <p>Provider catalog ready · automatic fallback visible · local/cloud route tracked without raw backend errors.</p>
+        <p>${escHtml(providerSummary)} · automatic fallback · cost and token tracking live.</p>
       </div>
       <div class="home-block">
-        <h3>Live workspace</h3>
-        <p>Attach files from the input bar, watch context usage, then let planner, coder and verifier stream their state below.</p>
+        <h3>Model picker</h3>
+        <p>Click <b>⬡ auto</b> in the bar above to fix a specific model. Auto-route selects the cheapest capable brain per task.</p>
       </div>
       <div class="home-block">
-        <h3>Memory</h3>
-        <p id="memorySummary">Loading bounded memory docs and session index…</p>
+        <h3>Memory &amp; crew</h3>
+        <p id="memorySummary">Loading memory and agent index…</p>
       </div>
     </section>`;
   term.appendChild(home);
@@ -2296,6 +2349,8 @@ $('cfgBtn').addEventListener('click',openConfig);
 $('closeConfig').addEventListener('click',closeConfig);
 $('overlay').addEventListener('click',closeConfig);
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('configPanel').classList.contains('show'))closeConfig()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('diffPanel').classList.contains('open'))closeDiffPanel();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('modelPickerDrop').style.display!=='none')document.getElementById('modelPickerDrop').style.display='none';});
 
 let providers=[];
 async function loadConfig(){
