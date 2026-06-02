@@ -644,6 +644,10 @@ function bootIntro(){
         <h3>Live workspace</h3>
         <p>Attach files from the input bar, watch context usage, then let planner, coder and verifier stream their state below.</p>
       </div>
+      <div class="home-block">
+        <h3>Memory</h3>
+        <p id="memorySummary">Loading bounded memory docs and session index…</p>
+      </div>
     </section>`;
   term.appendChild(home);
   const boot=line('<span class="sec">— cockpit online —</span>');
@@ -657,6 +661,7 @@ function bootIntro(){
   pulseLearnToast('learn-toast');
   startTokenCounter('tok');
   updateContextMeter();
+  loadMemory();
   typeCmd('status',term);
 }
 
@@ -745,6 +750,21 @@ async function showCommands(){
       line(`<span class="planner">${esc(cmd.name)}</span> <span class="muted">— ${esc(cmd.description)} · ${esc(cmd.source)}</span>`);
     });
   }catch(e){line(`<span class="err">Error: ${esc(e.message)}</span>`)}
+}
+
+async function loadMemory(){
+  try{
+    const r=await fetch('/memory');
+    const j=await r.json();
+    if(!j.ok||!j.stats)return;
+    const s=j.stats;
+    const text=`${s.facts} facts · MEMORY.md ${s.memory_chars}/${s.memory_limit} · USER.md ${s.user_chars}/${s.user_limit}`;
+    const target=$('memorySummary');
+    if(target)target.textContent=text;
+  }catch(_e){
+    const target=$('memorySummary');
+    if(target)target.textContent='Memory status unavailable.';
+  }
 }
 
 async function planTask(task){
