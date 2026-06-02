@@ -36,6 +36,7 @@ pub mod engine;
 pub mod event;
 pub mod extras;
 pub mod gateway;
+pub mod github;
 pub mod hooks;
 pub mod memory;
 pub mod onboarding;

@@ -145,6 +145,17 @@ files with frontmatter fields such as `name`, `description`, `role`, `prompt`,
 
 See [`docs/security.md`](security.md) for the full check matrix and scoring rules.
 
+## GitHub
+
+| Command | Status | Description |
+|---|---|---|
+| `sparrow github review <pr>` | Alpha | Fetch PR diff via `gh`, build a `ReviewPlan` JSON. Requires `GITHUB_TOKEN` and `gh` on PATH unless `--dry-run` |
+| `sparrow github review <pr> --dry-run` | Alpha | Pure data shaping — never reads `gh` or the network; useful in CI/tests |
+| `sparrow github status` | Alpha | `gh run list --limit 5` for the current repo |
+| `sparrow github logs <run-id>` | Alpha | `gh run view <run-id> --log` |
+
+See [`docs/github-action.md`](github-action.md) for the composite action and a sample PR-review workflow.
+
 ## MCP
 
 | Command | Status | Description |
