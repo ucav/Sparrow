@@ -101,11 +101,18 @@ impl Tool for MemoryTool {
                     args["id"]
                         .as_str()
                         .filter(|id| !id.trim().is_empty())
-                        .unwrap_or(key)
-                        .to_string()
+                        .map(|id| id.to_string())
+                        .or_else(|| {
+                            self.memory
+                                .all_facts()
+                                .into_iter()
+                                .find(|f| f.key == key)
+                                .map(|f| f.id)
+                        })
                 } else {
-                    uuid::Uuid::new_v4().to_string()
+                    Some(uuid::Uuid::new_v4().to_string())
                 };
+                let id = id.unwrap_or_else(|| key.to_string());
                 self.memory.remember(Fact {
                     id: id.clone(),
                     key: key.to_string(),

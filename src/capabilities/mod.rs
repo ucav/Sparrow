@@ -51,6 +51,9 @@ pub struct Skill {
 pub struct SkillInvocation {
     pub skill: Skill,
     pub loaded_references: Vec<(String, String)>,
+    pub loaded_templates: Vec<(String, String)>,
+    pub loaded_scripts: Vec<(String, String)>,
+    pub loaded_assets: Vec<(String, String)>,
 }
 
 fn default_score() -> f64 {
@@ -379,19 +382,25 @@ impl SkillLibrary for FsSkillLibrary {
         } else {
             self.skills_dir.join(&skill.source_file)
         };
-        let mut loaded_references = Vec::new();
-        for reference in &skill.references {
-            let candidate = base.join(reference);
-            if !candidate.starts_with(&base) || !candidate.exists() {
-                continue;
+        let load_files = |files: &[String]| -> Vec<(String, String)> {
+            let mut loaded = Vec::new();
+            for f in files {
+                let candidate = base.join(f);
+                if !candidate.starts_with(&base) || !candidate.exists() {
+                    continue;
+                }
+                if let Ok(content) = std::fs::read_to_string(&candidate) {
+                    loaded.push((f.clone(), content));
+                }
             }
-            if let Ok(content) = std::fs::read_to_string(&candidate) {
-                loaded_references.push((reference.clone(), content));
-            }
-        }
+            loaded
+        };
         Ok(Some(SkillInvocation {
+            loaded_references: load_files(&skill.references),
+            loaded_templates: load_files(&skill.templates),
+            loaded_scripts: load_files(&skill.scripts),
+            loaded_assets: load_files(&skill.assets),
             skill,
-            loaded_references,
         }))
     }
 
