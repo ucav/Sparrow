@@ -678,10 +678,15 @@ impl Engine {
         let task_summary = self.task_summary(&task.description, &tier);
         let chain_ids: Vec<String> = chain.iter().map(|b| b.id().to_string()).collect();
 
+        let agent_name = self
+            .identity
+            .as_ref()
+            .map(|identity| identity.name.clone())
+            .unwrap_or_else(|| "sparrow".into());
         let _ = event_tx.send(Event::RunStarted {
             run: run_id.clone(),
             task: task.description.clone(),
-            agent: "sparrow".into(),
+            agent: agent_name,
         });
 
         let _ = event_tx.send(Event::Message {
