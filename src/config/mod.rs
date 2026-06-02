@@ -52,6 +52,10 @@ pub struct Defaults {
     pub sandbox: String,
     #[serde(default = "default_theme")]
     pub theme: String,
+    /// Optional verification command run after mutating batches (e.g. "cargo build").
+    /// On non-zero exit, the failure is re-injected so the agent fixes it.
+    #[serde(default)]
+    pub verify_command: Option<String>,
 }
 
 impl Default for Defaults {
@@ -60,6 +64,7 @@ impl Default for Defaults {
             autonomy: default_autonomy(),
             sandbox: default_sandbox(),
             theme: default_theme(),
+            verify_command: None,
         }
     }
 }

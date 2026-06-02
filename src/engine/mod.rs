@@ -526,6 +526,62 @@ impl Engine {
         )
     }
 
+    /// Summarize a slice of dropped conversation messages into ~200 tokens so
+    /// compaction preserves continuity instead of just truncating (§3.7).
+    async fn summarize_messages(&self, brain: &dyn Brain, middle: &[Msg]) -> Option<String> {
+        if middle.is_empty() {
+            return None;
+        }
+        // Flatten the middle into a compact transcript for the summarizer.
+        let mut transcript = String::new();
+        for m in middle {
+            for block in &m.content {
+                match block {
+                    ContentBlock::Text { text } => {
+                        transcript.push_str(&format!("[{}] {}\n", m.role, text));
+                    }
+                    ContentBlock::ToolUse { name, .. } => {
+                        transcript.push_str(&format!("[{}] (tool: {})\n", m.role, name));
+                    }
+                    ContentBlock::ToolResult { .. } => {
+                        transcript.push_str(&format!("[{}] (tool result)\n", m.role));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if transcript.len() > 12_000 {
+            transcript.truncate(12_000);
+        }
+        let req = BrainRequest {
+            system: Some(
+                "Summarize this agent conversation in <=200 tokens. Preserve: files edited, \
+                 decisions made, current state, and any unfinished work. Plain text only."
+                    .into(),
+            ),
+            messages: vec![Msg {
+                role: "user".into(),
+                content: vec![ContentBlock::Text { text: transcript }],
+            }],
+            tools: vec![],
+            max_tokens: 300,
+            temperature: 0.0,
+            stop: vec![],
+        };
+        let mut stream = brain.complete(req).await.ok()?;
+        let mut out = String::new();
+        while let Some(ev) = stream.next().await {
+            match ev {
+                BrainEvent::TextDelta(t) => out.push_str(&t),
+                BrainEvent::Done(_) => break,
+                BrainEvent::Error(_) => return None,
+                _ => {}
+            }
+        }
+        let out = out.trim().to_string();
+        if out.is_empty() { None } else { Some(out) }
+    }
+
     /// Drive one AgentRun to completion.
     pub async fn drive(
         &self,
@@ -721,6 +777,19 @@ impl Engine {
         registry.register(Arc::new(crate::tools::media::ImageGen::new()));
         registry.register(Arc::new(crate::tools::media::Tts::new()));
         registry.register(Arc::new(crate::tools::subagent::PythonRpc::new()));
+        registry.register(Arc::new(crate::tools::code_nav::Glob));
+        registry.register(Arc::new(crate::tools::code_nav::Symbols));
+        {
+            // Subagent delegation: child engine built from the same router/config.
+            let mut sub = crate::tools::subagent::SubagentSpawn::new(
+                self.router.clone(),
+                self.config.clone(),
+            );
+            if let Some(mem) = &self.memory {
+                sub = sub.with_memory(mem.clone());
+            }
+            registry.register(Arc::new(sub));
+        }
         let tools = Arc::new(registry);
         let tool_specs: Vec<ToolSpec> = tools.to_specs();
 
@@ -807,6 +876,15 @@ impl Engine {
         let mut waiting_for_approval = false;
         let mut denied_by_approval = false;
         let mut skill_evidence = String::new();
+        // Iteration safety cap: bound the agentic loop independently of budget.
+        let mut turns: u32 = 0;
+        const MAX_TURNS: u32 = 60;
+        // Auto-verify state: track whether mutating edits happened and how many
+        // verify attempts we've spent, so we run the verify command after the
+        // model says it's done and re-inject failures (bounded).
+        let mut had_mutation = false;
+        let mut verify_attempts: u32 = 0;
+        const MAX_VERIFY_ATTEMPTS: u32 = 2;
 
         // Helper to send redacted events
         let send = |event: Event| {
@@ -815,6 +893,17 @@ impl Engine {
 
         // Main agentic loop
         loop {
+            // Iteration cap: stop runaway loops independently of budget.
+            turns += 1;
+            if turns > MAX_TURNS {
+                send(Event::Message {
+                    run: run_id.clone(),
+                    role: "guard".into(),
+                    text: format!("iteration cap reached ({} turns) — stopping", MAX_TURNS),
+                });
+                break;
+            }
+
             // Budget check: hard stop if exceeded
             if cost_usd + estimated_cost_unconfirmed >= budget_session {
                 send(Event::Error {
@@ -917,7 +1006,26 @@ impl Engine {
                     let original_task = messages.first().cloned();
                     let keep_tail: Vec<Msg> =
                         messages.iter().rev().take(6).cloned().collect::<Vec<_>>();
-                    let dropped = messages.len().saturating_sub(7);
+                    let middle: Vec<Msg> = messages
+                        .iter()
+                        .skip(1)
+                        .take(messages.len().saturating_sub(7))
+                        .cloned()
+                        .collect();
+                    let dropped = middle.len();
+
+                    // Ask the current brain for a real summary of the dropped middle
+                    // (best-effort; fall back to a plain marker on failure).
+                    let summary = self
+                        .summarize_messages(brain.as_ref(), &middle)
+                        .await
+                        .unwrap_or_else(|| {
+                            format!(
+                                "{} prior messages were dropped to fit the model window.",
+                                dropped
+                            )
+                        });
+
                     let mut compacted: Vec<Msg> = Vec::new();
                     if let Some(task) = original_task {
                         compacted.push(task);
@@ -926,10 +1034,9 @@ impl Engine {
                         role: "user".into(),
                         content: vec![ContentBlock::Text {
                             text: format!(
-                                "[CONTEXT COMPACTED] {} prior messages dropped to fit the model window. \
-                                 Preserved: original task + last 6 turns. \
-                                 Files edited and tool outputs in the preserved tail remain authoritative.",
-                                dropped
+                                "[CONTEXT SUMMARY of {} earlier messages]\n{}\n\
+                                 (Files edited and tool outputs in the turns below remain authoritative.)",
+                                dropped, summary
                             ),
                         }],
                     });
@@ -940,7 +1047,10 @@ impl Engine {
                     let _ = event_tx.send(Event::Message {
                         run: run_id.clone(),
                         role: "compaction".into(),
-                        text: format!("context compacted: {} messages dropped (estimated {} tok > {} threshold)", dropped, est, threshold),
+                        text: format!(
+                            "context compacted: {} messages summarized ({} tok > {} threshold)",
+                            dropped, est, threshold
+                        ),
                     });
                 }
             }
@@ -1095,6 +1205,13 @@ impl Engine {
 
                                 match decision {
                                     Decision::Allow => {
+                                        // Track mutations so we can auto-verify later.
+                                        if matches!(
+                                            proposed.risk,
+                                            RiskLevel::Mutating | RiskLevel::Destructive
+                                        ) {
+                                            had_mutation = true;
+                                        }
                                         // Auto-checkpoint before mutating/exec/destructive
                                         if matches!(
                                             proposed.risk,
@@ -1392,6 +1509,99 @@ impl Engine {
                                             skill_evidence.push_str(&assistant_text);
                                             skill_evidence.push('\n');
                                             messages.push(assistant_msg);
+                                        }
+
+                                        // ── Auto-verify (§10 testing) ───────────
+                                        // The model thinks it's done. If it mutated
+                                        // files and a verify command is configured,
+                                        // run it; on failure, re-inject so the agent
+                                        // fixes it (bounded retries).
+                                        if had_mutation && verify_attempts < MAX_VERIFY_ATTEMPTS {
+                                            if let Some(verify_cmd) =
+                                                self.config.defaults.verify_command.clone()
+                                            {
+                                                verify_attempts += 1;
+                                                had_mutation = false;
+                                                let parts: Vec<String> = verify_cmd
+                                                    .split_whitespace()
+                                                    .map(String::from)
+                                                    .collect();
+                                                if !parts.is_empty() {
+                                                    let cmd = crate::sandbox::Command {
+                                                        program: parts[0].clone(),
+                                                        args: parts[1..].to_vec(),
+                                                        env: std::collections::HashMap::new(),
+                                                        workdir: workspace.root.clone(),
+                                                    };
+                                                    let limits = crate::sandbox::Limits {
+                                                        timeout_ms: 300_000,
+                                                        max_output_bytes: 16_000,
+                                                    };
+                                                    match workspace
+                                                        .sandbox
+                                                        .exec(&cmd, &limits)
+                                                        .await
+                                                    {
+                                                        Ok(res) if res.exit_code != 0 => {
+                                                            let _ = event_tx.send(Event::TestResult {
+                                                                run: run_id.clone(),
+                                                                passed: 0,
+                                                                failed: 1,
+                                                                detail: format!(
+                                                                    "verify `{}` failed (exit {})",
+                                                                    verify_cmd, res.exit_code
+                                                                ),
+                                                            });
+                                                            let out = format!(
+                                                                "{}\n{}",
+                                                                res.stdout, res.stderr
+                                                            );
+                                                            let tail: String = out
+                                                                .lines()
+                                                                .rev()
+                                                                .take(40)
+                                                                .collect::<Vec<_>>()
+                                                                .into_iter()
+                                                                .rev()
+                                                                .collect::<Vec<_>>()
+                                                                .join("\n");
+                                                            messages.push(Msg {
+                                                                role: "user".into(),
+                                                                content: vec![ContentBlock::Text {
+                                                                    text: format!(
+                                                                        "SYSTEM: verification command `{}` FAILED (exit {}). Fix the code, then it will be re-verified. Output:\n{}",
+                                                                        verify_cmd, res.exit_code, tail
+                                                                    ),
+                                                                }],
+                                                            });
+                                                            continue_agent_loop = true;
+                                                            break;
+                                                        }
+                                                        Ok(_) => {
+                                                            let _ =
+                                                                event_tx.send(Event::TestResult {
+                                                                    run: run_id.clone(),
+                                                                    passed: 1,
+                                                                    failed: 0,
+                                                                    detail: format!(
+                                                                        "verify `{}` passed",
+                                                                        verify_cmd
+                                                                    ),
+                                                                });
+                                                        }
+                                                        Err(e) => {
+                                                            let _ = event_tx.send(Event::Message {
+                                                                run: run_id.clone(),
+                                                                role: "guard".into(),
+                                                                text: format!(
+                                                                    "verify command could not run: {}",
+                                                                    e
+                                                                ),
+                                                            });
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                     crate::event::StopReason::ToolUse => {
