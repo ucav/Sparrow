@@ -247,6 +247,90 @@
     .drawer{width:min(292px,calc(100vw - 48px))}
   }
 
+  /* ─── Sprint 1 inc 4-5 : paper theme + chrome chips + hero + boot ── */
+  :root[data-theme="paper"]{
+    --bg:#f3eee1;--panel:#e7e0cc;--panel2:#ded5bd;
+    --line:#c6bca3;--line-hot:#aea38a;
+    --dim:#6a604c;--dimmer:#9a907c;--fg:#2a2418;
+    --brand:#a65a1a;--coral:#a63a2a;
+    --agent:#2f7d67;--planner:#2e5a9c;--verifier:#7a5e2c;
+    --add:#3a7d2e;--rem:#a63a2a;--gold:#a6801a;--steel:#5e5547;
+    --sup:#3a7d2e;--tru:#a65a1a;--aut:#a63a2a;
+  }
+  :root[data-theme="paper"] body{
+    background:
+      radial-gradient(1100px 700px at 72% -12%, rgba(166,90,26,.10), transparent 60%),
+      radial-gradient(900px 600px at 10% 114%, rgba(166,58,42,.08), transparent 55%),
+      var(--bg);
+  }
+  :root[data-theme="paper"] body::after{opacity:.025}
+  :root[data-theme="paper"] .ember{opacity:.18!important}
+  :root[data-theme="paper"] .win{background:linear-gradient(180deg,#ede5cf,#e7e0cc)}
+  :root[data-theme="paper"] .chrome,
+  :root[data-theme="paper"] .cockpit{background:linear-gradient(180deg, color-mix(in srgb,var(--brand) 6%, var(--panel)), var(--panel))}
+  :root[data-theme="paper"] .swarm-cockpit{background:var(--panel)}
+  :root[data-theme="paper"] .input-bar{background:linear-gradient(180deg, color-mix(in srgb,var(--panel) 60%, var(--bg)), var(--panel))}
+  :root[data-theme="paper"] .rail{background:#ebe3cd}
+
+  /* chrome chips */
+  .chip-btn{font-family:inherit;font-size:11px;padding:3px 9px;border-radius:6px;
+    background:transparent;color:var(--dim);border:1px solid var(--line);cursor:pointer;
+    display:inline-flex;align-items:center;gap:5px;transition:.15s;letter-spacing:.3px}
+  .chip-btn:hover{color:var(--fg);border-color:var(--line-hot);background:color-mix(in srgb,var(--brand) 5%, transparent)}
+  .chip-btn.solid{background:color-mix(in srgb,var(--brand) 9%,transparent);
+    border-color:color-mix(in srgb,var(--brand) 32%,transparent);color:var(--brand)}
+  .chip-btn.solid:hover{background:color-mix(in srgb,var(--brand) 20%,transparent)}
+  .live-tag{color:var(--add);display:inline-flex;align-items:center;gap:5px;font-size:11px;margin-left:4px}
+  .live-tag::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--add);box-shadow:0 0 8px var(--add);animation:pulse 1.3s ease-in-out infinite}
+  .live-tag.offline{color:var(--dimmer)}
+  .live-tag.offline::before{background:var(--dimmer);box-shadow:none;animation:none}
+
+  /* hero welcome at top of term */
+  .hero{display:flex;align-items:center;gap:18px;padding:10px 4px 16px;margin-bottom:8px;
+    border-bottom:1px solid color-mix(in srgb,var(--line) 60%, transparent);
+    animation:fade-in .45s ease both}
+  .hero .h-logo{flex:0 0 auto;filter:drop-shadow(0 0 14px rgba(242,169,60,.42))}
+  :root[data-theme="paper"] .hero .h-logo{filter:drop-shadow(0 0 10px rgba(166,90,26,.32))}
+  .hero .h-text{flex:1;min-width:0}
+  .hero .hi{font-size:15px;color:var(--fg);font-weight:500;margin-bottom:4px}
+  .hero .hi b{background:linear-gradient(90deg,var(--brand),var(--coral));-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:700;letter-spacing:1.5px}
+  .hero .tag{color:var(--dim);font-size:12px;letter-spacing:.7px;margin-bottom:7px}
+  .hero .meta{display:flex;gap:14px;flex-wrap:wrap;color:var(--dimmer);font-size:10.5px;letter-spacing:.4px}
+  .hero .meta span b{color:var(--fg);font-weight:500}
+  .hero .meta .ok-dot{color:var(--add)}
+  @keyframes fade-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+  /* context meter line above composer */
+  .composer-hints{display:flex;align-items:center;gap:14px;font-size:10px;color:var(--dimmer);
+    letter-spacing:.3px;padding:0 clamp(16px,2vw,30px) 4px}
+  .composer-hints .kbds{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .composer-hints kbd{background:var(--panel2);border:1px solid var(--line);border-radius:4px;
+    padding:1px 5px;font-family:inherit;font-size:10px;color:var(--dim)}
+
+  /* boot animation overlay */
+  .boot-overlay{position:fixed;inset:0;background:radial-gradient(900px 600px at 50% 50%, color-mix(in srgb,var(--brand) 15%, var(--bg)), var(--bg) 70%);
+    z-index:5000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
+    animation:fade-in .25s ease both}
+  .boot-overlay.fading{animation:fade-out .35s ease forwards}
+  @keyframes fade-out{to{opacity:0;visibility:hidden}}
+  .boot-overlay .b-logo{filter:drop-shadow(0 0 24px rgba(242,169,60,.45));animation:bob 2.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+  .boot-overlay .b-word{font-weight:700;letter-spacing:14px;font-size:18px;
+    background:linear-gradient(90deg,var(--brand),var(--coral),var(--brand));background-size:220% 100%;
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+    animation:b-wordin .6s ease both, shimmer 2.6s linear .8s infinite}
+  @keyframes b-wordin{from{opacity:0;letter-spacing:30px;filter:blur(8px)}to{opacity:1;letter-spacing:14px;filter:none}}
+  @keyframes shimmer{to{background-position:220% 0}}
+  .boot-overlay .b-tag{color:var(--dim);font-size:12px;letter-spacing:1.2px;animation:fade-in .35s ease .35s both}
+  .boot-overlay .b-status{display:flex;flex-direction:column;gap:3px;font-size:11px;color:var(--dim);
+    min-width:280px;margin-top:8px}
+  .boot-overlay .b-line{opacity:0;animation:fade-in .25s ease forwards;display:flex;gap:8px}
+  .boot-overlay .b-line .l-key{color:var(--dimmer);letter-spacing:.4px;min-width:80px}
+  .boot-overlay .b-line .l-val{color:var(--fg)}
+  .boot-overlay .b-skip{position:absolute;bottom:24px;color:var(--dimmer);font-size:10px;letter-spacing:.5px}
+  .boot-overlay .b-skip kbd{background:var(--panel2);border:1px solid var(--line);border-radius:4px;
+    padding:1px 5px;color:var(--dim);font-family:inherit;font-size:10px}
+
   /* ─── Sprint 1 inc 3 : slash palette + @-picker ──────────────────── */
   .palette{position:fixed;inset:0;align-items:flex-start;justify-content:center;
     background:color-mix(in srgb,var(--bg) 60%,transparent);backdrop-filter:blur(6px);
@@ -503,10 +587,14 @@
 <div class="win">
   <div class="chrome">
     <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
-    <span class="nm"><b>sparrow</b> · webview console · <span id="conn">connecting…</span></span>
+    <span class="nm"><b>sparrow</b> · webview console <span class="live-tag" id="conn-tag">connecting…</span></span>
     <span class="right">
+      <button class="chip-btn" id="cmdkBtn" title="Cmd+K commands">⌘K commands</button>
+      <button class="chip-btn solid" id="replayBtn" title="Replay last run">▸ replay</button>
+      <button class="chip-btn" id="soundBtn" title="Cmd+M mute sounds">🔊</button>
+      <button class="chip-btn" id="themeBtn" title="Cmd+Shift+L toggle theme">☾</button>
       <button class="btn sm" id="cfgBtn">config</button>
-      <span style="font-size:11px;color:var(--dimmer)">v0.1.0</span>
+      <span style="font-size:11px;color:var(--dimmer)">v0.2.0</span>
     </span>
   </div>
 
@@ -543,6 +631,16 @@
 
   <div id="term"></div>
 
+  <div class="composer-hints">
+    <span><span class="ok-dot" style="color:var(--add)">●</span> context <b id="ctxHintPct" style="color:var(--fg)">—</b></span>
+    <span class="kbds">
+      <kbd>⌘K</kbd>commands
+      <kbd>@</kbd>agent
+      <kbd>⇧⏎</kbd>newline
+      <kbd>⌘M</kbd>sound
+    </span>
+  </div>
+
   <div class="input-bar">
     <label class="attach-btn" for="fileInput" title="Attach files">
       <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -559,6 +657,15 @@
     <div class="attachments" id="attachments"></div>
   </div>
 </div>
+<!-- Sprint 1 inc 4: boot animation overlay (skippable) -->
+<div class="boot-overlay" id="bootOverlay" hidden>
+  <svg class="b-logo" width="120" height="120" aria-label="Sparrow"><use href="#sparrow"/></svg>
+  <div class="b-word">SPARROW</div>
+  <div class="b-tag">one cli · grows with you</div>
+  <div class="b-status" id="bootStatus"></div>
+  <div class="b-skip">click anywhere or press <kbd>esc</kbd> to skip</div>
+</div>
+
 <!-- Sprint 1 inc 3: slash palette modal -->
 <div class="palette" id="palette" role="dialog" aria-label="Slash command palette">
   <div class="box">
@@ -762,6 +869,136 @@ function resetSwarm(){
   setSwarm('coder','idle','ready to edit with checkpoints');
   setSwarm('verifier','idle','standing by for adversarial review');
 }
+
+// ─── Sprint 1 inc 4 : hero welcome block injected at term boot ───────
+function injectHero(){
+  const term=document.getElementById('term');if(!term)return;
+  if(term.querySelector('.hero'))return;
+  const hero=document.createElement('div');
+  hero.className='hero';
+  hero.innerHTML=
+    '<svg class="h-logo" width="84" height="84" aria-label="Sparrow"><use href="#sparrow"/></svg>'+
+    '<div class="h-text">'+
+      '<div class="hi">Welcome back, <b>'+escHtml(navigator.userAgent.includes('Windows')?'Captain':'friend')+'</b></div>'+
+      '<div class="tag">one cli · grows with you</div>'+
+      '<div class="meta">'+
+        '<span><span class="ok-dot">●</span> router · <b id="hero-providers">…</b> providers</span>'+
+        '<span><span class="ok-dot">●</span> skills · <b id="hero-skills">…</b></span>'+
+        '<span><span class="ok-dot">●</span> facts · <b id="hero-facts">…</b></span>'+
+        '<span><span class="ok-dot">●</span> autonomy · <b id="hero-auto">…</b></span>'+
+      '</div>'+
+    '</div>';
+  term.prepend(hero);
+}
+async function hydrateHero(){
+  try{
+    const [cfgR,memR,permR]=await Promise.all([fetch('/config'),fetch('/memory'),fetch('/permissions')]);
+    const cfg=await cfgR.json(),mem=await memR.json(),perm=await permR.json();
+    const setIf=(id,val)=>{const el=document.getElementById(id);if(el)el.textContent=val;};
+    setIf('hero-providers',Array.isArray(cfg.providers)?cfg.providers.length:'—');
+    setIf('hero-facts',(mem.stats&&mem.stats.facts!==undefined)?mem.stats.facts:(mem.facts||[]).length);
+    setIf('hero-skills',(cfg.skills_count!==undefined)?cfg.skills_count:'—');
+    setIf('hero-auto',(perm.permissions&&perm.permissions.mode)||'—');
+  }catch(_){}
+}
+
+// ─── Sprint 1 inc 4 : boot animation (first connect of session) ──────
+const BOOT_STATUS_LINES=[
+  ['router','providers discovered'],
+  ['surfaces','cli · webview · gateway'],
+  ['sandbox','workdir guards armed'],
+  ['skills','library indexed'],
+  ['memory','MEMORY.md + USER.md loaded'],
+  ['autonomy','dial ready'],
+];
+function runBootAnimation(){
+  if(sessionStorage.getItem('sparrow-booted')==='1')return;
+  sessionStorage.setItem('sparrow-booted','1');
+  const ov=document.getElementById('bootOverlay');if(!ov)return;
+  ov.hidden=false;ov.classList.remove('fading');
+  const host=document.getElementById('bootStatus');host.innerHTML='';
+  BOOT_STATUS_LINES.forEach((pair,i)=>{
+    const div=document.createElement('div');
+    div.className='b-line';
+    div.style.animationDelay=(.25+i*.18)+'s';
+    div.innerHTML=`<span class="l-key">${escHtml(pair[0])}</span><span class="l-val">${escHtml(pair[1])}</span>`;
+    host.appendChild(div);
+  });
+  const skip=()=>{
+    if(ov.classList.contains('fading'))return;
+    ov.classList.add('fading');
+    setTimeout(()=>{ov.hidden=true;document.removeEventListener('keydown',onKey);ov.removeEventListener('click',skip);},420);
+  };
+  const onKey=(e)=>{if(e.key==='Escape'||e.key==='Enter'||e.key===' ')skip();};
+  ov.addEventListener('click',skip);
+  document.addEventListener('keydown',onKey);
+  setTimeout(skip,2400); // auto-dismiss
+  if(typeof chirp==='function'){chirp(880,.06);setTimeout(()=>chirp(1320,.06),140);setTimeout(()=>chirp(1760,.08),280);}
+}
+
+// ─── Sprint 1 inc 5 : theme toggle (captain ↔ paper) ────────────────
+function getTheme(){return document.documentElement.getAttribute('data-theme')||'captain'}
+function setTheme(t){
+  document.documentElement.setAttribute('data-theme',t);
+  const btn=document.getElementById('themeBtn');
+  if(btn)btn.textContent=t==='captain'?'☾':'☀';
+  localStorage.setItem('sparrow-theme',t);
+}
+function initTheme(){
+  const stored=localStorage.getItem('sparrow-theme');
+  const prefersLight=window.matchMedia('(prefers-color-scheme: light)').matches;
+  setTheme(stored||(prefersLight?'paper':'captain'));
+}
+
+// ─── Sprint 1 inc 5 : sound (bird-style chirps via WebAudio) ─────────
+let audioCtx=null;
+let muted=localStorage.getItem('sparrow-muted')==='1';
+function chirp(freq=900,dur=0.08){
+  if(muted)return;
+  try{
+    if(!audioCtx)audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+    o.type='triangle';o.frequency.setValueAtTime(freq,audioCtx.currentTime);
+    o.frequency.exponentialRampToValueAtTime(freq*1.8,audioCtx.currentTime+dur);
+    g.gain.setValueAtTime(.16,audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(.001,audioCtx.currentTime+dur);
+    o.connect(g).connect(audioCtx.destination);
+    o.start();o.stop(audioCtx.currentTime+dur);
+  }catch(_){}
+}
+function syncSoundBtn(){const b=document.getElementById('soundBtn');if(b)b.textContent=muted?'🔇':'🔊'}
+
+// ─── Bind chrome chips ───────────────────────────────────────────────
+function bindChromeChips(){
+  const cmdk=document.getElementById('cmdkBtn');if(cmdk)cmdk.addEventListener('click',()=>{chirp(1000,.04);paletteOpen()});
+  const rb=document.getElementById('replayBtn');if(rb)rb.addEventListener('click',()=>{
+    chirp(800,.05);setTimeout(()=>chirp(1200,.05),80);setTimeout(()=>chirp(1600,.07),160);
+    // Re-run boot animation on demand so the user can re-see it.
+    sessionStorage.removeItem('sparrow-booted');runBootAnimation();
+  });
+  const sb=document.getElementById('soundBtn');if(sb)sb.addEventListener('click',()=>{
+    muted=!muted;localStorage.setItem('sparrow-muted',muted?'1':'0');syncSoundBtn();if(!muted)chirp(1200,.06);
+  });
+  const tb=document.getElementById('themeBtn');if(tb)tb.addEventListener('click',()=>{
+    setTheme(getTheme()==='captain'?'paper':'captain');chirp(900,.05);
+  });
+  document.addEventListener('keydown',e=>{
+    if((e.metaKey||e.ctrlKey)&&e.shiftKey&&e.key.toLowerCase()==='l'){e.preventDefault();if(tb)tb.click();}
+    if((e.metaKey||e.ctrlKey)&&!e.shiftKey&&e.key.toLowerCase()==='m'){e.preventDefault();if(sb)sb.click();}
+  });
+}
+
+// Mirror the context fill into the chrome hint label.
+function mirrorContextPct(){
+  const src=document.getElementById('contextText');const dst=document.getElementById('ctxHintPct');
+  if(!src||!dst)return;
+  const m=src.textContent.match(/^([\d.]+%)/);if(m)dst.textContent=m[1];
+}
+const _mirrorIv=setInterval(mirrorContextPct,800);
+
+initTheme();
+syncSoundBtn();
+bindChromeChips();
 
 // ─── Sprint 1 inc 2 : drawer + 7 panels ──────────────────────────────
 const PANEL_LOADERS={
@@ -1108,14 +1345,18 @@ let ws;
 function connect(){
   ws=new WebSocket(`ws://${location.host}/ws`);
   ws.onopen=()=>{
-    $('conn').textContent='live';$('status').className='status on';$('status').textContent='● live';
+    const conn=$('conn');if(conn)conn.textContent='live';
+    const tag=document.getElementById('conn-tag');if(tag){tag.textContent='live';tag.classList.remove('offline');}
+    $('status').className='status on';$('status').textContent='● live';
     loadConfig();
     loadSwarmAgents();
     loadAgentsCache();
     loadCommandsCache();
+    injectHero();hydrateHero();
     restoreActivePanel();
+    runBootAnimation();
   };
-  ws.onclose=()=>{$('conn').textContent='reconnecting…';$('status').className='status off';$('status').textContent='● disconnected';setTimeout(connect,2000)};
+  ws.onclose=()=>{const conn=$('conn');if(conn)conn.textContent='reconnecting…';const tag=document.getElementById('conn-tag');if(tag){tag.textContent='offline';tag.classList.add('offline');}$('status').className='status off';$('status').textContent='● disconnected';setTimeout(connect,2000)};
   ws.onmessage=(e)=>{try{handleEvent(JSON.parse(e.data))}catch(err){}};
 }
 connect();
@@ -1145,8 +1386,8 @@ function handleEvent(ev){
     case 'ApprovalResolved':line(`<span class="muted">↳ approval: <span class="planner">${esc(ev.decision)}</span></span>`);break;
     case 'AgentSpawned':setSwarm(ev.role,'working',`model ${ev.model} online`);line(`<span class="${roleCls(ev.role)}">◆ ${esc(ev.role)} spawned (${esc(ev.model)})</span>`);break;
     case 'AgentStatus':setSwarm(ev.role,ev.status,ev.note);line(`<span class="${roleCls(ev.role)}">${icon(ev.status)} ${esc(ev.role)} — ${esc(ev.note)}${ev.role==='coder'&&(ev.status==='Working'||ev.status==='Thinking')?'<span class="caret"></span>':''}</span>`);break;
-    case 'CheckpointCreated':line(`<span class="acc">● checkpoint:</span> <span class="muted">${esc(ev.label)}</span>`);break;
-    case 'SkillLearned':line(`<span class="coder learn-toast">✦ skill learned · <b>${esc(ev.name)}</b></span>`);break;
+    case 'CheckpointCreated':line(`<span class="acc">● checkpoint:</span> <span class="muted">${esc(ev.label)}</span>`);chirp(1400,.07);break;
+    case 'SkillLearned':line(`<span class="coder learn-toast">✦ skill learned · <b>${esc(ev.name)}</b></span>`);chirp(1100,.05);setTimeout(()=>chirp(1700,.07),80);break;
     case 'CostUpdate':setCost(ev.usd);break;
     case 'TokenUsageEstimated':addTokEstimate(ev.input,ev.output);break;
     case 'TokenUsage':addTokActual(ev.input,ev.output);break;
@@ -1158,7 +1399,7 @@ function handleEvent(ev){
     case 'RunFinished':
       setSwarm('coder','done','response completed');
       setSwarm('verifier','done','run closed · metrics captured');
-      line(`<span class="ok">✓ done</span> <span class="muted">${esc(ev.outcome.status)} · cost <span class="cost">$${ev.outcome.cost_usd.toFixed(4)}</span></span>`);break;
+      line(`<span class="ok">✓ done</span> <span class="muted">${esc(ev.outcome.status)} · cost <span class="cost">$${ev.outcome.cost_usd.toFixed(4)}</span></span>`);chirp(900,.05);setTimeout(()=>chirp(1400,.07),100);break;
     case 'Error':
       if(!String(ev.message||'').includes('Ollama API error 404')){line(`<span class="err">Error: ${esc(ev.message)}</span>`)}
       break;
