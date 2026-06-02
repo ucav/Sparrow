@@ -222,6 +222,27 @@ impl SessionStore {
             messages: messages[start..end].to_vec(),
         })
     }
+
+    pub fn recent_inputs(&self, limit: usize) -> Vec<String> {
+        let limit = limit.clamp(1, 100);
+        let conn = self.conn.lock().unwrap();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT text
+             FROM session_messages
+             WHERE role = 'user' AND trim(text) != ''
+             ORDER BY updated_at DESC, session_id DESC, turn_index DESC
+             LIMIT ?1",
+        ) else {
+            return Vec::new();
+        };
+        let Ok(rows) = stmt.query_map(params![limit as i64], |row| row.get::<_, String>(0)) else {
+            return Vec::new();
+        };
+        let mut seen = std::collections::HashSet::new();
+        rows.filter_map(|row| row.ok())
+            .filter(|text| seen.insert(text.clone()))
+            .collect()
+    }
 }
 
 fn message_text(msg: &crate::provider::Msg) -> String {
