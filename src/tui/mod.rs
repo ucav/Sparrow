@@ -348,6 +348,8 @@ pub struct Tui {
     /// When set, the TUI is in replay mode: scrub events with ←/→.
     replay_events: Option<Vec<Event>>,
     replay_idx: usize,
+    /// Strips <think> reasoning blocks from streamed deltas.
+    think: crate::event::ThinkStripper,
 }
 
 impl Tui {
@@ -398,6 +400,7 @@ impl Tui {
             focus_group: None,
             replay_events: None,
             replay_idx: 0,
+            think: crate::event::ThinkStripper::new(),
         }
     }
 
@@ -515,6 +518,7 @@ impl Tui {
     pub fn push_event(&mut self, event: Event) {
         match &event {
             Event::RunStarted { task, .. } => {
+                self.think = crate::event::ThinkStripper::new();
                 self.open_group(&format!("started: {}", task), LogStyle::Brand);
             }
             Event::RouteSelected { chain, .. } => {
@@ -536,7 +540,12 @@ impl Tui {
                 };
                 self.add_line(&label, LogStyle::Warn, 1);
             }
-            Event::ThinkingDelta { text, .. } => self.add_line(text, LogStyle::Cmd, 1),
+            Event::ThinkingDelta { text, .. } => {
+                let visible = self.think.feed(text);
+                if !visible.is_empty() {
+                    self.add_line(&visible, LogStyle::Cmd, 1);
+                }
+            }
             Event::ToolUseProposed { name, .. } => {
                 self.open_group(&format!("tool · {}", name), LogStyle::Steel);
             }
@@ -695,6 +704,11 @@ impl Tui {
                 }
             }
             Event::RunFinished { outcome, .. } => {
+                // Recover any text held by the think-stripper (unclosed <think>).
+                let tail = self.think.flush();
+                if !tail.trim().is_empty() {
+                    self.add_line(&tail, LogStyle::Cmd, 1);
+                }
                 self.close_group();
                 self.add_line(
                     &format!(

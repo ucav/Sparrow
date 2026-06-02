@@ -34,10 +34,14 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Quiet by default so structured logs (e.g. "Transcript saved") never
+    // interleave with the user-facing answer on stdout. Logs go to stderr;
+    // set RUST_LOG=sparrow=info (or debug) for verbose diagnostics.
     tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "sparrow=info".into()),
+                .unwrap_or_else(|_| "sparrow=warn".into()),
         )
         .init();
 
@@ -1582,6 +1586,8 @@ async fn run_task(
     let repo_head = current_repo_head();
     let print_handle = tokio::spawn(async move {
         let mut full_reply = String::new();
+        let mut think = sparrow::event::ThinkStripper::new();
+        use std::io::Write as _;
         while let Some(event) = rx.recv().await {
             if let sparrow::event::Event::ThinkingDelta { text, .. } = &event {
                 full_reply.push_str(text);
@@ -1605,7 +1611,12 @@ async fn run_task(
             }
             match &event {
                 sparrow::event::Event::ThinkingDelta { text, .. } => {
-                    print!("{}", text);
+                    // Strip <think> reasoning blocks; stream the rest.
+                    let visible = think.feed(text);
+                    if !visible.is_empty() {
+                        print!("{}", visible);
+                        let _ = std::io::stdout().flush();
+                    }
                 }
                 sparrow::event::Event::ToolUseProposed { name, .. } => {
                     println!("\n[Tool: {}]", name);
@@ -1629,10 +1640,15 @@ async fn run_task(
                         println!("\n[Routing] {} → {} ({})", from, to, clean);
                     }
                 }
-                sparrow::event::Event::CostUpdate { usd, .. } => {
-                    println!("\n[Cost: ${:.4}]", usd);
-                }
+                // Cost is shown once at the end (no noisy inline $0.0000 prints).
                 sparrow::event::Event::RunFinished { outcome, .. } => {
+                    // Flush any text held back by the think-stripper (recovers an
+                    // unclosed <think> so the answer is never silently swallowed).
+                    let tail = think.flush();
+                    if !tail.trim().is_empty() {
+                        print!("{}", tail);
+                        let _ = std::io::stdout().flush();
+                    }
                     println!(
                         "\nDone. Cost: ${:.4}, Tokens: {} in / {} out",
                         outcome.cost_usd, outcome.tokens.input, outcome.tokens.output
