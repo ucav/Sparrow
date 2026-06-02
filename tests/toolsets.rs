@@ -1,0 +1,32 @@
+use sparrow::tools::{known_tool_metadata, metadata_for, surface_allows};
+
+#[test]
+fn safe_toolset_does_not_expose_exec_or_edit() {
+    let safe: Vec<_> = known_tool_metadata(None)
+        .into_iter()
+        .filter(|meta| meta.toolset == "safe")
+        .collect();
+    assert!(safe.iter().all(|meta| !meta.exec));
+    assert!(safe.iter().all(|meta| !meta.mutates_files));
+    assert!(safe.iter().all(|meta| meta.name != "edit"));
+}
+
+#[test]
+fn debug_profile_can_include_terminal_file_and_web_toolsets() {
+    let tools = known_tool_metadata(None);
+    assert!(tools.iter().any(|meta| meta.toolset == "terminal"));
+    assert!(tools.iter().any(|meta| meta.toolset == "file"));
+    assert!(tools.iter().any(|meta| meta.toolset == "web"));
+}
+
+#[test]
+fn gateway_surface_excludes_dangerous_tools_by_default() {
+    let gateway = known_tool_metadata(Some("gateway"));
+    assert!(!gateway.iter().any(|meta| meta.exec));
+    assert!(!gateway.iter().any(|meta| meta.mutates_files));
+    assert!(!gateway.iter().any(|meta| meta.name == "exec"));
+    assert!(!gateway.iter().any(|meta| meta.name == "edit"));
+
+    let exec = metadata_for("exec", sparrow::event::RiskLevel::Exec);
+    assert!(!surface_allows("gateway", &exec));
+}

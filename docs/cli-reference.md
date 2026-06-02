@@ -127,6 +127,15 @@ files with frontmatter fields such as `name`, `description`, `role`, `prompt`,
 | `sparrow plugins install <local-dir-or-git-url>` | Alpha | Install a plugin manifest from local disk or GitHub |
 | `sparrow plugins rm <name>` | Alpha | Remove an installed plugin |
 
+## Toolsets
+
+| Command | Status | Description |
+|---|---|---|
+| `sparrow tools list` | Alpha | List known tools with toolset/risk/auth/mutation/network/exec metadata |
+| `sparrow tools list --surface <surface>` | Alpha | Show tools visible to `cli`, `tui`, `webview`, `gateway`, or `subagent` |
+| `sparrow tools enable <tool>` | Alpha | Remove a tool deny rule and add an allow rule |
+| `sparrow tools disable <tool>` | Alpha | Remove a tool allow rule and add a deny rule |
+
 ## MCP
 
 | Command | Status | Description |
