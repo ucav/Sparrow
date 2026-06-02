@@ -10,14 +10,36 @@ use crate::memory::Memory;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Soul {
     pub name: String,
+    #[serde(default)]
+    pub description: String,
     pub role: String,
     pub personality: String,
     #[serde(default)]
+    pub prompt: String,
+    #[serde(default)]
     pub rules: Vec<String>,
+    #[serde(default)]
+    pub tools: Vec<String>,
+    #[serde(default)]
+    pub disallowed_tools: Vec<String>,
     #[serde(default)]
     pub default_model: Option<String>,
     #[serde(default)]
     pub default_autonomy: Option<String>,
+    #[serde(default)]
+    pub permission_mode: Option<String>,
+    #[serde(default)]
+    pub mcp_servers: Vec<String>,
+    #[serde(default)]
+    pub max_turns: Option<u32>,
+    #[serde(default)]
+    pub memory: Option<bool>,
+    #[serde(default)]
+    pub background: bool,
+    #[serde(default)]
+    pub isolation: Option<String>,
+    #[serde(default)]
+    pub color: Option<String>,
 }
 
 impl Soul {
@@ -25,7 +47,11 @@ impl Soul {
         Identity {
             name: self.name.clone(),
             role: self.role.clone(),
-            personality: self.personality.clone(),
+            personality: if self.prompt.trim().is_empty() {
+                self.personality.clone()
+            } else {
+                format!("{}\n\n{}", self.personality, self.prompt)
+            },
         }
     }
 
@@ -36,20 +62,111 @@ impl Soul {
     pub fn from_toml(content: &str) -> anyhow::Result<Self> {
         Ok(toml::from_str(content)?)
     }
+
+    pub fn from_markdown_frontmatter(content: &str) -> anyhow::Result<Self> {
+        let Some(rest) = content.strip_prefix("---") else {
+            anyhow::bail!("agent markdown is missing frontmatter");
+        };
+        let Some((frontmatter, body)) = rest.split_once("---") else {
+            anyhow::bail!("agent markdown frontmatter is not closed");
+        };
+        let mut soul = Soul::default();
+        for line in frontmatter.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let Some((key, value)) = line.split_once(':') else {
+                continue;
+            };
+            let key = key.trim();
+            let value = value.trim().trim_matches('"').trim_matches('\'');
+            match key {
+                "name" => soul.name = value.to_string(),
+                "description" => soul.description = value.to_string(),
+                "role" => soul.role = value.to_string(),
+                "personality" => soul.personality = value.to_string(),
+                "prompt" => soul.prompt = value.to_string(),
+                "tools" => soul.tools = parse_list(value),
+                "disallowed_tools" => soul.disallowed_tools = parse_list(value),
+                "model" | "default_model" => soul.default_model = nonempty(value),
+                "default_autonomy" => soul.default_autonomy = nonempty(value),
+                "permission_mode" => soul.permission_mode = nonempty(value),
+                "mcp_servers" => soul.mcp_servers = parse_list(value),
+                "max_turns" => soul.max_turns = value.parse::<u32>().ok(),
+                "memory" => soul.memory = parse_bool(value),
+                "background" => soul.background = parse_bool(value).unwrap_or(false),
+                "isolation" => soul.isolation = nonempty(value),
+                "color" => soul.color = nonempty(value),
+                _ => {}
+            }
+        }
+        let body = body.trim();
+        if !body.is_empty() {
+            soul.prompt = if soul.prompt.trim().is_empty() {
+                body.to_string()
+            } else {
+                format!("{}\n\n{}", soul.prompt, body)
+            };
+        }
+        Ok(soul)
+    }
 }
 
 impl Default for Soul {
     fn default() -> Self {
         Self {
             name: "sparrow".into(),
+            description: String::new(),
             role: "senior software engineer".into(),
             personality: "concise, competent, direct. Prefers working code over explanation."
                 .into(),
+            prompt: String::new(),
             rules: vec![],
+            tools: vec![],
+            disallowed_tools: vec![],
             default_model: None,
             default_autonomy: Some("supervised".into()),
+            permission_mode: None,
+            mcp_servers: vec![],
+            max_turns: None,
+            memory: None,
+            background: false,
+            isolation: None,
+            color: None,
         }
     }
+}
+
+fn nonempty(value: &str) -> Option<String> {
+    let value = value.trim();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_string())
+    }
+}
+
+fn parse_bool(value: &str) -> Option<bool> {
+    match value.trim().to_lowercase().as_str() {
+        "true" | "yes" | "1" => Some(true),
+        "false" | "no" | "0" => Some(false),
+        _ => None,
+    }
+}
+
+fn parse_list(value: &str) -> Vec<String> {
+    let value = value.trim();
+    let value = value
+        .strip_prefix('[')
+        .and_then(|v| v.strip_suffix(']'))
+        .unwrap_or(value);
+    value
+        .split(',')
+        .map(|item| item.trim().trim_matches('"').trim_matches('\''))
+        .filter(|item| !item.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 // ─── Agent store trait ──────────────────────────────────────────────────────────
@@ -121,12 +238,8 @@ impl AgentStore for FsAgentStore {
         if let Ok(entries) = std::fs::read_dir(&self.agents_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().map(|e| e == "toml").unwrap_or(false) {
-                    if let Ok(content) = std::fs::read_to_string(&path) {
-                        if let Ok(soul) = Soul::from_toml(&content) {
-                            souls.push(soul);
-                        }
-                    }
+                if let Some(soul) = read_soul_file(&path) {
+                    souls.push(soul);
                 }
             }
         }
@@ -155,5 +268,71 @@ impl AgentStore for FsAgentStore {
             std::fs::remove_file(&path)?;
         }
         Ok(())
+    }
+}
+
+fn read_soul_file(path: &std::path::Path) -> Option<Soul> {
+    let content = std::fs::read_to_string(path).ok()?;
+    match path.extension().and_then(|e| e.to_str()) {
+        Some("toml") => Soul::from_toml(&content).ok(),
+        Some("md") => Soul::from_markdown_frontmatter(&content).ok(),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn soul_toml_roundtrip_keeps_declarative_fields() {
+        let soul = Soul {
+            name: "reviewer".into(),
+            description: "Adversarial reviewer".into(),
+            role: "verifier".into(),
+            personality: "strict".into(),
+            tools: vec!["fs_read".into()],
+            disallowed_tools: vec!["fs_write".into()],
+            default_model: Some("nvidia:test".into()),
+            permission_mode: Some("read-only".into()),
+            max_turns: Some(8),
+            background: true,
+            color: Some("gold".into()),
+            ..Soul::default()
+        };
+        let encoded = soul.to_toml().unwrap();
+        let decoded = Soul::from_toml(&encoded).unwrap();
+        assert_eq!(decoded.name, "reviewer");
+        assert_eq!(decoded.disallowed_tools, vec!["fs_write"]);
+        assert_eq!(decoded.permission_mode.as_deref(), Some("read-only"));
+        assert_eq!(decoded.max_turns, Some(8));
+    }
+
+    #[test]
+    fn markdown_frontmatter_agent_is_parsed() {
+        let content = r#"---
+name: verifier
+description: Checks code
+role: verifier
+personality: adversarial
+tools: [fs_read, search]
+disallowed_tools: [fs_write, exec]
+model: nvidia/test
+permission_mode: read-only
+max_turns: 5
+background: true
+color: gold
+---
+Review every claim against evidence.
+"#;
+        let soul = Soul::from_markdown_frontmatter(content).unwrap();
+        assert_eq!(soul.name, "verifier");
+        assert_eq!(soul.tools, vec!["fs_read", "search"]);
+        assert_eq!(soul.disallowed_tools, vec!["fs_write", "exec"]);
+        assert_eq!(soul.default_model.as_deref(), Some("nvidia/test"));
+        assert_eq!(soul.permission_mode.as_deref(), Some("read-only"));
+        assert_eq!(soul.max_turns, Some(5));
+        assert!(soul.background);
+        assert!(soul.prompt.contains("Review every claim"));
     }
 }

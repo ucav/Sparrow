@@ -39,6 +39,7 @@ Sparrow is **alpha software** with a green cross-platform CI baseline. The kerne
 | TUI cockpit | Alpha | Animated terminal cockpit, canonical ASCII logo, swarm lanes, checkpoint/diff/cost panels, and graceful fallback messages are implemented |
 | Plan mode / slash commands | Alpha | `sparrow plan`, WebView `/plan`, TUI `/plan`, built-in slash commands, user/project Markdown command discovery, and skill-to-slash exposure are wired read-only |
 | Permissions / hooks | Alpha | `sparrow permissions`, persisted permission modes, tool/path/provider/surface rules, WebView mode control, and lifecycle hooks around checkpoint/tool execution are wired |
+| Declarative agents | Alpha | SOUL TOML plus Markdown frontmatter agents support role, prompt, model, permission mode, tool allow/deny metadata, `agent run`, and `agent mention` |
 | Gateway WebSocket | Alpha | `/status` command roundtrip tested on port 9338 with ACK and engine status response |
 | Replay / checkpoints / memory | Stable | Recorder, checkpoint, rewind, transcript, and SQLite memory flows are covered by tests and CLI smoke checks |
 | First-run setup | Alpha | Conversational setup agent plus fallback interactive setup are wired for provider/model configuration |

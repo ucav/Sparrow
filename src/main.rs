@@ -830,7 +830,26 @@ async fn handle_agent(
             } else {
                 println!("Defined agents:");
                 for a in &agents {
-                    println!("  {}  |  {}  |  {}", a.name, a.role, a.personality);
+                    println!(
+                        "  {}  |  {}  |  {}  | tools: {} deny: {}",
+                        a.name,
+                        a.role,
+                        if a.description.is_empty() {
+                            a.personality.as_str()
+                        } else {
+                            a.description.as_str()
+                        },
+                        if a.tools.is_empty() {
+                            "all".into()
+                        } else {
+                            a.tools.join(",")
+                        },
+                        if a.disallowed_tools.is_empty() {
+                            "none".into()
+                        } else {
+                            a.disallowed_tools.join(",")
+                        }
+                    );
                 }
             }
         }
@@ -861,6 +880,15 @@ async fn handle_agent(
         sparrow::cli::AgentAction::Run { name, task } => {
             if let Some(soul) = store.get(&name) {
                 println!("Running as agent '{}': {}", soul.name, task);
+                run_task(&task, config, memory, skills, recorder, Some(soul)).await?;
+            } else {
+                anyhow::bail!("Agent '{}' not found.", name);
+            }
+        }
+        sparrow::cli::AgentAction::Mention { name, message } => {
+            if let Some(soul) = store.get(&name) {
+                let task = format!("@{} {}", soul.name, message);
+                println!("Mentioning agent '{}': {}", soul.name, message);
                 run_task(&task, config, memory, skills, recorder, Some(soul)).await?;
             } else {
                 anyhow::bail!("Agent '{}' not found.", name);
@@ -1559,10 +1587,15 @@ async fn run_task(
     use sparrow::router::BasicRouter;
     use std::sync::Arc;
 
-    let providers = build_provider_brains(config, &memory, true);
+    let run_config = soul
+        .as_ref()
+        .map(|soul| config_for_soul(config, soul))
+        .unwrap_or_else(|| config.clone());
 
-    let router = Arc::new(BasicRouter::new(config, providers));
-    let mut engine = Engine::new(router, config.clone())
+    let providers = build_provider_brains(&run_config, &memory, true);
+
+    let router = Arc::new(BasicRouter::new(&run_config, providers));
+    let mut engine = Engine::new(router, run_config.clone())
         .with_memory(memory.clone())
         .with_skills(skills);
     if let Some(soul) = &soul {
@@ -1574,7 +1607,7 @@ async fn run_task(
     // surfaces. Key: $SPARROW_SESSION (set it to "user:<id>" to continue a
     // Telegram/Slack thread) else a per-workspace CLI session.
     let sessions =
-        sparrow::runtime::session::SessionStore::open(&config.state_dir.join("sessions.db"))
+        sparrow::runtime::session::SessionStore::open(&run_config.state_dir.join("sessions.db"))
             .ok()
             .map(Arc::new);
     let session_key = std::env::var("SPARROW_SESSION").unwrap_or_else(|_| {
@@ -1605,7 +1638,7 @@ async fn run_task(
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
     let task_for_recording = task.to_string();
-    let config_snapshot = redacted_config_snapshot(config);
+    let config_snapshot = redacted_config_snapshot(&run_config);
     let repo_head = current_repo_head();
     let print_handle = tokio::spawn(async move {
         let mut full_reply = String::new();
@@ -1718,6 +1751,77 @@ async fn run_task(
     let outcome = drive_result?;
     println!("Status: {}", outcome.status);
     Ok(())
+}
+
+fn config_for_soul(config: &sparrow::config::Config, soul: &Soul) -> sparrow::config::Config {
+    let mut run_config = config.clone();
+    if let Some(model_ref) = soul.default_model.as_deref() {
+        if let Some((provider, model)) = parse_agent_model_ref(model_ref) {
+            run_config.forced_model = Some((provider.clone(), model.clone()));
+            for tier in ["trivial", "small", "medium", "hard", "vision"] {
+                run_config
+                    .routing
+                    .policy
+                    .insert(tier.to_string(), provider.clone());
+            }
+            run_config
+                .providers
+                .entry(provider)
+                .or_insert_with(|| ProviderConfig {
+                    adapter: "openai-compatible".into(),
+                    base_url: None,
+                    models: vec![],
+                    api_key_env: None,
+                })
+                .models = vec![model];
+        }
+    }
+    if let Some(mode) = soul
+        .permission_mode
+        .as_deref()
+        .or(soul.default_autonomy.as_deref())
+        .and_then(sparrow::permissions::PermissionMode::parse)
+    {
+        run_config.defaults.autonomy = mode.autonomy_level();
+        run_config.permissions.mode = mode;
+    }
+    for tool in &soul.disallowed_tools {
+        if !run_config.permissions.tools.deny.contains(tool) {
+            run_config.permissions.tools.deny.push(tool.clone());
+        }
+    }
+    if !soul.tools.is_empty() {
+        for tool in &soul.tools {
+            if !run_config.permissions.tools.allow.contains(tool) {
+                run_config.permissions.tools.allow.push(tool.clone());
+            }
+        }
+    }
+    run_config
+}
+
+fn parse_agent_model_ref(model_ref: &str) -> Option<(String, String)> {
+    let model_ref = model_ref.trim();
+    if model_ref.is_empty() {
+        return None;
+    }
+    if let Some((provider, model)) = model_ref.split_once(':') {
+        let provider = provider.trim();
+        let model = model.trim();
+        if !provider.is_empty() && !model.is_empty() {
+            return Some((provider.to_string(), model.to_string()));
+        }
+    }
+    if let Some((provider, rest)) = model_ref.split_once('/') {
+        let provider = provider.trim();
+        if !provider.is_empty() {
+            return Some((provider.to_string(), model_ref.to_string()));
+        }
+        if !rest.trim().is_empty() {
+            return Some(("custom".into(), model_ref.to_string()));
+        }
+    }
+    Some(("custom".into(), model_ref.to_string()))
 }
 
 fn handle_plan(
