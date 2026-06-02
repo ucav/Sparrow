@@ -88,6 +88,7 @@ impl WebViewServer {
             .route("/permissions", get(get_permissions).post(save_permissions))
             .route("/security", get(get_security))
             .route("/sessions", get(list_sessions))
+            .route("/history", get(get_history))
             .route("/agents", get(list_agents))
             .route("/upload", post(upload_attachment))
             .route("/artifacts", get(list_artifacts))
@@ -275,6 +276,18 @@ struct ToolsResponse {
     message: String,
     toolsets: Vec<String>,
     tools: Vec<crate::tools::ToolMetadata>,
+}
+
+#[derive(serde::Deserialize)]
+struct HistoryQuery {
+    limit: Option<usize>,
+}
+
+#[derive(serde::Serialize)]
+struct HistoryResponse {
+    ok: bool,
+    message: String,
+    inputs: Vec<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -947,12 +960,7 @@ pub fn classify_agent_color(raw: &str) -> &'static str {
 async fn list_sessions() -> axum::extract::Json<serde_json::Value> {
     // Resolve the same DB path the CLI uses. Failures degrade to an empty list
     // rather than 500'ing the WebView panel.
-    let state_dir = dirs::state_dir()
-        .or_else(dirs::data_local_dir)
-        .or_else(dirs::data_dir)
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("sparrow");
-    let db_path = state_dir.join("sessions.db");
+    let db_path = session_db_path();
     let store = match crate::runtime::session::SessionStore::open(&db_path) {
         Ok(s) => s,
         Err(e) => {
@@ -970,6 +978,36 @@ async fn list_sessions() -> axum::extract::Json<serde_json::Value> {
         "db_path": db_path.to_string_lossy(),
         "sessions": sessions,
     }))
+}
+
+async fn get_history(
+    axum::extract::Query(query): axum::extract::Query<HistoryQuery>,
+) -> axum::extract::Json<HistoryResponse> {
+    let db_path = session_db_path();
+    let store = match crate::runtime::session::SessionStore::open(&db_path) {
+        Ok(s) => s,
+        Err(e) => {
+            return axum::extract::Json(HistoryResponse {
+                ok: false,
+                message: format!("could not open session db: {}", e),
+                inputs: Vec::new(),
+            });
+        }
+    };
+    axum::extract::Json(HistoryResponse {
+        ok: true,
+        message: "loaded".into(),
+        inputs: store.recent_inputs(query.limit.unwrap_or(50)),
+    })
+}
+
+fn session_db_path() -> std::path::PathBuf {
+    dirs::state_dir()
+        .or_else(dirs::data_local_dir)
+        .or_else(dirs::data_dir)
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("sparrow")
+        .join("sessions.db")
 }
 
 async fn get_security(

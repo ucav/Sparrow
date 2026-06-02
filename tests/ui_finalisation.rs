@@ -188,6 +188,33 @@ fn console_html_has_slash_palette_and_agent_picker() {
 }
 
 #[test]
+fn console_html_has_sprint2_composer_hooks() {
+    let html =
+        std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");
+    assert!(
+        html.contains("<textarea id=\"taskInput\""),
+        "composer must use a textarea for multi-line Shift+Enter input"
+    );
+    for marker in [
+        "loadHistoryCache",
+        "fetch('/history?limit=80')",
+        "composerKeydown",
+        "sparrow-composer-draft",
+        "composerPaste",
+        "dropZone",
+        "attachFiles",
+        "fetch('/upload'",
+        "MAX_ATTACHMENT_BYTES",
+    ] {
+        assert!(
+            html.contains(marker),
+            "console.html must expose Sprint 2 composer hook `{}`",
+            marker
+        );
+    }
+}
+
+#[test]
 fn console_html_has_typed_event_renderers() {
     let html =
         std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");
