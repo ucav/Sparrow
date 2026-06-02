@@ -14,8 +14,9 @@ use crate::event::{
     TokenUsage,
 };
 use crate::extras::Distiller;
-use crate::hooks::HookRegistry;
+use crate::hooks::{HookEvent, HookRegistry};
 use crate::memory::{Fact, Memory};
+use crate::permissions::PermissionContext;
 use crate::provider::{Brain, BrainEvent, BrainRequest, ContentBlock, Msg, ToolSpec};
 use crate::reasoning::ReasoningEngine;
 use crate::redaction::RedactionFilter;
@@ -273,6 +274,10 @@ pub trait ApprovalHandler: Send + Sync {
 
 impl Engine {
     pub fn new(router: Arc<dyn Router>, config: Config) -> Self {
+        let mut hooks = HookRegistry::new(Arc::new(crate::sandbox::LocalSandbox::new(
+            std::env::current_dir().unwrap_or_default(),
+        )));
+        hooks.load(config.hooks.clone());
         Self {
             router,
             config,
@@ -282,9 +287,7 @@ impl Engine {
             redaction: RedactionFilter::new(),
             approval_handler: None,
             reasoning: ReasoningEngine::default(),
-            hooks: HookRegistry::new(Arc::new(crate::sandbox::LocalSandbox::new(
-                std::env::current_dir().unwrap_or_default(),
-            ))),
+            hooks,
             agent_store: None,
             org_policy: None,
         }
@@ -1181,15 +1184,34 @@ impl Engine {
                                     .unwrap_or(RiskLevel::ReadOnly);
                                 let proposed = crate::autonomy::ProposedAction {
                                     tool_name: tool_name.clone(),
-                                    risk,
+                                    risk: risk.clone(),
                                     args: args.clone(),
                                 };
 
-                                let mut decision = autonomy.decide(&proposed);
+                                let permission =
+                                    self.config.permissions.evaluate(&PermissionContext {
+                                        tool_name: &proposed.tool_name,
+                                        risk: proposed.risk.clone(),
+                                        args: &args,
+                                        workspace_root: &workspace.root,
+                                        provider: Some(brain.id()),
+                                        surface: Some("engine"),
+                                    });
+                                let mut decision = match permission.decision.clone() {
+                                    Decision::Allow => autonomy.decide(&proposed),
+                                    other => other,
+                                };
+                                if !matches!(permission.decision, Decision::Allow) {
+                                    let _ = event_tx.send(Event::Message {
+                                        run: run_id.clone(),
+                                        role: "permissions".into(),
+                                        text: permission.reason.clone(),
+                                    });
+                                }
                                 if matches!(decision, Decision::AskUser) {
                                     let summary = format!(
-                                        "Approve {} with args: {}",
-                                        proposed.tool_name, args
+                                        "{}. Approve {} with args: {}",
+                                        permission.reason, proposed.tool_name, args
                                     );
                                     let _ = event_tx.send(Event::ApprovalRequested {
                                         run: run_id.clone(),
@@ -1232,6 +1254,26 @@ impl Engine {
                                                 | RiskLevel::Exec
                                                 | RiskLevel::Destructive
                                         ) {
+                                            let vetoes = self
+                                                .hooks
+                                                .execute(
+                                                    &HookEvent::PreCheckpoint,
+                                                    &proposed.tool_name,
+                                                )
+                                                .await;
+                                            let checkpoint_veto = vetoes
+                                                .iter()
+                                                .find(|result| result.veto)
+                                                .and_then(|result| result.veto_reason.clone());
+                                            if let Some(reason) = checkpoint_veto {
+                                                let _ = event_tx.send(Event::Error {
+                                                    run: run_id.clone(),
+                                                    message: reason,
+                                                });
+                                                denied_by_approval = true;
+                                                stop_after_tool_result = true;
+                                                continue;
+                                            }
                                             let checkpoints =
                                                 GitCheckpoints::new(workspace.root.clone());
                                             if let Ok(cp_id) = checkpoints
@@ -1242,7 +1284,41 @@ impl Engine {
                                                     id: cp_id,
                                                     label: format!("pre-{}", proposed.tool_name),
                                                 });
+                                                let _ = self
+                                                    .hooks
+                                                    .execute(
+                                                        &HookEvent::PostCheckpoint,
+                                                        &proposed.tool_name,
+                                                    )
+                                                    .await;
                                             }
+                                        }
+
+                                        let hook_results = self
+                                            .hooks
+                                            .execute(&HookEvent::PreToolUse, &proposed.tool_name)
+                                            .await;
+                                        if let Some(reason) = hook_results
+                                            .iter()
+                                            .find(|result| result.veto)
+                                            .and_then(|result| result.veto_reason.clone())
+                                        {
+                                            denied_by_approval = true;
+                                            stop_after_tool_result = true;
+                                            let _ = event_tx.send(Event::ToolOutput {
+                                                run: run_id.clone(),
+                                                id: id.clone(),
+                                                blocks: vec![Block::Text(reason.clone())],
+                                            });
+                                            tool_output_seen_this_completion = true;
+                                            tool_results_pending.push((
+                                                id.clone(),
+                                                proposed.tool_name.clone(),
+                                                args.clone(),
+                                                reason,
+                                                true,
+                                            ));
+                                            continue;
                                         }
 
                                         let _ = event_tx.send(Event::ToolUseStarted {
@@ -1305,6 +1381,10 @@ impl Engine {
                                             id: id.clone(),
                                             blocks,
                                         });
+                                        let _ = self
+                                            .hooks
+                                            .execute(&HookEvent::PostToolUse, &proposed.tool_name)
+                                            .await;
                                         tool_output_seen_this_completion = true;
                                         tool_results_pending.push((
                                             id.clone(),
@@ -1354,6 +1434,26 @@ impl Engine {
                                                     | RiskLevel::Exec
                                                     | RiskLevel::Destructive
                                             ) {
+                                                let vetoes = self
+                                                    .hooks
+                                                    .execute(
+                                                        &HookEvent::PreCheckpoint,
+                                                        &approval_name,
+                                                    )
+                                                    .await;
+                                                if let Some(reason) = vetoes
+                                                    .iter()
+                                                    .find(|result| result.veto)
+                                                    .and_then(|result| result.veto_reason.clone())
+                                                {
+                                                    let _ = event_tx.send(Event::Error {
+                                                        run: run_id.clone(),
+                                                        message: reason,
+                                                    });
+                                                    denied_by_approval = true;
+                                                    stop_after_tool_result = true;
+                                                    continue;
+                                                }
                                                 let checkpoints =
                                                     GitCheckpoints::new(workspace.root.clone());
                                                 if let Ok(cp_id) = checkpoints
@@ -1365,7 +1465,40 @@ impl Engine {
                                                             id: cp_id,
                                                             label: format!("pre-{}", approval_name),
                                                         });
+                                                    let _ = self
+                                                        .hooks
+                                                        .execute(
+                                                            &HookEvent::PostCheckpoint,
+                                                            &approval_name,
+                                                        )
+                                                        .await;
                                                 }
+                                            }
+                                            let hook_results = self
+                                                .hooks
+                                                .execute(&HookEvent::PreToolUse, &approval_name)
+                                                .await;
+                                            if let Some(reason) = hook_results
+                                                .iter()
+                                                .find(|result| result.veto)
+                                                .and_then(|result| result.veto_reason.clone())
+                                            {
+                                                denied_by_approval = true;
+                                                stop_after_tool_result = true;
+                                                let _ = event_tx.send(Event::ToolOutput {
+                                                    run: run_id.clone(),
+                                                    id: approval_id.clone(),
+                                                    blocks: vec![Block::Text(reason.clone())],
+                                                });
+                                                tool_output_seen_this_completion = true;
+                                                tool_results_pending.push((
+                                                    approval_id,
+                                                    approval_name,
+                                                    approval_args,
+                                                    reason,
+                                                    true,
+                                                ));
+                                                continue;
                                             }
                                             let _ = event_tx.send(Event::ToolUseStarted {
                                                 run: run_id.clone(),
@@ -1401,6 +1534,10 @@ impl Engine {
                                                 id: approval_id.clone(),
                                                 blocks,
                                             });
+                                            let _ = self
+                                                .hooks
+                                                .execute(&HookEvent::PostToolUse, &approval_name)
+                                                .await;
                                             tool_output_seen_this_completion = true;
                                             tool_results_pending.push((
                                                 approval_id,

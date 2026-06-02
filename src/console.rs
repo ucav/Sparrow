@@ -77,6 +77,7 @@ impl WebViewServer {
             .route("/commands", get(get_commands))
             .route("/approval", post(resolve_approval))
             .route("/config", get(get_config).post(save_provider))
+            .route("/permissions", get(get_permissions).post(save_permissions))
             .route(
                 "/ws",
                 get(
@@ -195,6 +196,18 @@ struct ConfigResponse {
     autonomy: String,
     sandbox: String,
     providers: Vec<ProviderView>,
+}
+
+#[derive(serde::Serialize)]
+struct PermissionsResponse {
+    ok: bool,
+    message: String,
+    permissions: Option<crate::permissions::PermissionConfig>,
+}
+
+#[derive(serde::Deserialize)]
+struct PermissionsRequest {
+    mode: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
@@ -544,6 +557,59 @@ async fn save_provider(
     axum::extract::Json(RunResponse {
         ok: true,
         message: format!("provider '{}' saved", name),
+    })
+}
+
+async fn get_permissions(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> axum::extract::Json<PermissionsResponse> {
+    let Some(shared) = &state.config else {
+        return axum::extract::Json(PermissionsResponse {
+            ok: false,
+            message: "config unavailable".into(),
+            permissions: None,
+        });
+    };
+    let cfg = shared.read().expect("config lock poisoned").clone();
+    axum::extract::Json(PermissionsResponse {
+        ok: true,
+        message: "loaded".into(),
+        permissions: Some(cfg.permissions),
+    })
+}
+
+async fn save_permissions(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    axum::extract::Json(req): axum::extract::Json<PermissionsRequest>,
+) -> axum::extract::Json<RunResponse> {
+    let Some(shared) = &state.config else {
+        return axum::extract::Json(RunResponse {
+            ok: false,
+            message: "config unavailable".into(),
+        });
+    };
+    let mut cfg = shared.write().expect("config lock poisoned");
+    if let Some(mode) = req.mode.as_deref() {
+        let Some(mode) = crate::permissions::PermissionMode::parse(mode) else {
+            return axum::extract::Json(RunResponse {
+                ok: false,
+                message: "unknown permission mode".into(),
+            });
+        };
+        cfg.defaults.autonomy = mode.autonomy_level();
+        cfg.permissions.mode = mode;
+    }
+    let saved = cfg.clone();
+    let store = FsConfigStore::new(saved.config_dir.clone());
+    if let Err(err) = store.save(&saved) {
+        return axum::extract::Json(RunResponse {
+            ok: false,
+            message: format!("permissions save failed: {}", err),
+        });
+    }
+    axum::extract::Json(RunResponse {
+        ok: true,
+        message: "permissions saved".into(),
     })
 }
 

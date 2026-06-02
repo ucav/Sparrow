@@ -529,6 +529,8 @@ impl Profile {
                     providers: Default::default(),
                     surfaces: Default::default(),
                     skills: Default::default(),
+                    permissions: Default::default(),
+                    hooks: Default::default(),
                     theme: "captain".into(),
                     config_dir: config_dir.clone(),
                     state_dir: state_dir.clone(),
