@@ -1702,8 +1702,8 @@ impl Engine {
                     // fires). If this completion produced nothing and the run has
                     // produced nothing, advance to the next model in the chain.
                     if !continue_agent_loop && !had_error {
-                        let this_empty = assistant_text.trim().is_empty()
-                            && !tool_output_seen_this_completion;
+                        let this_empty =
+                            assistant_text.trim().is_empty() && !tool_output_seen_this_completion;
                         if this_empty && !produced_any_output {
                             let next_idx = current_chain_idx + 1;
                             if next_idx < brain_policy.chain.len() {

@@ -65,6 +65,16 @@ pub enum Commands {
         json: bool,
     },
 
+    /// Create a read-only execution plan for a task
+    Plan {
+        /// Task description
+        task: String,
+
+        /// Emit JSON instead of Markdown
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Interactive multi-turn chat
     Chat,
 
@@ -237,10 +247,14 @@ pub enum AuthAction {
 #[derive(Subcommand)]
 pub enum SkillsAction {
     List,
-    Create { name: String },
+    Create {
+        name: String,
+    },
     Prune,
     /// Remove a skill by name (e.g. to delete junk auto-learned skills)
-    Rm { name: String },
+    Rm {
+        name: String,
+    },
 }
 
 #[derive(Subcommand)]
