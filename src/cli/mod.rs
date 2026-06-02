@@ -146,6 +146,12 @@ pub enum Commands {
         action: PluginsAction,
     },
 
+    /// Inspect and gate toolsets
+    Tools {
+        #[command(subcommand)]
+        action: ToolsAction,
+    },
+
     /// Manage MCP connectors
     Mcp {
         #[command(subcommand)]
@@ -289,6 +295,20 @@ pub enum PluginsAction {
     },
     Rm {
         name: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ToolsAction {
+    List {
+        #[arg(long)]
+        surface: Option<String>,
+    },
+    Enable {
+        tool: String,
+    },
+    Disable {
+        tool: String,
     },
 }
 
