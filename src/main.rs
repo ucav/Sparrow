@@ -1571,7 +1571,13 @@ async fn run_task(
     let prior_msgs: Vec<sparrow::provider::Msg> = sessions
         .as_ref()
         .and_then(|s| s.load(&session_key))
-        .and_then(|sess| serde_json::from_str(&sess.messages_json).ok())
+        .and_then(|sess| match serde_json::from_str(&sess.messages_json) {
+            Ok(v) => Some(v),
+            Err(e) => {
+                tracing::warn!("session '{}' deserialize failed: {}", session_key, e);
+                None
+            }
+        })
         .unwrap_or_default();
 
     let task_obj = sparrow::engine::Task {
@@ -1666,11 +1672,11 @@ async fn run_task(
     });
 
     println!("Running: {}", task);
-    let outcome = engine.drive(task_obj, tx).await?;
-    let full_reply = print_handle.await?;
-    println!("Status: {}", outcome.status);
+    let drive_result = engine.drive(task_obj, tx).await;
+    let full_reply = print_handle.await.unwrap_or_default();
 
-    // Persist the turn to the session (prior + user + assistant), capped.
+    // Persist the turn to the session BEFORE propagating any error, so a
+    // transient failure never erases the user's message from the conversation.
     if let Some(store) = &sessions {
         let mut updated = prior_msgs;
         updated.push(sparrow::provider::Msg {
@@ -1691,6 +1697,9 @@ async fn run_task(
         }
         let _ = store.save(&session_key, &updated, None);
     }
+
+    let outcome = drive_result?;
+    println!("Status: {}", outcome.status);
     Ok(())
 }
 
