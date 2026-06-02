@@ -63,6 +63,7 @@ nix = { version = "0.31", features = ["sched"] }
 [dev-dependencies]
 criterion = "0.5"
 proptest = "1"
+tempfile = "3"
 
 [features]
 default = ["keyring"]
