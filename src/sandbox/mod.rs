@@ -25,6 +25,7 @@ mod linux_hardened {
                 policy: FsNetPolicy {
                     allowed_paths: vec![root],
                     allow_network: false,
+                    ..FsNetPolicy::default()
                 },
             }
         }
@@ -191,6 +192,13 @@ pub struct ExecResult {
 pub struct FsNetPolicy {
     pub allowed_paths: Vec<PathBuf>,
     pub allow_network: bool,
+    /// Paths that must never be touched (relative to `root`, matched as prefix).
+    /// Defaults include `.git`, `.env`, `.ssh`, `id_rsa`, `id_ed25519` etc.
+    pub denied_paths: Vec<PathBuf>,
+    /// If non-empty, only env vars whose name appears in this list are forwarded
+    /// to the child process. Empty means "pass through everything explicitly set
+    /// on the Command" (no implicit env stripping).
+    pub env_allowlist: Vec<String>,
 }
 
 impl Default for FsNetPolicy {
@@ -198,8 +206,58 @@ impl Default for FsNetPolicy {
         Self {
             allowed_paths: vec![],
             allow_network: false,
+            denied_paths: default_denied_paths(),
+            env_allowlist: Vec::new(),
         }
     }
+}
+
+/// The default set of paths that no sandbox is allowed to touch — matched as
+/// path components, so any segment named `.git`, `.env`, `.ssh`, etc. trips the
+/// guard. Kept in sync with `PermissionConfig`'s default denied paths.
+pub fn default_denied_paths() -> Vec<PathBuf> {
+    vec![
+        PathBuf::from(".git"),
+        PathBuf::from(".env"),
+        PathBuf::from(".env.local"),
+        PathBuf::from(".ssh"),
+        PathBuf::from("id_rsa"),
+        PathBuf::from("id_ed25519"),
+    ]
+}
+
+/// True if `path` (after canonicalization fall-back) is inside or equal to any
+/// denied path under `root`, matched by path components rather than substring.
+pub fn path_is_denied(path: &Path, denied: &[PathBuf]) -> bool {
+    let comps: Vec<String> = path
+        .components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(s) => Some(s.to_string_lossy().to_string()),
+            _ => None,
+        })
+        .collect();
+    for d in denied {
+        let d_comps: Vec<String> = d
+            .components()
+            .filter_map(|c| match c {
+                std::path::Component::Normal(s) => Some(s.to_string_lossy().to_string()),
+                _ => None,
+            })
+            .collect();
+        if d_comps.is_empty() {
+            continue;
+        }
+        if comps
+            .windows(d_comps.len())
+            .any(|w| w == d_comps.as_slice())
+        {
+            return true;
+        }
+        if comps.last() == d_comps.last() && d_comps.len() == 1 {
+            return true;
+        }
+    }
+    false
 }
 
 // ─── THE SANDBOX TRAIT ──────────────────────────────────────────────────────────
@@ -226,6 +284,7 @@ impl LocalSandbox {
             policy: FsNetPolicy {
                 allowed_paths: vec![root],
                 allow_network: true,
+                ..FsNetPolicy::default()
             },
         }
     }
@@ -236,8 +295,14 @@ impl LocalSandbox {
             policy: FsNetPolicy {
                 allowed_paths: vec![root],
                 allow_network: false, // deny by default for hardened
+                ..FsNetPolicy::default()
             },
         }
+    }
+
+    pub fn with_policy(mut self, policy: FsNetPolicy) -> Self {
+        self.policy = policy;
+        self
     }
 }
 
@@ -262,13 +327,40 @@ impl Sandbox for LocalSandbox {
             );
         }
 
-        let mut child = StdCommand::new(&cmd.program)
+        if path_is_denied(&workdir, &self.policy.denied_paths) {
+            anyhow::bail!(
+                "Command workdir hits a protected path: {}",
+                cmd.workdir.display()
+            );
+        }
+        for arg in &cmd.args {
+            let p = Path::new(arg);
+            if path_is_denied(p, &self.policy.denied_paths) {
+                anyhow::bail!("Command argument refers to a protected path: {}", arg);
+            }
+        }
+
+        let env: HashMap<String, String> = if self.policy.env_allowlist.is_empty() {
+            cmd.env.clone()
+        } else {
+            cmd.env
+                .iter()
+                .filter(|(k, _)| self.policy.env_allowlist.iter().any(|a| a == *k))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect()
+        };
+
+        let mut builder = StdCommand::new(&cmd.program);
+        builder
             .args(&cmd.args)
             .current_dir(&workdir)
-            .envs(&cmd.env)
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped())
-            .spawn()?;
+            .stderr(std::process::Stdio::piped());
+        if !self.policy.env_allowlist.is_empty() {
+            builder.env_clear();
+        }
+        builder.envs(&env);
+        let mut child = builder.spawn()?;
 
         let start = Instant::now();
         let timeout = std::time::Duration::from_millis(limits.timeout_ms);

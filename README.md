@@ -43,6 +43,7 @@ Sparrow is **alpha software** with a green cross-platform CI baseline. The kerne
 | Skills / plugins | Alpha | Progressive skill references, explicit skill invocation, plugin manifests, namespaced plugin slash commands, plugin scanner, CLI install/list/remove, and WebView `/plugins` are wired |
 | Toolsets | Alpha | Known tools declare toolset/risk/auth/mutation/network/exec metadata; CLI `sparrow tools`, surface filtering, gateway-safe defaults, and WebView `/tools` are wired |
 | Security audit | Alpha | `sparrow security audit [--json]`, WebView `/security`, and checks for permissions/gateway/tools/plugins/hooks/secrets/sandbox are wired |
+| Sandbox policy | Alpha | `LocalSandbox` enforces workdir-inside-root, default protected paths (`.git`, `.env`, `.ssh`, …), and an optional env allowlist; Docker / SSH / Worktree backends are wired; Modal/Daytona/Vercel/Singularity return honest errors when the vendor CLI is missing |
 | Gateway WebSocket | Alpha | `/status` command roundtrip tested on port 9338; scoped gateway sessions, health/abort commands, and session list/export/cleanup are wired |
 | Replay / checkpoints / memory | Alpha | Recorder, checkpoint, rewind, transcript, SQLite facts, bounded `MEMORY.md` / `USER.md`, memory tool, and session search are wired with tests |
 | First-run setup | Alpha | Conversational setup agent plus fallback interactive setup are wired for provider/model configuration |
