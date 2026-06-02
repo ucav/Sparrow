@@ -333,6 +333,9 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Skills { action }) => {
             handle_skills(action, &skill_library)?;
         }
+        Some(Commands::Plugins { action }) => {
+            handle_plugins(action, &config_dir)?;
+        }
         Some(Commands::Mcp { action }) => {
             handle_mcp(action, &config_dir).await?;
         }
@@ -2081,6 +2084,23 @@ fn handle_skills(
                 }
             }
         }
+        sparrow::cli::SkillsAction::View { name } => match library.invoke(&name)? {
+            Some(invocation) => {
+                println!("# {}", invocation.skill.name);
+                println!("{}", invocation.skill.description);
+                println!("Triggers: {}", invocation.skill.trigger.join(", "));
+                println!();
+                println!("{}", invocation.skill.body);
+                if !invocation.loaded_references.is_empty() {
+                    println!("\nLoaded references:");
+                    for (path, content) in invocation.loaded_references {
+                        println!("## {}", path);
+                        println!("{}", content);
+                    }
+                }
+            }
+            None => println!("No skill named '{}'.", name),
+        },
         sparrow::cli::SkillsAction::Create { name } => {
             let skill = sparrow::capabilities::Skill {
                 name: name.clone(),
@@ -2092,12 +2112,30 @@ fn handle_skills(
                 created_at: chrono::Utc::now().format("%Y-%m-%d").to_string(),
                 score: 0.5,
                 auto_generated: false,
+                references: Vec::new(),
+                templates: Vec::new(),
+                scripts: Vec::new(),
+                assets: Vec::new(),
             };
             library.add(skill)?;
             println!(
                 "Skill '{}' created. Edit: ~/.config/sparrow/skills/{}/SKILL.md",
                 name, name
             );
+        }
+        sparrow::cli::SkillsAction::Install { source } => {
+            let skill = load_skill_from_source(&source)?;
+            let name = skill.name.clone();
+            library.add(skill)?;
+            println!("Installed skill '{}'.", name);
+        }
+        sparrow::cli::SkillsAction::Update { name } => {
+            let Some(skill) = library.get(&name) else {
+                println!("No skill named '{}'.", name);
+                return Ok(());
+            };
+            library.add(skill)?;
+            println!("Skill '{}' refreshed.", name);
         }
         sparrow::cli::SkillsAction::Prune => {
             let removed = library.prune(0.2)?;
@@ -2116,6 +2154,115 @@ fn handle_skills(
                     "No skill named '{}'. Run 'sparrow skills list' to see names.",
                     name
                 );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn load_skill_from_source(source: &str) -> anyhow::Result<sparrow::capabilities::Skill> {
+    let source = source.trim();
+    let temp_dir;
+    let path = if source.starts_with("http://")
+        || source.starts_with("https://")
+        || source.ends_with(".git")
+        || source.contains("github.com")
+    {
+        temp_dir = std::env::temp_dir().join(format!("sparrow-skill-{}", uuid::Uuid::new_v4()));
+        let status = std::process::Command::new("git")
+            .args([
+                "clone",
+                "--depth",
+                "1",
+                source,
+                temp_dir.to_string_lossy().as_ref(),
+            ])
+            .status()?;
+        if !status.success() {
+            anyhow::bail!("git clone failed for skill source {}", source);
+        }
+        temp_dir.clone()
+    } else {
+        temp_dir = std::path::PathBuf::new();
+        std::path::PathBuf::from(source)
+    };
+
+    let skill_file = if path.is_dir() {
+        path.join("SKILL.md")
+    } else {
+        path.clone()
+    };
+    let content = std::fs::read_to_string(&skill_file)?;
+    let source_file = skill_file
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| "SKILL.md".into());
+    let skill = sparrow::capabilities::Skill::from_markdown(&content, &source_file)
+        .ok_or_else(|| anyhow::anyhow!("could not parse skill from {}", skill_file.display()))?;
+    if !temp_dir.as_os_str().is_empty() {
+        let _ = std::fs::remove_dir_all(temp_dir);
+    }
+    Ok(skill)
+}
+
+fn handle_plugins(
+    action: sparrow::cli::PluginsAction,
+    config_dir: &std::path::Path,
+) -> anyhow::Result<()> {
+    let plugins_dir = config_dir.join("plugins");
+    match action {
+        sparrow::cli::PluginsAction::List => {
+            let registry = sparrow::capabilities::plugin::PluginRegistry::new(plugins_dir);
+            let plugins = registry.scan();
+            if plugins.is_empty() {
+                println!("No plugins installed.");
+            } else {
+                println!("Plugins ({}):", plugins.len());
+                for plugin in plugins {
+                    let audit = registry.audit(&plugin);
+                    println!(
+                        "  {} {} | commands:{} skills:{} hooks:{} | {}",
+                        plugin.manifest.name,
+                        plugin.manifest.version,
+                        plugin.manifest.commands.len(),
+                        plugin.manifest.skills.len(),
+                        plugin.manifest.hooks.len(),
+                        if audit.allowed { "allowed" } else { "blocked" }
+                    );
+                    for warning in audit.warnings {
+                        println!("    - {}", warning);
+                    }
+                }
+            }
+        }
+        sparrow::cli::PluginsAction::Install { source, allow } => {
+            let source_path = std::path::PathBuf::from(&source);
+            let mut allowlist = Vec::new();
+            if allow {
+                if let Ok(plugin) = sparrow::capabilities::plugin::load_plugin(&source_path) {
+                    allowlist.push(plugin.manifest.name);
+                }
+            }
+            let registry = sparrow::capabilities::plugin::PluginRegistry::new(plugins_dir)
+                .with_allowlist(allowlist);
+            let plugin = if source.starts_with("http://")
+                || source.starts_with("https://")
+                || source.ends_with(".git")
+                || source.contains("github.com")
+            {
+                registry.install_github(&source)?
+            } else {
+                registry.install_local(&source_path)?
+            };
+            println!("Installed plugin '{}'.", plugin.manifest.name);
+        }
+        sparrow::cli::PluginsAction::Rm { name } => {
+            let path = plugins_dir.join(&name);
+            if path.exists() {
+                std::fs::remove_dir_all(path)?;
+                println!("Removed plugin '{}'.", name);
+            } else {
+                println!("No plugin named '{}'.", name);
             }
         }
     }

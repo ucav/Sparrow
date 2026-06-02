@@ -112,8 +112,20 @@ files with frontmatter fields such as `name`, `description`, `role`, `prompt`,
 | Command | Status | Description |
 |---|---|---|
 | `sparrow skills list` | ✅ | List skill library |
+| `sparrow skills view <name>` | Alpha | Invoke a skill and load declared references on demand |
 | `sparrow skills create <name>` | ✅ | Create a skill |
+| `sparrow skills install <local-dir-or-git-url>` | Alpha | Install a skill from a local directory/file or GitHub repo |
+| `sparrow skills update <name>` | Alpha | Refresh a skill from the local library |
 | `sparrow skills prune` | ✅ | Curator prune |
+| `sparrow skills rm <name>` | ✅ | Remove a skill |
+
+## Plugins
+
+| Command | Status | Description |
+|---|---|---|
+| `sparrow plugins list` | Alpha | List installed local plugins and scanner warnings |
+| `sparrow plugins install <local-dir-or-git-url>` | Alpha | Install a plugin manifest from local disk or GitHub |
+| `sparrow plugins rm <name>` | Alpha | Remove an installed plugin |
 
 ## MCP
 

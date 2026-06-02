@@ -24,6 +24,10 @@ fn mk_skill(name: &str) -> Skill {
         created_at: "2026-01-01".into(),
         score: 0.5,
         auto_generated: false, // user-kind — prune would NOT remove it
+        references: Vec::new(),
+        templates: Vec::new(),
+        scripts: Vec::new(),
+        assets: Vec::new(),
     }
 }
 

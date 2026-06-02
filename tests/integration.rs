@@ -1021,6 +1021,10 @@ mod tests {
             created_at: "".into(),
             score: 0.5,
             auto_generated: false,
+            references: Vec::new(),
+            templates: Vec::new(),
+            scripts: Vec::new(),
+            assets: Vec::new(),
         };
         let score = skill.relevance("I need help with Rust error handling in my code");
         assert!(score > 0.0, "Should be relevant for matching context");
@@ -1042,6 +1046,10 @@ mod tests {
             created_at: "2026-01-01".into(),
             score: 0.7,
             auto_generated: true,
+            references: Vec::new(),
+            templates: Vec::new(),
+            scripts: Vec::new(),
+            assets: Vec::new(),
         };
         let md = original.to_markdown();
         let parsed = Skill::from_markdown(&md, "test.skill.md");
@@ -1080,6 +1088,10 @@ mod tests {
             created_at: "2026-01-01".into(),
             score: 0.5,
             auto_generated: true,
+            references: Vec::new(),
+            templates: Vec::new(),
+            scripts: Vec::new(),
+            assets: Vec::new(),
         };
         lib.add(skill).expect("add skill");
         let found = lib.get("test-skill");

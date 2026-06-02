@@ -5,6 +5,7 @@ use std::sync::Arc;
 use crate::memory::Memory;
 
 pub mod mcp;
+pub mod plugin;
 
 // ─── Skill ──────────────────────────────────────────────────────────────────────
 
@@ -32,6 +33,24 @@ pub struct Skill {
     /// Whether this skill was auto-generated (by Curator) or user-created
     #[serde(default)]
     pub auto_generated: bool,
+    /// Optional references loaded only when the skill is explicitly invoked.
+    #[serde(default)]
+    pub references: Vec<String>,
+    /// Optional templates loaded only when explicitly requested.
+    #[serde(default)]
+    pub templates: Vec<String>,
+    /// Optional scripts advertised by the skill.
+    #[serde(default)]
+    pub scripts: Vec<String>,
+    /// Optional assets advertised by the skill.
+    #[serde(default)]
+    pub assets: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillInvocation {
+    pub skill: Skill,
+    pub loaded_references: Vec<(String, String)>,
 }
 
 fn default_score() -> f64 {
@@ -54,6 +73,10 @@ impl Skill {
         let mut description = String::new();
         let mut trigger = Vec::new();
         let mut body = String::new();
+        let mut references = Vec::new();
+        let mut templates = Vec::new();
+        let mut scripts = Vec::new();
+        let mut assets = Vec::new();
         let mut in_body = false;
 
         for line in content.lines() {
@@ -86,6 +109,22 @@ impl Skill {
                     .trim_start_matches("**Description:**")
                     .trim()
                     .to_string();
+                continue;
+            }
+            if trimmed.starts_with("**References:**") {
+                references = parse_csv_field(trimmed.trim_start_matches("**References:**"));
+                continue;
+            }
+            if trimmed.starts_with("**Templates:**") {
+                templates = parse_csv_field(trimmed.trim_start_matches("**Templates:**"));
+                continue;
+            }
+            if trimmed.starts_with("**Scripts:**") {
+                scripts = parse_csv_field(trimmed.trim_start_matches("**Scripts:**"));
+                continue;
+            }
+            if trimmed.starts_with("**Assets:**") {
+                assets = parse_csv_field(trimmed.trim_start_matches("**Assets:**"));
                 continue;
             }
 
@@ -128,6 +167,10 @@ impl Skill {
             created_at: chrono::Utc::now().format("%Y-%m-%d").to_string(),
             score: 0.5,
             auto_generated: false,
+            references,
+            templates,
+            scripts,
+            assets,
         })
     }
 
@@ -137,11 +180,19 @@ impl Skill {
             "# Skill: {name}\n\n\
              **Trigger:** {trigger}\n\n\
              **Description:** {desc}\n\n\
+             **References:** {references}\n\n\
+             **Templates:** {templates}\n\n\
+             **Scripts:** {scripts}\n\n\
+             **Assets:** {assets}\n\n\
              ## Body\n\
              {body}\n",
             name = self.name,
             trigger = self.trigger.join(", "),
             desc = self.description,
+            references = self.references.join(", "),
+            templates = self.templates.join(", "),
+            scripts = self.scripts.join(", "),
+            assets = self.assets.join(", "),
             body = self.body,
         )
     }
@@ -165,6 +216,15 @@ impl Skill {
     }
 }
 
+fn parse_csv_field(value: &str) -> Vec<String> {
+    value
+        .trim()
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
 // ─── THE SKILL LIBRARY TRAIT ────────────────────────────────────────────────────
 
 pub trait SkillLibrary: Send + Sync {
@@ -174,6 +234,7 @@ pub trait SkillLibrary: Send + Sync {
     fn curate(&self) -> anyhow::Result<()>;
     fn prune(&self, min_score: f64) -> anyhow::Result<usize>;
     fn get(&self, name: &str) -> Option<Skill>;
+    fn invoke(&self, name: &str) -> anyhow::Result<Option<SkillInvocation>>;
     /// Remove a skill by name (any kind). Returns true if it existed.
     fn remove(&self, name: &str) -> anyhow::Result<bool>;
 }
@@ -307,6 +368,31 @@ impl SkillLibrary for FsSkillLibrary {
 
     fn get(&self, name: &str) -> Option<Skill> {
         self.scan().into_iter().find(|s| s.name == name)
+    }
+
+    fn invoke(&self, name: &str) -> anyhow::Result<Option<SkillInvocation>> {
+        let Some(skill) = self.get(name) else {
+            return Ok(None);
+        };
+        let base = if skill.source_file.ends_with(".skill.md") {
+            self.skills_dir.clone()
+        } else {
+            self.skills_dir.join(&skill.source_file)
+        };
+        let mut loaded_references = Vec::new();
+        for reference in &skill.references {
+            let candidate = base.join(reference);
+            if !candidate.starts_with(&base) || !candidate.exists() {
+                continue;
+            }
+            if let Ok(content) = std::fs::read_to_string(&candidate) {
+                loaded_references.push((reference.clone(), content));
+            }
+        }
+        Ok(Some(SkillInvocation {
+            skill,
+            loaded_references,
+        }))
     }
 
     fn remove(&self, name: &str) -> anyhow::Result<bool> {
@@ -513,6 +599,10 @@ impl Curator {
             created_at: chrono::Utc::now().format("%Y-%m-%d").to_string(),
             score: 0.3,
             auto_generated: true,
+            references: Vec::new(),
+            templates: Vec::new(),
+            scripts: Vec::new(),
+            assets: Vec::new(),
         })
     }
 
