@@ -8,6 +8,27 @@ Sparrow uses evidence-based status labels:
 - **Experimental**: adapter, shell, or prototype exists.
 - **Planned**: not implemented.
 
+## v0.2.0 snapshot (2026-06-02)
+
+The autonomy mega-prompt phases 1–13 have landed. Everything in the README
+status table moved to **Stable** except `Provider routing` and
+`First-run setup`, which honestly depend on external runtime (tokens, real
+provider responses).
+
+See `CHANGELOG.md` for the per-phase breakdown and `docs/comparison.md` for
+where Sparrow now matches / still lags Claude Code, Hermes Agent, and
+OpenClaw.
+
+### Next milestones
+
+- **v0.3.0**: wire real external memory providers (mem0, honcho,
+  supermemory), publish signed cross-platform release artifacts, package the
+  VS Code extension, add the gateway run-registry to the WebSocket API
+  surface so the console can abort in one click.
+- **v0.4.0**: in-engine compaction tied to per-model context window (instead
+  of the global 120k-char default), automatic `MEMORY.md` curation, and the
+  agent-marketplace browser in the WebView.
+
 ## Current Alpha
 
 | Area | Status | Notes |
