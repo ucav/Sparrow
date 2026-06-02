@@ -61,7 +61,12 @@
   .stat:last-child{border-right:none}
   .stat .k{color:var(--dimmer);font-size:10px;letter-spacing:.7px;text-transform:uppercase}
   .route-stat{overflow:hidden}
-  .route{display:block;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--planner);font-weight:500}.cost{color:var(--brand);font-weight:600;font-variant-numeric:tabular-nums}
+  .route{display:block;min-width:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--planner);font-weight:500}
+  .route .hop{color:var(--planner)}
+  .route .arrow{display:inline-block;margin:0 5px;color:var(--brand);animation:route-step 1.7s ease-in-out infinite}
+  .route .arrow:nth-of-type(2n){animation-delay:.28s}
+  @keyframes route-step{0%,100%{opacity:.45;transform:translateX(0)}50%{opacity:1;transform:translateX(2px)}}
+  .cost{color:var(--brand);font-weight:600;font-variant-numeric:tabular-nums}
   .tok{font-variant-numeric:tabular-nums;transition:color .3s}
   .tok.up{color:var(--brand)}
   .pill{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:10.5px;font-weight:600;letter-spacing:.5px;transition:.3s}
@@ -165,7 +170,7 @@
   .context-side{display:grid;gap:4px;min-width:0}
   .context-label{display:flex;justify-content:space-between;gap:8px;color:var(--dimmer);font-size:10px;text-transform:uppercase;letter-spacing:.7px}
   .context-label b{color:var(--steel);font-weight:500;text-transform:none;letter-spacing:0;font-variant-numeric:tabular-nums}
-  .context-track{height:7px;border:1px solid var(--line);border-radius:999px;background:#0d0a07;overflow:hidden}
+  .context-track{height:5px;border:1px solid var(--line);border-radius:999px;background:#0d0a07;overflow:hidden}
   .context-fill{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--agent),var(--brand),var(--coral));transition:width .25s ease}
   .attachments{grid-column:1/-1;display:none;gap:6px;align-items:center;flex-wrap:wrap;min-height:0}
   .attachments.show{display:flex}
@@ -219,7 +224,9 @@
     background:linear-gradient(180deg,var(--panel),color-mix(in srgb,var(--bg) 80%,var(--panel)));
     border-right:1px solid var(--line);
     overflow-y:auto;padding:14px 13px 18px;min-width:0;min-height:0;
+    animation:drawer-in .28s ease both;
   }
+  @keyframes drawer-in{from{opacity:.35;transform:translateX(-8px)}to{opacity:1;transform:none}}
   .drawer::-webkit-scrollbar{width:6px}
   .drawer::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--line-hot) 70%,var(--bg));border-radius:6px}
   .drawer h3{font-size:9.5px;letter-spacing:1.7px;text-transform:uppercase;color:var(--dimmer);
@@ -236,6 +243,7 @@
   .drw-row{display:flex;flex-direction:column;gap:3px;padding:8px 10px;border-radius:7px;
     background:var(--panel2);border:1px solid transparent;cursor:pointer;transition:.15s;margin-bottom:5px}
   .drw-row:hover{border-color:var(--line-hot)}
+  .drw-row.cur{border-color:color-mix(in srgb,var(--brand) 55%,var(--line));background:color-mix(in srgb,var(--brand) 10%,var(--panel))}
   .drw-row .ttl{font-size:11.5px;color:var(--fg);font-weight:500;display:flex;align-items:center;gap:6px;
     overflow-wrap:anywhere;word-break:break-word}
   .drw-row .ttl .led{width:6px;height:6px;border-radius:50%;background:var(--add);box-shadow:0 0 6px var(--add)}
@@ -303,6 +311,7 @@
   :root[data-theme="paper"] .swarm-cockpit{background:var(--panel)}
   :root[data-theme="paper"] .input-bar{background:linear-gradient(180deg, color-mix(in srgb,var(--panel) 60%, var(--bg)), var(--panel))}
   :root[data-theme="paper"] .rail{background:#ebe3cd}
+  :root[data-theme="paper"] .context-track{background:color-mix(in srgb,var(--line-hot) 42%,var(--bg));height:4px}
 
   /* chrome chips */
   .chip-btn{font-family:inherit;font-size:11px;padding:3px 9px;border-radius:6px;
@@ -343,6 +352,7 @@
   .boot-overlay{position:fixed;inset:0;background:radial-gradient(900px 600px at 50% 50%, color-mix(in srgb,var(--brand) 15%, var(--bg)), var(--bg) 70%);
     z-index:5000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;
     animation:fade-in .25s ease both}
+  .boot-overlay[hidden]{display:none!important}
   .boot-overlay.fading{animation:fade-out .35s ease forwards}
   @keyframes fade-out{to{opacity:0;visibility:hidden}}
   .boot-overlay .b-logo{filter:drop-shadow(0 0 24px rgba(242,169,60,.45));animation:bob 2.4s ease-in-out infinite}
@@ -658,7 +668,7 @@
       <button class="chip-btn" id="soundBtn" title="Cmd+M mute sounds">🔊</button>
       <button class="chip-btn" id="themeBtn" title="Cmd+Shift+L toggle theme">☾</button>
       <button class="btn sm" id="cfgBtn">config</button>
-      <span style="font-size:11px;color:var(--dimmer)">v0.2.0</span>
+      <span style="font-size:11px;color:var(--dimmer)">v0.3.0</span>
     </span>
   </div>
 
@@ -681,31 +691,31 @@
   <aside class="drawer" id="drawer" aria-label="Drawer">
     <div class="panel" data-panel-body="sessions">
       <h3>Sessions <span class="count" id="drw-sessions-count">0</span></h3>
-      <div id="drw-sessions-list"><div class="drw-empty">no sessions yet — start your first run</div></div>
+      <div id="drw-sessions-list"><div class="drw-empty">_none yet_ · start your first run</div></div>
     </div>
     <div class="panel" data-panel-body="memory">
       <h3>Memory</h3>
-      <div id="drw-memory-body"><div class="drw-empty">MEMORY.md is empty — Sparrow will learn as you go</div></div>
+      <div id="drw-memory-body"><div class="drw-empty">_none yet_ · MEMORY.md is empty — Sparrow will learn as you go</div></div>
     </div>
     <div class="panel" data-panel-body="plugins">
       <h3>Plugins <span class="count" id="drw-plugins-count">0</span></h3>
-      <div id="drw-plugins-list"><div class="drw-empty">no plugins installed</div></div>
+      <div id="drw-plugins-list"><div class="drw-empty">_none yet_ · no plugins installed</div></div>
     </div>
     <div class="panel" data-panel-body="tools">
       <h3>Tools <span class="count" id="drw-tools-count">0</span></h3>
-      <div id="drw-tools-list"><div class="drw-empty">no tools loaded</div></div>
+      <div id="drw-tools-list"><div class="drw-empty">_none yet_ · no tools loaded</div></div>
     </div>
     <div class="panel" data-panel-body="permissions">
       <h3>Permissions</h3>
-      <div id="drw-permissions-body"><div class="drw-empty">connect to load</div></div>
+      <div id="drw-permissions-body"><div class="drw-empty">_none yet_ · connect to load</div></div>
     </div>
     <div class="panel" data-panel-body="security">
       <h3>Security</h3>
-      <div id="drw-security-body"><div class="drw-empty">connect to audit</div></div>
+      <div id="drw-security-body"><div class="drw-empty">_none yet_ · connect to audit</div></div>
     </div>
     <div class="panel" data-panel-body="artifacts">
       <h3>Artifacts <span class="count" id="drw-artifacts-count">0</span></h3>
-      <div id="drw-artifacts-list"><div class="drw-empty">no artifacts yet — drag a file onto the page to upload</div></div>
+      <div id="drw-artifacts-list"><div class="drw-empty">_none yet_ · drag a file onto the page to upload</div></div>
     </div>
   </aside>
 
@@ -887,7 +897,12 @@ function line(html,cls=''){const d=document.createElement('div');d.className='ln
 
 function setRoute(t){
   const el=$('route');
-  el.textContent=t;
+  const parts=String(t||'idle').split(/\s*(?:→|->)\s*/).filter(Boolean);
+  if(parts.length>1){
+    el.innerHTML=parts.map((p,i)=>`${i?'<span class="arrow">→</span>':''}<span class="hop">${esc(p)}</span>`).join('');
+  }else{
+    el.textContent=t||'idle';
+  }
   el.title=t;
 }
 function updateSession(){
@@ -1045,6 +1060,7 @@ const BOOT_STATUS_LINES=[
   ['autonomy','dial ready'],
 ];
 function runBootAnimation(){
+  if(new URLSearchParams(location.search).get('boot')==='0')return;
   if(sessionStorage.getItem('sparrow-booted')==='1')return;
   sessionStorage.setItem('sparrow-booted','1');
   const ov=document.getElementById('bootOverlay');if(!ov)return;
@@ -1078,6 +1094,11 @@ function setTheme(t){
   localStorage.setItem('sparrow-theme',t);
 }
 function initTheme(){
+  const queryTheme=new URLSearchParams(location.search).get('theme');
+  if(queryTheme==='captain'||queryTheme==='paper'){
+    setTheme(queryTheme);
+    return;
+  }
   const stored=localStorage.getItem('sparrow-theme');
   const prefersLight=window.matchMedia('(prefers-color-scheme: light)').matches;
   setTheme(stored||(prefersLight?'paper':'captain'));
@@ -1174,13 +1195,13 @@ async function loadSessionsPanel(){
     const r=await fetch('/sessions');const j=await r.json();
     const sess=Array.isArray(j.sessions)?j.sessions:[];
     document.getElementById('drw-sessions-count').textContent=sess.length;
-    if(!sess.length){host.innerHTML='<div class="drw-empty">No sessions yet — start your first run.</div>';return;}
+    if(!sess.length){host.innerHTML='<div class="drw-empty">_none yet_ · start your first run.</div>';return;}
     host.innerHTML=sess.slice(0,20).map(s=>{
       const ts=s.updated_at?new Date(s.updated_at*1000).toLocaleString('fr-FR',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}):'';
       const turns=(s.messages_json||'[]').match(/"role":/g)?.length||0;
       return `<div class="drw-row" title="${escHtml(s.id)}"><div class="ttl">${escHtml(s.name||s.id)}</div><div class="meta"><span><b>${turns}</b> turns</span><span>${escHtml(s.status||'')}</span><span>${ts}</span></div></div>`;
     }).join('');
-  }catch(_){host.innerHTML='<div class="drw-empty">unable to load /sessions</div>';}
+  }catch(_){host.innerHTML='<div class="drw-empty">_none yet_ · unable to load /sessions</div>';}
 }
 async function loadMemoryPanel(){
   const host=document.getElementById('drw-memory-body');
@@ -1198,8 +1219,8 @@ async function loadMemoryPanel(){
     if(facts.length){
       html+='<div style="margin-top:6px">'+facts.slice(0,8).map(f=>`<div class="drw-row"><div class="ttl">${escHtml(f.key)}</div><div class="meta"><span>${escHtml((f.value||'').slice(0,80))}</span></div></div>`).join('')+'</div>';
     }
-    host.innerHTML=html||'<div class="drw-empty">MEMORY.md is empty — Sparrow will learn as you go.</div>';
-  }catch(_){host.innerHTML='<div class="drw-empty">unable to load /memory</div>';}
+    host.innerHTML=html||'<div class="drw-empty">_none yet_ · MEMORY.md is empty, Sparrow will learn as you go.</div>';
+  }catch(_){host.innerHTML='<div class="drw-empty">_none yet_ · unable to load /memory</div>';}
 }
 async function loadPluginsPanel(){
   const host=document.getElementById('drw-plugins-list');
@@ -1207,9 +1228,9 @@ async function loadPluginsPanel(){
     const r=await fetch('/plugins');const j=await r.json();
     const ps=Array.isArray(j.plugins)?j.plugins:[];
     document.getElementById('drw-plugins-count').textContent=ps.length;
-    if(!ps.length){host.innerHTML='<div class="drw-empty">No plugins installed — try <code>sparrow plugins install</code></div>';return;}
+    if(!ps.length){host.innerHTML='<div class="drw-empty">_none yet_ · try <code>sparrow plugins install</code></div>';return;}
     host.innerHTML=ps.map(p=>`<div class="drw-row"><div class="ttl">${escHtml(p.name)}</div><div class="meta"><span>${escHtml(p.version||'')}</span><span>${p.commands||0} cmds</span><span>${p.skills||0} skills</span></div></div>`).join('');
-  }catch(_){host.innerHTML='<div class="drw-empty">unable to load /plugins</div>';}
+  }catch(_){host.innerHTML='<div class="drw-empty">_none yet_ · unable to load /plugins</div>';}
 }
 async function loadToolsPanel(){
   const host=document.getElementById('drw-tools-list');
@@ -1217,9 +1238,9 @@ async function loadToolsPanel(){
     const r=await fetch('/tools');const j=await r.json();
     const ts=Array.isArray(j.tools)?j.tools:[];
     document.getElementById('drw-tools-count').textContent=ts.length;
-    if(!ts.length){host.innerHTML='<div class="drw-empty">no tools metadata</div>';return;}
+    if(!ts.length){host.innerHTML='<div class="drw-empty">_none yet_ · no tools metadata loaded</div>';return;}
     host.innerHTML=ts.map(t=>`<div class="drw-row" title="${escHtml(t.toolset||'')}"><div class="ttl">${escHtml(t.name)}</div><div class="meta"><span>${escHtml(t.toolset||'')}</span>${t.exec?'<span style="color:var(--rem)">exec</span>':''}${t.mutates_files?'<span style="color:var(--verifier)">mutates</span>':''}${t.network?'<span>net</span>':''}</div></div>`).join('');
-  }catch(_){host.innerHTML='<div class="drw-empty">unable to load /tools</div>';}
+  }catch(_){host.innerHTML='<div class="drw-empty">_none yet_ · unable to load /tools</div>';}
 }
 async function loadPermissionsPanel(){
   const host=document.getElementById('drw-permissions-body');
@@ -1233,7 +1254,7 @@ async function loadPermissionsPanel(){
       `<div class="mem-doc"><div class="label">Tools allow <b>${(tools.allow||[]).length}</b></div></div>`+
       `<div class="mem-doc"><div class="label">Tools deny <b>${(tools.deny||[]).length}</b></div></div>`+
       `<div class="mem-doc"><div class="label">Paths deny <b>${(paths.deny||[]).length}</b></div></div>`;
-  }catch(_){host.innerHTML='<div class="drw-empty">unable to load /permissions</div>';}
+  }catch(_){host.innerHTML='<div class="drw-empty">_none yet_ · unable to load /permissions</div>';}
 }
 async function loadSecurityPanel(){
   const host=document.getElementById('drw-security-body');
@@ -1248,7 +1269,7 @@ async function loadSecurityPanel(){
       return `<div class="sec-finding ${kl}"><div class="cat">${escHtml(f.category||'')}</div><div class="msg">${escHtml(f.message||'')}</div></div>`;
     }).join('');
     host.innerHTML=html;
-  }catch(_){host.innerHTML='<div class="drw-empty">unable to load /security</div>';}
+  }catch(_){host.innerHTML='<div class="drw-empty">_none yet_ · unable to load /security</div>';}
 }
 async function loadArtifactsPanel(){
   const host=document.getElementById('drw-artifacts-list');
@@ -1256,9 +1277,9 @@ async function loadArtifactsPanel(){
     const r=await fetch('/artifacts');const j=await r.json();
     const its=Array.isArray(j.items)?j.items:[];
     document.getElementById('drw-artifacts-count').textContent=its.length;
-    if(!its.length){host.innerHTML='<div class="drw-empty">No artifacts yet — drag a file onto the page to upload.</div>';return;}
+    if(!its.length){host.innerHTML='<div class="drw-empty">_none yet_ · drag a file onto the page to upload.</div>';return;}
     host.innerHTML=its.map(it=>`<div class="drw-row" title="${escHtml(it.path||'')}"><div class="ttl">${escHtml(it.name)}</div><div class="meta"><span>${escHtml(it.kind||'file')}</span><span>${Math.round((it.size||0)/1024)} KB</span></div></div>`).join('');
-  }catch(_){host.innerHTML='<div class="drw-empty">unable to load /artifacts</div>';}
+  }catch(_){host.innerHTML='<div class="drw-empty">_none yet_ · unable to load /artifacts</div>';}
 }
 
 // ─── Dynamic swarm row (Sprint 1 / STATUS2.md item 1bis) ─────────────

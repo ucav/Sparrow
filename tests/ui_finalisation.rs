@@ -251,6 +251,29 @@ fn console_html_has_sprint3_micro_animation_hooks() {
 }
 
 #[test]
+fn console_html_matches_v0_3_visual_polish_contract() {
+    let html =
+        std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");
+    for marker in [
+        "v0.3.0",
+        "get('boot')==='0'",
+        ".boot-overlay[hidden]",
+        "route-step",
+        "class=\"arrow\"",
+        "drawer-in",
+        "drw-row.cur",
+        "_none yet_ · unable to load /sessions",
+        ":root[data-theme=\"paper\"] .context-track",
+    ] {
+        assert!(
+            html.contains(marker),
+            "console.html must keep v0.3 polish marker `{}`",
+            marker
+        );
+    }
+}
+
+#[test]
 fn console_html_has_typed_event_renderers() {
     let html =
         std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");

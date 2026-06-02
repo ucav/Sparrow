@@ -30,6 +30,20 @@ Full: `sparrow-mascot.svg` (240×240)
 Cockpit: `sparrow-cockpit.svg` (28×28)
 Console: `sparrow-ascii.txt`
 
+## WebView Cockpit
+
+The v0.3 cockpit keeps the presentation mockup's permanent rail, drawer stack,
+swarm row, routed event stream, context meter, and multiline composer. The
+shipping UI supports both Captain and Paper themes.
+
+![Sparrow WebView captain theme](screenshots/webview-captain.png)
+
+![Sparrow WebView paper theme](screenshots/webview-paper.png)
+
+The reference used for the final polish pass is tracked locally for comparison:
+
+![Sparrow v0.3.0 mockup reference](screenshots/mockup-v0.3.0.png)
+
 ## Voice
 
 Concise, competent, a wink of pirate-builder character.

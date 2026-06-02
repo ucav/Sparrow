@@ -1,4 +1,4 @@
-//! Coverage for the v0.2.0 stability pass — every formerly-deferred Phase
+//! Coverage for the v0.3.0 stability pass — every formerly-deferred Phase
 //! 7/9/12/13 item has at least one assertion here so it stays green.
 
 use sparrow::gateway::RunRegistry;
@@ -47,8 +47,8 @@ fn tui_agent_picker_does_not_fire_inside_an_email() {
 }
 
 #[test]
-fn cargo_pkg_version_is_0_2_0() {
-    assert_eq!(env!("CARGO_PKG_VERSION"), "0.2.0");
+fn cargo_pkg_version_is_0_3_0() {
+    assert_eq!(env!("CARGO_PKG_VERSION"), "0.3.0");
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────────
