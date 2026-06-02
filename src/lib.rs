@@ -32,6 +32,7 @@ pub mod commands;
 pub mod completions;
 pub mod config;
 pub mod console;
+pub mod context;
 pub mod engine;
 pub mod event;
 pub mod extras;
