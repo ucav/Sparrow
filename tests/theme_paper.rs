@@ -29,7 +29,10 @@ fn console_html_declares_captain_and_paper_theme_tokens() {
         );
     }
     assert!(
-        html.contains("prefers-color-scheme: light") && html.contains("'sparrow-theme'"),
-        "paper theme should auto-detect light mode and persist user override"
+        html.contains("prefers-color-scheme: light")
+            && html.contains("'sparrow-theme'")
+            && html.contains("location.search")
+            && html.contains("queryTheme==='paper'"),
+        "paper theme should auto-detect light mode, persist user override, and support query-forced screenshots"
     );
 }
