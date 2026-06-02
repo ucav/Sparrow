@@ -37,6 +37,7 @@ Sparrow is **alpha software** with a green cross-platform CI baseline. The kerne
 | Provider routing | Alpha | Ollama + NVIDIA stored-credential discovery tested locally; 92 NVIDIA chat-capable models cached from `/v1/models`; explicit `nvidia:<model>` routing validated |
 | WebView console | Alpha | HTTP `/`, `/config`, `/run`, live WebSocket events, token/cost counters, route summaries, logo, and swarm cockpit are implemented on port 9339 |
 | TUI cockpit | Alpha | Animated terminal cockpit, canonical ASCII logo, swarm lanes, checkpoint/diff/cost panels, and graceful fallback messages are implemented |
+| Plan mode / slash commands | Alpha | `sparrow plan`, WebView `/plan`, TUI `/plan`, built-in slash commands, user/project Markdown command discovery, and skill-to-slash exposure are wired read-only |
 | Gateway WebSocket | Alpha | `/status` command roundtrip tested on port 9338 with ACK and engine status response |
 | Replay / checkpoints / memory | Stable | Recorder, checkpoint, rewind, transcript, and SQLite memory flows are covered by tests and CLI smoke checks |
 | First-run setup | Alpha | Conversational setup agent plus fallback interactive setup are wired for provider/model configuration |
@@ -156,6 +157,7 @@ Current NVIDIA defaults are intentionally not a single Nemotron pin:
 
 ```bash
 sparrow setup
+sparrow plan "inspect the repo and propose a safe implementation path"
 sparrow console
 sparrow run "fix the failing test"
 sparrow --json run "summarize the repo"
@@ -170,6 +172,11 @@ sparrow rewind <checkpoint-id>
 sparrow memory list
 sparrow doctor
 ```
+
+Slash commands can be declared as Markdown files in `.sparrow/commands/*.md` or
+`%APPDATA%\sparrow\commands\*.md`. User-level commands override project and
+built-in commands by name. Skills are also exposed as slash commands so reusable
+workflows can become promptable control surfaces.
 
 ## Architecture
 

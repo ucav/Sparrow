@@ -306,13 +306,9 @@ impl Router for BasicRouter {
         if matches!(need.tier, TaskTier::Trivial | TaskTier::Small)
             && (preferred_is_local || self.free_first)
         {
-            if let Some(pos) = result
-                .iter()
-                .position(|(prov, b)| {
-                    (prov == "local" || prov == "ollama")
-                        || b.caps().cost_input_per_mtok == 0.0
-                })
-            {
+            if let Some(pos) = result.iter().position(|(prov, b)| {
+                (prov == "local" || prov == "ollama") || b.caps().cost_input_per_mtok == 0.0
+            }) {
                 let chosen = result.remove(pos);
                 result.insert(0, chosen);
             }

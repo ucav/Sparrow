@@ -4,9 +4,11 @@ use std::sync::{Arc, RwLock};
 use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 
 use crate::auth::{AuthStore, Credential};
+use crate::capabilities::SkillLibrary;
 use crate::config::{Config, ConfigStore, FsConfigStore, ProviderConfig};
 use crate::engine::{ApprovalHandler, ApprovalRequest};
 use crate::event::{Decision, Event};
+use crate::plan::ReadOnlyPlan;
 
 // ─── Embedded HTML ─────────────────────────────────────────────────────────────
 
@@ -29,6 +31,7 @@ pub struct WebViewServer {
     command_tx: Option<mpsc::UnboundedSender<String>>,
     config: Option<Arc<RwLock<Config>>>,
     approvals: Option<Arc<WebApprovalBroker>>,
+    skills: Option<Arc<dyn SkillLibrary>>,
 }
 
 impl WebViewServer {
@@ -38,6 +41,7 @@ impl WebViewServer {
         command_tx: Option<mpsc::UnboundedSender<String>>,
         config: Option<Arc<RwLock<Config>>>,
         approvals: Option<Arc<WebApprovalBroker>>,
+        skills: Option<Arc<dyn SkillLibrary>>,
     ) -> Self {
         Self {
             addr,
@@ -45,6 +49,7 @@ impl WebViewServer {
             command_tx,
             config,
             approvals,
+            skills,
         }
     }
 
@@ -62,11 +67,14 @@ impl WebViewServer {
             command_tx: self.command_tx.clone(),
             config: self.config.clone(),
             approvals: self.approvals.clone(),
+            skills: self.skills.clone(),
         });
 
         let app = Router::new()
             .route("/", get(|| async { Html(CONSOLE_HTML) }))
             .route("/run", post(run_task))
+            .route("/plan", post(plan_task))
+            .route("/commands", get(get_commands))
             .route("/approval", post(resolve_approval))
             .route("/config", get(get_config).post(save_provider))
             .route(
@@ -94,6 +102,7 @@ struct AppState {
     command_tx: Option<mpsc::UnboundedSender<String>>,
     config: Option<Arc<RwLock<Config>>>,
     approvals: Option<Arc<WebApprovalBroker>>,
+    skills: Option<Arc<dyn SkillLibrary>>,
 }
 
 #[derive(Default)]
@@ -136,6 +145,27 @@ struct RunRequest {
 struct RunResponse {
     ok: bool,
     message: String,
+}
+
+#[derive(serde::Serialize)]
+struct PlanResponse {
+    ok: bool,
+    message: String,
+    plan: Option<ReadOnlyPlan>,
+}
+
+#[derive(serde::Serialize)]
+struct CommandView {
+    name: String,
+    description: String,
+    source: String,
+}
+
+#[derive(serde::Serialize)]
+struct CommandsResponse {
+    ok: bool,
+    message: String,
+    commands: Vec<CommandView>,
 }
 
 #[derive(serde::Deserialize)]
@@ -204,6 +234,68 @@ async fn run_task(
             message: "console command channel unavailable".into(),
         }),
     }
+}
+
+async fn plan_task(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    axum::extract::Json(req): axum::extract::Json<RunRequest>,
+) -> axum::extract::Json<PlanResponse> {
+    let task = req.task.trim().to_string();
+    if task.is_empty() {
+        return axum::extract::Json(PlanResponse {
+            ok: false,
+            message: "empty task".into(),
+            plan: None,
+        });
+    }
+    let commands = commands_for_state(&state);
+    let plan = crate::plan::build_read_only_plan(&task, &commands);
+    axum::extract::Json(PlanResponse {
+        ok: true,
+        message: "planned".into(),
+        plan: Some(plan),
+    })
+}
+
+async fn get_commands(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> axum::extract::Json<CommandsResponse> {
+    let commands = commands_for_state(&state)
+        .into_iter()
+        .map(|cmd| CommandView {
+            name: format!("/{}", cmd.name),
+            description: cmd.description,
+            source: match cmd.source {
+                crate::commands::SlashCommandSource::Builtin => "builtin".into(),
+                crate::commands::SlashCommandSource::Project(path) => {
+                    format!("project:{}", path.display())
+                }
+                crate::commands::SlashCommandSource::User(path) => {
+                    format!("user:{}", path.display())
+                }
+                crate::commands::SlashCommandSource::Skill(name) => format!("skill:{}", name),
+            },
+        })
+        .collect();
+    axum::extract::Json(CommandsResponse {
+        ok: true,
+        message: "commands loaded".into(),
+        commands,
+    })
+}
+
+fn commands_for_state(state: &AppState) -> Vec<crate::commands::SlashCommand> {
+    let project_root = std::env::current_dir().unwrap_or_default();
+    let config_dir = state
+        .config
+        .as_ref()
+        .and_then(|cfg| cfg.read().ok().map(|cfg| cfg.config_dir.clone()))
+        .unwrap_or_else(|| {
+            dirs::config_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join("sparrow")
+        });
+    crate::commands::all_commands(&project_root, &config_dir, state.skills.as_deref())
 }
 
 async fn resolve_approval(
