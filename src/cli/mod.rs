@@ -158,6 +158,12 @@ pub enum Commands {
         action: SecurityAction,
     },
 
+    /// GitHub Action / remote PR workflow
+    Github {
+        #[command(subcommand)]
+        action: GithubAction,
+    },
+
     /// Manage MCP connectors
     Mcp {
         #[command(subcommand)]
@@ -308,6 +314,28 @@ pub enum PluginsAction {
     Rm {
         name: String,
     },
+}
+
+#[derive(Subcommand)]
+pub enum GithubAction {
+    /// Review a pull request: fetch diff via `gh`, run a read-only review prompt
+    Review {
+        /// PR number
+        pr: u64,
+        /// Print the review plan without invoking the model or posting comments
+        #[arg(long)]
+        dry_run: bool,
+        /// Override the model id
+        #[arg(long)]
+        model: Option<String>,
+        /// Restrict tool allow-list (comma-separated). Empty = inherit config.
+        #[arg(long)]
+        allowed_tools: Option<String>,
+    },
+    /// Show CI status for the current branch (via `gh run list`)
+    Status,
+    /// Fetch CI logs for a workflow run id (via `gh run view --log`)
+    Logs { run_id: String },
 }
 
 #[derive(Subcommand)]
