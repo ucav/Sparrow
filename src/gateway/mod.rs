@@ -76,15 +76,14 @@ impl MessageRouter {
         self
     }
 
-    /// Stable session key for a message. Keyed on user identity so the same user
-    /// continues the same session across CLI/Telegram/Slack (§8). Falls back to
-    /// surface:chat_id when no user id is present.
-    fn session_key(msg_user_id: &str, surface: &str, chat_id: &str) -> String {
-        if !msg_user_id.is_empty() {
-            format!("user:{}", msg_user_id)
-        } else {
-            format!("{}:{}", surface, chat_id)
-        }
+    /// Stable gateway session key. OpenClaw-style gateway continuity is scoped
+    /// by surface + channel/account + peer, so a user can have separate sessions
+    /// in separate channels while still surviving restarts.
+    pub fn session_key(msg_user_id: &str, surface: &str, chat_id: &str) -> String {
+        let surface = session_component(surface, "surface");
+        let chat = session_component(chat_id, "channel");
+        let user = session_component(msg_user_id, "anonymous");
+        format!("gateway:{}:channel:{}:peer:{}", surface, chat, user)
     }
 
     /// Route an incoming message: parse command, submit to engine, return response
@@ -485,5 +484,25 @@ pub fn format_event(event: &Event) -> Option<String> {
         Event::CostUpdate { usd, .. } => Some(format!("Cost: ${:.4}", usd)),
         Event::CheckpointCreated { label, .. } => Some(format!("Checkpoint: {}", label)),
         _ => None,
+    }
+}
+
+fn session_component(value: &str, fallback: &str) -> String {
+    let cleaned = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('_')
+        .to_string();
+    if cleaned.is_empty() {
+        fallback.to_string()
+    } else {
+        cleaned
     }
 }
