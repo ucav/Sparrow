@@ -239,6 +239,8 @@ pub enum SkillsAction {
     List,
     Create { name: String },
     Prune,
+    /// Remove a skill by name (e.g. to delete junk auto-learned skills)
+    Rm { name: String },
 }
 
 #[derive(Subcommand)]
