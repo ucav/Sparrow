@@ -21,6 +21,26 @@ All planned Sparrow commands.
 | `sparrow run "<task>" --budget <usd>` | ✅ | Session budget cap |
 | `sparrow run "<task>" --autonomy <level>` | ✅ | Override autonomy |
 | `sparrow run "<task>" --json` | ✅ | NDJSON event stream for CI |
+| `sparrow plan "<task>"` | Alpha | Produce a read-only plan without tools, edits, exec, or checkpoints |
+| `sparrow plan "<task>" --json` | Alpha | Emit the read-only plan as JSON |
+
+## Slash Commands
+
+| Command | Status | Description |
+|---|---|---|
+| `/help` | Alpha | List available built-in, project, user, and skill commands |
+| `/plan <task>` | Alpha | Produce a read-only plan before accepting execution |
+| `/permissions` | Alpha | Permission workflow placeholder command |
+| `/memory` | Alpha | Memory workflow placeholder command |
+| `/compact` | Alpha | Context compaction workflow placeholder command |
+| `/model` | Alpha | Model routing workflow placeholder command |
+| `/agents` | Alpha | Agent workflow placeholder command |
+| `/sessions` | Alpha | Session workflow placeholder command |
+| `/export` | Alpha | Export workflow placeholder command |
+
+Project commands live in `.sparrow/commands/*.md`; user commands live in the
+platform config directory under `commands/*.md` and override project/built-in
+commands by name. Skills are exposed as slash commands for reusable workflows.
 
 ## Swarm
 

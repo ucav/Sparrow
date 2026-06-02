@@ -82,6 +82,15 @@ impl LogStyle {
 }
 
 const SLASH_COMMANDS: &[&str] = &[
+    "/help",
+    "/plan",
+    "/permissions",
+    "/memory",
+    "/compact",
+    "/model",
+    "/agents",
+    "/sessions",
+    "/export",
     "/run",
     "/chat",
     "/swarm",
@@ -90,9 +99,7 @@ const SLASH_COMMANDS: &[&str] = &[
     "/checkpoint",
     "/rewind",
     "/replay",
-    "/model",
     "/auth",
-    "/help",
     "/clear",
     "/collapse",
     "/expand",
@@ -1029,6 +1036,33 @@ impl Tui {
                                             LogStyle::Dim,
                                             1,
                                         );
+                                    }
+                                    s if s.starts_with("/plan") => {
+                                        let planned = s.trim_start_matches("/plan").trim();
+                                        if planned.is_empty() {
+                                            self.add_line("Usage: /plan <task>", LogStyle::Warn, 0);
+                                        } else {
+                                            let plan =
+                                                crate::plan::build_read_only_plan(planned, &[]);
+                                            self.add_line(
+                                                "Read-only plan · no tools or edits executed",
+                                                LogStyle::Planner,
+                                                0,
+                                            );
+                                            self.add_line(&plan.summary, LogStyle::Dim, 1);
+                                            for (idx, step) in plan.steps.iter().enumerate() {
+                                                self.add_line(
+                                                    &format!("{}. {}", idx + 1, step),
+                                                    LogStyle::Cmd,
+                                                    1,
+                                                );
+                                            }
+                                            self.add_line(
+                                                "Run the task explicitly when you accept the plan.",
+                                                LogStyle::Warn,
+                                                0,
+                                            );
+                                        }
                                     }
                                     _ => {
                                         // Send to engine

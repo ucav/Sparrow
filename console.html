@@ -709,6 +709,8 @@ function attachmentPrompt(){
 
 async function runTask(){
   const task=$('taskInput').value.trim();if(!task&&!attachedFiles.length)return;
+  if(task.startsWith('/help')){await showCommands();$('taskInput').value='';updateContextMeter();return;}
+  if(task.startsWith('/plan')){await planTask(task.replace(/^\/plan\s*/,'').trim());return;}
   const payload=task+attachmentPrompt();
   $('taskInput').value='';
   updateContextMeter();
@@ -720,6 +722,57 @@ async function runTask(){
     if(!j.ok)line(`<span class="err">Error: ${esc(j.message)}</span>`);
     else{attachedFiles=[];renderAttachments();updateContextMeter();}
   }catch(e){line(`<span class="err">Error: ${esc(e.message)}</span>`)}
+}
+
+async function showCommands(){
+  try{
+    const r=await fetch('/commands');
+    const j=await r.json();
+    if(!j.ok){line(`<span class="err">Error: ${esc(j.message)}</span>`);return;}
+    line('<span class="acc">/help</span> <span class="muted">available slash commands</span>');
+    (j.commands||[]).forEach(cmd=>{
+      line(`<span class="planner">${esc(cmd.name)}</span> <span class="muted">— ${esc(cmd.description)} · ${esc(cmd.source)}</span>`);
+    });
+  }catch(e){line(`<span class="err">Error: ${esc(e.message)}</span>`)}
+}
+
+async function planTask(task){
+  if(!task&&attachedFiles.length){task='analyse attached files'}
+  if(!task){line('<span class="warn">Usage: /plan &lt;task&gt;</span>');return;}
+  const payload=task+attachmentPrompt();
+  $('taskInput').value='';
+  updateContextMeter();
+  line(`<span class="prompt">sparrow ›</span> <span class="cmd">/plan ${esc(task)}</span>`);
+  try{
+    const r=await fetch('/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task:payload})});
+    const j=await r.json();
+    if(!j.ok||!j.plan){line(`<span class="err">Error: ${esc(j.message)}</span>`);return;}
+    renderPlan(j.plan,task);
+  }catch(e){line(`<span class="err">Error: ${esc(e.message)}</span>`)}
+}
+
+function renderPlan(plan,task){
+  line(`<span class="acc">◆ read-only plan</span> <span class="muted">tier ${esc(plan.estimated_tier)} · no tools or edits executed</span>`);
+  line(`<span class="muted">${esc(plan.summary)}</span>`);
+  (plan.steps||[]).forEach((step,i)=>line(`<span class="planner">${i+1}.</span> <span class="cmd">${esc(step)}</span>`));
+  if((plan.risks||[]).length){
+    line('<span class="warn">Risks</span>');
+    plan.risks.forEach(r=>line(`<span class="muted">- ${esc(r)}</span>`));
+  }
+  const actions=line(`<span class="approval-actions" data-plan-task="${escAttr(task)}"><button class="approve" data-plan-action="run">run plan</button><button class="deny" data-plan-action="edit">edit</button></span>`);
+  actions.querySelector('[data-plan-action="run"]').addEventListener('click',()=>acceptPlan(task));
+  actions.querySelector('[data-plan-action="edit"]').addEventListener('click',()=>editPlan(task));
+}
+
+function acceptPlan(task){
+  $('taskInput').value=task;
+  runTask();
+}
+
+function editPlan(task){
+  $('taskInput').value=task;
+  $('taskInput').focus();
+  updateContextMeter();
 }
 
 async function resolveApproval(id,decision,btn){

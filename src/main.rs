@@ -305,6 +305,9 @@ async fn main() -> anyhow::Result<()> {
                 .await?;
             }
         }
+        Some(Commands::Plan { ref task, json }) => {
+            handle_plan(task, &config, skill_library.clone(), json || cli.json)?;
+        }
         Some(Commands::Chat) => {
             handle_chat(&config, memory.clone()).await?;
         }
@@ -1703,6 +1706,24 @@ async fn run_task(
     Ok(())
 }
 
+fn handle_plan(
+    task: &str,
+    config: &sparrow::config::Config,
+    skills: Arc<dyn SkillLibrary>,
+    json: bool,
+) -> anyhow::Result<()> {
+    let project_root = std::env::current_dir()?;
+    let commands =
+        sparrow::commands::all_commands(&project_root, &config.config_dir, Some(skills.as_ref()));
+    let plan = sparrow::plan::build_read_only_plan(task, &commands);
+    if json {
+        println!("{}", serde_json::to_string_pretty(&plan)?);
+    } else {
+        println!("{}", plan.render_markdown());
+    }
+    Ok(())
+}
+
 // ─── Swarm command ──────────────────────────────────────────────────────────────
 
 async fn run_swarm(
@@ -1862,7 +1883,10 @@ fn handle_skills(
             if library.remove(&name)? {
                 println!("Removed skill '{}'.", name);
             } else {
-                println!("No skill named '{}'. Run 'sparrow skills list' to see names.", name);
+                println!(
+                    "No skill named '{}'. Run 'sparrow skills list' to see names.",
+                    name
+                );
             }
         }
     }
@@ -2960,6 +2984,7 @@ async fn handle_webview(
         Some(command_tx),
         Some(shared_config),
         Some(approvals),
+        Some(skills),
     );
     server.serve().await?;
 
