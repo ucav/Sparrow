@@ -837,7 +837,7 @@ impl Engine {
                 .unwrap_or_default(),
             &relevant_skills,
         );
-        let system = format!(
+        let mut system = format!(
             "{}\n\n## Active Sparrow Routing Context\nRequest category: {}\nTask tier: {}\nRequired tools: {}\nRequired vision: {}\nPreferred local: {}\nSelected fallback chain: {}\nRouting policy: free_first={}, session_budget_usd={:.2}.\nWhen answering routing questions, describe this context concretely.",
             system,
             task_summary,
@@ -849,6 +849,15 @@ impl Engine {
             self.config.routing.free_first,
             self.config.budget.session_usd
         );
+
+        // Continuity hint: when there is prior conversation (task.context), tell
+        // the model to treat it as authoritative memory. Weaker models otherwise
+        // recite the system identity and ignore what the user said earlier.
+        if !messages.is_empty() {
+            system.push_str(
+                "\n\n## Conversation continuity\nThis is an ONGOING conversation. The messages below are prior turns and are AUTHORITATIVE memory of what the user told you (names, preferences, facts, decisions). Use them directly; never re-introduce yourself or contradict them.",
+            );
+        }
 
         // Build initial messages
         messages.push(Msg {
