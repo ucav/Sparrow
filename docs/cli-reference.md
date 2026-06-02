@@ -158,7 +158,17 @@ files with frontmatter fields such as `name`, `description`, `role`, `prompt`,
 |---|---|---|
 | `sparrow gateway start` | ✅ | Start messaging daemon |
 | `sparrow gateway status` | ✅ | Daemon status |
+| `sparrow gateway health` | Alpha | Probe PID, process, WebSocket and session DB state |
+| `sparrow gateway abort <run>` | Alpha | Write a local abort signal for a gateway run |
 | `sparrow gateway stop` | ✅ | Stop daemon |
+
+## Sessions
+
+| Command | Status | Description |
+|---|---|---|
+| `sparrow sessions list` | Alpha | List saved CLI/gateway sessions |
+| `sparrow sessions export <id> [path]` | Alpha | Export a saved session as JSON |
+| `sparrow sessions cleanup --older-than-days <n>` | Alpha | Delete old sessions |
 
 ## Profile & Import
 
