@@ -56,6 +56,10 @@ pub fn bench_skill_relevance(c: &mut Criterion) {
         created_at: "".into(),
         score: 0.5,
         auto_generated: false,
+        references: Vec::new(),
+        templates: Vec::new(),
+        scripts: Vec::new(),
+        assets: Vec::new(),
     };
     let ctx = "I need help with Rust error handling in async code with anyhow";
     c.bench_function("skill_relevance", |b| {
