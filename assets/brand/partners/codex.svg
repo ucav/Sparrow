@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 40" fill="none">
+  <!-- Codex wordmark -->
+  <text x="2" y="30" font-family="ui-monospace,monospace" font-size="26" font-weight="700" letter-spacing="1.5" fill="currentColor">Codex</text>
+  <!-- Small "by OpenAI" -->
+  <text x="4" y="39" font-family="ui-monospace,monospace" font-size="8" letter-spacing="1.5" fill="currentColor" opacity="0.45">by OpenAI</text>
+</svg>
