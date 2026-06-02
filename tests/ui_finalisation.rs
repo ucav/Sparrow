@@ -215,6 +215,29 @@ fn console_html_has_sprint2_composer_hooks() {
 }
 
 #[test]
+fn console_html_has_sprint3_micro_animation_hooks() {
+    let html =
+        std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");
+    for marker in [
+        "approvalModal",
+        "showApprovalModal",
+        "resolveApprovalFromModal",
+        "error-banner",
+        "showError",
+        "checkpoint-timeline",
+        "addCheckpointNode",
+        "prefers-reduced-motion: reduce",
+        "fold-in",
+    ] {
+        assert!(
+            html.contains(marker),
+            "console.html must expose Sprint 3 hook `{}`",
+            marker
+        );
+    }
+}
+
+#[test]
 fn console_html_has_typed_event_renderers() {
     let html =
         std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");
