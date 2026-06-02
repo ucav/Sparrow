@@ -86,6 +86,7 @@ impl WebViewServer {
             .route("/approval", post(resolve_approval))
             .route("/config", get(get_config).post(save_provider))
             .route("/permissions", get(get_permissions).post(save_permissions))
+            .route("/security", get(get_security))
             .route(
                 "/ws",
                 get(
@@ -721,6 +722,23 @@ async fn save_provider(
         ok: true,
         message: format!("provider '{}' saved", name),
     })
+}
+
+async fn get_security(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> axum::extract::Json<serde_json::Value> {
+    let Some(shared) = &state.config else {
+        return axum::extract::Json(serde_json::json!({
+            "ok": false,
+            "message": "config unavailable",
+        }));
+    };
+    let cfg = shared.read().expect("config lock poisoned").clone();
+    let audit = crate::security::SecurityAudit::run(&cfg, &cfg.hooks);
+    axum::extract::Json(serde_json::json!({
+        "ok": true,
+        "audit": audit,
+    }))
 }
 
 async fn get_permissions(
