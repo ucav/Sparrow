@@ -23,6 +23,18 @@ pub struct Theme {
     pub dimmer: Color,     // #5c5346 faint
 }
 
+/// Built-in theme names. `by_name` accepts any of these (case-insensitive).
+pub const THEME_NAMES: &[&str] = &["captain", "midnight", "paper"];
+
+/// Resolve a theme by name. Unknown names fall back to `captain`.
+pub fn by_name(name: &str) -> Theme {
+    match name.trim().to_lowercase().as_str() {
+        "midnight" => THEME_MIDNIGHT,
+        "paper" => THEME_PAPER,
+        _ => THEME_CAPTAIN,
+    }
+}
+
 pub const THEME_CAPTAIN: Theme = Theme {
     brand: Color::Rgb(0xf2, 0xa9, 0x3c),
     coral: Color::Rgb(0xf0, 0x67, 0x4a),
@@ -42,6 +54,50 @@ pub const THEME_CAPTAIN: Theme = Theme {
     fg: Color::Rgb(0xec, 0xe2, 0xcf),
     dim: Color::Rgb(0x89, 0x7d, 0x6c),
     dimmer: Color::Rgb(0x5c, 0x53, 0x46),
+};
+
+/// Cool / dark variant: lower-saturation blues for late-night work.
+pub const THEME_MIDNIGHT: Theme = Theme {
+    brand: Color::Rgb(0x6f, 0xa6, 0xe6),
+    coral: Color::Rgb(0x9b, 0x7e, 0xd1),
+    agent: Color::Rgb(0x4e, 0xc9, 0xb0),
+    planner: Color::Rgb(0x6f, 0xa6, 0xe6),
+    verifier: Color::Rgb(0xc9, 0xa1, 0x4e),
+    add: Color::Rgb(0x74, 0xc2, 0x58),
+    rem: Color::Rgb(0xd9, 0x6a, 0x63),
+    gold: Color::Rgb(0xf2, 0xc9, 0x4c),
+    steel: Color::Rgb(0xb9, 0xb0, 0xa3),
+    supervised: Color::Rgb(0x74, 0xc2, 0x58),
+    trusted: Color::Rgb(0x6f, 0xa6, 0xe6),
+    autonomous: Color::Rgb(0xd9, 0x6a, 0x63),
+    bg: Color::Rgb(0x06, 0x08, 0x0e),
+    panel: Color::Rgb(0x0e, 0x12, 0x1a),
+    line: Color::Rgb(0x20, 0x26, 0x33),
+    fg: Color::Rgb(0xd6, 0xde, 0xeb),
+    dim: Color::Rgb(0x7a, 0x84, 0x99),
+    dimmer: Color::Rgb(0x4a, 0x52, 0x63),
+};
+
+/// Light variant: cream paper background, dark fg. For bright environments.
+pub const THEME_PAPER: Theme = Theme {
+    brand: Color::Rgb(0xa6, 0x5a, 0x1a),
+    coral: Color::Rgb(0xa6, 0x3a, 0x2a),
+    agent: Color::Rgb(0x2f, 0x7d, 0x67),
+    planner: Color::Rgb(0x2e, 0x5a, 0x9c),
+    verifier: Color::Rgb(0x7a, 0x5e, 0x2c),
+    add: Color::Rgb(0x3a, 0x7d, 0x2e),
+    rem: Color::Rgb(0xa6, 0x3a, 0x2a),
+    gold: Color::Rgb(0xa6, 0x80, 0x1a),
+    steel: Color::Rgb(0x5e, 0x55, 0x47),
+    supervised: Color::Rgb(0x3a, 0x7d, 0x2e),
+    trusted: Color::Rgb(0xa6, 0x5a, 0x1a),
+    autonomous: Color::Rgb(0xa6, 0x3a, 0x2a),
+    bg: Color::Rgb(0xf3, 0xee, 0xe1),
+    panel: Color::Rgb(0xe7, 0xe0, 0xcc),
+    line: Color::Rgb(0xc6, 0xbc, 0xa3),
+    fg: Color::Rgb(0x2a, 0x24, 0x18),
+    dim: Color::Rgb(0x6a, 0x60, 0x4c),
+    dimmer: Color::Rgb(0x9a, 0x90, 0x7c),
 };
 
 impl Theme {
