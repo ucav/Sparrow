@@ -6,9 +6,31 @@ fn safe_toolset_does_not_expose_exec_or_edit() {
         .into_iter()
         .filter(|meta| meta.toolset == "safe")
         .collect();
+    assert!(
+        !safe.is_empty(),
+        "safe toolset must contain at least one tool"
+    );
     assert!(safe.iter().all(|meta| !meta.exec));
     assert!(safe.iter().all(|meta| !meta.mutates_files));
     assert!(safe.iter().all(|meta| meta.name != "edit"));
+}
+
+#[test]
+fn python_rpc_is_terminal_not_mcp() {
+    let meta = metadata_for("python_rpc", sparrow::event::RiskLevel::Exec);
+    assert_eq!(meta.toolset, "terminal");
+    assert!(!meta.requires_auth, "python_rpc is local, no auth needed");
+    assert!(!meta.network, "python_rpc is local, no network needed");
+    assert!(meta.exec);
+}
+
+#[test]
+fn todo_is_safe_toolset() {
+    let meta = metadata_for("todo", sparrow::event::RiskLevel::ReadOnly);
+    assert_eq!(meta.toolset, "safe");
+    assert!(!meta.exec);
+    assert!(!meta.mutates_files);
+    assert!(!meta.network);
 }
 
 #[test]

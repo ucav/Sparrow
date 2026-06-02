@@ -177,10 +177,14 @@ pub fn metadata_for(name: &str, risk: RiskLevel) -> ToolMetadata {
         "memory"
     } else if lower.contains("session") {
         "session_search"
-    } else if lower.contains("mcp") || lower.contains("python_rpc") {
+    } else if lower == "python_rpc" {
+        "terminal"
+    } else if lower.contains("mcp") {
         "mcp"
-    } else if lower.contains("subagent") || lower == "todo" {
+    } else if lower.contains("subagent") {
         "skills"
+    } else if lower == "todo" {
+        "safe"
     } else {
         "safe"
     };

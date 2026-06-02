@@ -202,6 +202,18 @@ impl FsAgentStore {
     fn soul_path(&self, name: &str) -> PathBuf {
         self.agents_dir.join(format!("{}.soul.toml", name))
     }
+
+    fn find_agent_path(&self, name: &str) -> Option<PathBuf> {
+        let toml_path = self.soul_path(name);
+        if toml_path.exists() {
+            return Some(toml_path);
+        }
+        let md_path = self.agents_dir.join(format!("{}.agent.md", name));
+        if md_path.exists() {
+            return Some(md_path);
+        }
+        None
+    }
 }
 
 impl AgentStore for FsAgentStore {
@@ -225,12 +237,8 @@ impl AgentStore for FsAgentStore {
     }
 
     fn get(&self, name: &str) -> Option<Soul> {
-        let path = self.soul_path(name);
-        if !path.exists() {
-            return None;
-        }
-        let content = std::fs::read_to_string(&path).ok()?;
-        Soul::from_toml(&content).ok()
+        let path = self.find_agent_path(name)?;
+        read_soul_file(&path)
     }
 
     fn list(&self) -> Vec<Soul> {
@@ -248,14 +256,12 @@ impl AgentStore for FsAgentStore {
     }
 
     fn update(&self, name: &str, soul: &Soul) -> anyhow::Result<()> {
-        let path = self.soul_path(name);
-        if !path.exists() {
-            anyhow::bail!("Agent '{}' not found.", name);
-        }
+        let path = self
+            .find_agent_path(name)
+            .ok_or_else(|| anyhow::anyhow!("Agent '{}' not found.", name))?;
         let content = soul.to_toml()?;
         std::fs::write(&path, content)?;
 
-        // Update in memory
         if let Some(mem) = &self.memory {
             mem.save_identity(&soul.to_identity())?;
         }
@@ -263,8 +269,7 @@ impl AgentStore for FsAgentStore {
     }
 
     fn remove(&self, name: &str) -> anyhow::Result<()> {
-        let path = self.soul_path(name);
-        if path.exists() {
+        if let Some(path) = self.find_agent_path(name) {
             std::fs::remove_file(&path)?;
         }
         Ok(())
@@ -334,5 +339,36 @@ Review every claim against evidence.
         assert_eq!(soul.max_turns, Some(5));
         assert!(soul.background);
         assert!(soul.prompt.contains("Review every claim"));
+    }
+
+    #[test]
+    fn fs_agent_store_get_finds_agent_md() {
+        let dir = std::env::temp_dir().join(format!(
+            "sparrow-agent-md-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let md_content = "---\nname: scout\ndescription: Finds issues\nrole: verifier\npersonality: sharp\ntools: [fs_read]\n---\nBe thorough.";
+        std::fs::write(dir.join("scout.agent.md"), md_content).unwrap();
+
+        let store = FsAgentStore::new(dir.clone());
+
+        let found = store.get("scout");
+        assert!(found.is_some(), "get() should find .agent.md files");
+        let soul = found.unwrap();
+        assert_eq!(soul.name, "scout");
+        assert_eq!(soul.tools, vec!["fs_read"]);
+
+        let listed = store.list();
+        assert!(listed.iter().any(|s| s.name == "scout"));
+
+        store.remove("scout").unwrap();
+        assert!(store.get("scout").is_none());
+
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

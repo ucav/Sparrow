@@ -149,7 +149,8 @@ pub fn distill_transcript(messages: &[String]) -> HandoffDoc {
         for word in msg.split_whitespace() {
             // Path-like tokens with known source extensions. Strip trailing
             // punctuation so "src/foo.rs." or "src/foo.rs," still matches.
-            let cleaned = word.trim_end_matches(|c: char| matches!(c, ',' | '.' | ';' | ':' | ')' | ']'));
+            let cleaned =
+                word.trim_end_matches(|c: char| matches!(c, ',' | '.' | ';' | ':' | ')' | ']'));
             if has_source_ext(cleaned) {
                 files.insert(cleaned.to_string());
             }

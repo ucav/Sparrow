@@ -125,3 +125,48 @@ fn sqlite_memory_rejects_injection_and_duplicate_facts() {
     let root = db.parent().unwrap().to_path_buf();
     let _ = std::fs::remove_dir_all(root);
 }
+
+#[test]
+fn memory_replace_by_key_lookup_succeeds() {
+    let db = temp_db("memory-replace-key");
+    let memory = SqliteMemory::open(&db).unwrap();
+
+    memory
+        .remember(Fact {
+            id: "uuid-original".into(),
+            key: "user:lang".into(),
+            value: "French".into(),
+            created_at: "2026-06-02".into(),
+            updated_at: "2026-06-02".into(),
+        })
+        .unwrap();
+
+    let existing = memory
+        .all_facts()
+        .into_iter()
+        .find(|f| f.key == "user:lang");
+    assert!(existing.is_some());
+    let existing_id = existing.unwrap().id;
+    assert_eq!(existing_id, "uuid-original");
+
+    memory
+        .remember(Fact {
+            id: existing_id,
+            key: "user:lang".into(),
+            value: "English".into(),
+            created_at: "2026-06-02".into(),
+            updated_at: "2026-06-02".into(),
+        })
+        .unwrap();
+
+    let updated = memory
+        .all_facts()
+        .into_iter()
+        .find(|f| f.key == "user:lang")
+        .unwrap();
+    assert_eq!(updated.value, "English");
+    assert_eq!(updated.id, "uuid-original");
+
+    let root = db.parent().unwrap().to_path_buf();
+    let _ = std::fs::remove_dir_all(root);
+}
