@@ -88,6 +88,7 @@ impl WebViewServer {
             .route("/permissions", get(get_permissions).post(save_permissions))
             .route("/security", get(get_security))
             .route("/sessions", get(list_sessions))
+            .route("/agents", get(list_agents))
             .route("/upload", post(upload_attachment))
             .route("/artifacts", get(list_artifacts))
             .route(
@@ -880,6 +881,67 @@ async fn list_artifacts() -> axum::extract::Json<serde_json::Value> {
         "items": items,
         "dir": dir.to_string_lossy().to_string(),
     }))
+}
+
+/// `GET /agents` — return every installed agent so the WebView swarm row and
+/// the composer's `@<name>` picker can render the real list (Sprint 1, item
+/// 1bis of STATUS2.md). Status is "idle" by default; the runtime updates a
+/// shared `Arc<Mutex<AgentRuntimeState>>` later — for v0.3.0 we ship the
+/// listing as a cold view backed by `FsAgentStore::list()`.
+async fn list_agents() -> axum::extract::Json<serde_json::Value> {
+    use crate::agent::{AgentStore, FsAgentStore};
+
+    let agents_dir = dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("sparrow")
+        .join("agents");
+    let store = FsAgentStore::new(agents_dir.clone());
+    let souls = store.list();
+
+    let items: Vec<serde_json::Value> = souls
+        .into_iter()
+        .map(|s| {
+            // Pick a colour key the WebView already knows about; falls back to
+            // the canonical triad if the agent uses one of those role names.
+            let color_key = match s.role.to_lowercase().as_str() {
+                "planner" => "planner",
+                "coder" => "coder",
+                "verifier" => "verifier",
+                _ => s
+                    .color
+                    .as_deref()
+                    .map(classify_agent_color)
+                    .unwrap_or("steel"),
+            };
+            serde_json::json!({
+                "name": s.name,
+                "role": s.role,
+                "description": s.description,
+                "status": "idle",
+                "msg": "",
+                "color_key": color_key,
+            })
+        })
+        .collect();
+
+    axum::extract::Json(serde_json::json!({
+        "ok": true,
+        "dir": agents_dir.to_string_lossy(),
+        "agents": items,
+    }))
+}
+
+/// Maps the optional `color` field of a `Soul` to one of the known WebView
+/// theme tokens. Unknown values fall back to `steel`.
+pub fn classify_agent_color(raw: &str) -> &'static str {
+    match raw.trim().to_lowercase().as_str() {
+        "planner" | "blue" => "planner",
+        "coder" | "teal" | "agent" => "coder",
+        "verifier" | "sand" => "verifier",
+        "gold" | "yellow" => "gold",
+        "coral" | "red" => "coral",
+        _ => "steel",
+    }
 }
 
 async fn list_sessions() -> axum::extract::Json<serde_json::Value> {

@@ -55,6 +55,48 @@ fn keyboard_doc_lists_critical_shortcuts() {
     }
 }
 
+#[test]
+fn console_html_has_dynamic_swarm_hooks() {
+    let html =
+        std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");
+    // The Sprint 1 deliverable 1bis: the swarm row must expose the anchor
+    // and the overflow chip so loadSwarmAgents() can inject extras.
+    assert!(
+        html.contains("swarm-extras-anchor"),
+        "console.html must expose #swarm-extras-anchor for dynamic agent lanes"
+    );
+    assert!(
+        html.contains("swarm-more"),
+        "console.html must expose #swarm-more for the +N overflow chip"
+    );
+    assert!(
+        html.contains("loadSwarmAgents"),
+        "console.html must call loadSwarmAgents() on connect"
+    );
+    // No truncation: `text-overflow: ellipsis` must not gate `.lane .msg`.
+    let lane_msg_block = html
+        .split(".lane .msg")
+        .nth(1)
+        .expect("expected `.lane .msg` CSS block");
+    let first_rule = lane_msg_block.split('}').next().unwrap_or("");
+    assert!(
+        !first_rule.contains("text-overflow:ellipsis"),
+        "`.lane .msg` must not truncate text in the new swarm row, got: {}",
+        first_rule
+    );
+}
+
+#[test]
+fn classify_agent_color_falls_back_to_steel() {
+    use sparrow::console::classify_agent_color;
+    assert_eq!(classify_agent_color("blue"), "planner");
+    assert_eq!(classify_agent_color("TEAL"), "coder");
+    assert_eq!(classify_agent_color("gold"), "gold");
+    assert_eq!(classify_agent_color("coral"), "coral");
+    assert_eq!(classify_agent_color("something-unknown"), "steel");
+    assert_eq!(classify_agent_color(""), "steel");
+}
+
 #[tokio::test]
 async fn webview_app_builds_with_phase13_routes() {
     // Spin up the server on a free port, then shut it down — proves all
