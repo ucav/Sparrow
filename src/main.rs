@@ -2846,6 +2846,37 @@ async fn handle_gateway(
             println!("\nGateway running. Press Ctrl+C to stop.");
             println!("Send messages via any configured surface.\n");
 
+            // Abort poller: watch `<state>/gateway-abort/<run>.abort` files
+            // written by `sparrow gateway abort <run>` and cancel the matching
+            // in-process run via the registry.
+            {
+                let registry = router_handler.run_registry.clone();
+                let abort_dir = state_dir.join("gateway-abort");
+                std::fs::create_dir_all(&abort_dir).ok();
+                tokio::spawn(async move {
+                    loop {
+                        if let Ok(entries) = std::fs::read_dir(&abort_dir) {
+                            for entry in entries.flatten() {
+                                let path = entry.path();
+                                let run_id = path
+                                    .file_stem()
+                                    .map(|s| s.to_string_lossy().to_string())
+                                    .unwrap_or_default();
+                                if run_id.is_empty() {
+                                    continue;
+                                }
+                                let aborted = registry.abort(&run_id);
+                                let _ = std::fs::remove_file(&path);
+                                if aborted {
+                                    eprintln!("[gateway] aborted run {}", run_id);
+                                }
+                            }
+                        }
+                        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                    }
+                });
+            }
+
             // Main loop: route messages and responses
             loop {
                 tokio::select! {

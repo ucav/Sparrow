@@ -1,9 +1,79 @@
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
+use tokio::task::AbortHandle;
 
 use crate::engine::{Engine, Task};
 use crate::event::Event;
 use crate::runtime::recorder::{FsRecorder, Recorder, RunInputs};
+
+/// Active-run registry. Keyed by run_id, holds the `AbortHandle` of the
+/// spawned gateway task so `sparrow gateway abort <run>` can actually cancel
+/// it instead of just writing a signal file.
+#[derive(Default, Clone)]
+pub struct RunRegistry {
+    inner: Arc<Mutex<HashMap<String, AbortHandle>>>,
+}
+
+impl RunRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn insert(&self, run_id: String, handle: AbortHandle) {
+        if let Ok(mut g) = self.inner.lock() {
+            g.insert(run_id, handle);
+        }
+    }
+
+    pub fn remove(&self, run_id: &str) {
+        if let Ok(mut g) = self.inner.lock() {
+            g.remove(run_id);
+        }
+    }
+
+    /// Cancel the run if known. Returns true when an abort was issued.
+    pub fn abort(&self, run_id: &str) -> bool {
+        if let Ok(mut g) = self.inner.lock() {
+            if let Some(h) = g.remove(run_id) {
+                h.abort();
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn active_run_ids(&self) -> Vec<String> {
+        self.inner
+            .lock()
+            .map(|g| g.keys().cloned().collect())
+            .unwrap_or_default()
+    }
+}
+
+#[cfg(test)]
+mod registry_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn abort_unknown_run_returns_false() {
+        let reg = RunRegistry::new();
+        assert!(!reg.abort("does-not-exist"));
+    }
+
+    #[tokio::test]
+    async fn abort_cancels_a_registered_task() {
+        let reg = RunRegistry::new();
+        let handle = tokio::spawn(async {
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        });
+        reg.insert("r1".into(), handle.abort_handle());
+        assert!(reg.abort("r1"));
+        // After abort, awaiting yields a JoinError with `is_cancelled()`.
+        let res = handle.await;
+        assert!(res.is_err() && res.unwrap_err().is_cancelled());
+    }
+}
 
 pub mod discord;
 pub mod email;
@@ -52,6 +122,8 @@ pub struct MessageRouter {
     /// Cross-surface session continuity (§8). Keyed by user identity so the same
     /// user resumes the same conversation/context regardless of surface.
     sessions: Option<Arc<crate::runtime::session::SessionStore>>,
+    /// Tracks every spawned gateway run so `gateway abort` can cancel it.
+    pub run_registry: RunRegistry,
 }
 
 impl MessageRouter {
@@ -67,6 +139,7 @@ impl MessageRouter {
             event_bus_tx,
             allowed_users,
             sessions: None,
+            run_registry: RunRegistry::new(),
         }
     }
 
@@ -286,7 +359,9 @@ impl MessageRouter {
             },
         );
 
-        tokio::spawn(async move {
+        let registry = self.run_registry.clone();
+        let run_id_for_dereg = run_id.clone();
+        let drive_handle = tokio::spawn(async move {
             let task = Task {
                 description: task_text.clone(),
                 context: prior_msgs,
@@ -325,6 +400,16 @@ impl MessageRouter {
 
             drop(task_tx);
         });
+        self.run_registry
+            .insert(run_id_for_dereg.clone(), drive_handle.abort_handle());
+        // Auto-deregister on completion so the registry doesn't grow unbounded.
+        {
+            let registry_for_dereg = registry.clone();
+            tokio::spawn(async move {
+                let _ = drive_handle.await;
+                registry_for_dereg.remove(&run_id_for_dereg);
+            });
+        }
 
         // Stream intermediate updates
         let user_task_text = text.to_string();

@@ -955,8 +955,58 @@ impl Engine {
             let _ = event_tx.send(redaction.redact_event(&event));
         };
 
+        // Compaction state (Phase 12 auto-trigger). The threshold matches the
+        // default ContextManager budget; we keep `keep_last` messages verbatim
+        // and replace earlier ones with a distilled summary block. A handoff
+        // doc is written to `.sparrow/handoff/<run>-<ts>.md` and an
+        // `Event::Compacted` is emitted so UIs can show the pass.
+        const COMPACT_TRANSCRIPT_CHARS: usize = 120_000;
+        const COMPACT_KEEP_LAST: usize = 6;
+        let context_manager = crate::redaction::ContextManager::new(200_000);
+
         // Main agentic loop
         loop {
+            // Auto-compaction check (Phase 12). Skipped on the very first turn
+            // so a short task never pays the overhead.
+            if turns > 0 {
+                let transcript_chars: usize = messages
+                    .iter()
+                    .map(|m| serde_json::to_string(m).map(|s| s.len()).unwrap_or(0))
+                    .sum();
+                if transcript_chars > COMPACT_TRANSCRIPT_CHARS && messages.len() > COMPACT_KEEP_LAST
+                {
+                    let before = transcript_chars;
+                    let compacted =
+                        context_manager.compact_messages(&messages, 0, COMPACT_KEEP_LAST);
+                    let after: usize = compacted
+                        .iter()
+                        .map(|m| serde_json::to_string(m).map(|s| s.len()).unwrap_or(0))
+                        .sum();
+
+                    // Write a durable handoff next to the transcript.
+                    let mut handoff = crate::context::HandoffDoc::new(task.description.clone());
+                    handoff.next_steps = vec![format!(
+                        "Resume run {} (turn {}/{})",
+                        run_id.0, turns, MAX_TURNS
+                    )];
+                    let handoff_dir = std::path::PathBuf::from(".sparrow/handoff");
+                    let _ = std::fs::create_dir_all(&handoff_dir);
+                    let handoff_path = handoff_dir.join(format!(
+                        "{}-{}.md",
+                        run_id.0,
+                        chrono::Utc::now().format("%Y%m%dT%H%M%SZ")
+                    ));
+                    let _ = std::fs::write(&handoff_path, handoff.to_markdown());
+
+                    messages = compacted;
+                    send(Event::Compacted {
+                        run: run_id.clone(),
+                        before_chars: before,
+                        after_chars: after,
+                        handoff_path: Some(handoff_path.to_string_lossy().to_string()),
+                    });
+                }
+            }
             // Iteration cap: stop runaway loops independently of budget.
             turns += 1;
             if turns > MAX_TURNS {
