@@ -21,6 +21,10 @@ pub enum HookEvent {
     OnBudgetThreshold,
     OnSkillLearned,
     OnModelSwitched,
+    /// Fires immediately before a compaction pass so hooks can dump state.
+    PreCompact,
+    /// Fires once compaction has finished and the handoff doc is on disk.
+    PostCompact,
 }
 
 impl HookEvent {
@@ -36,6 +40,7 @@ impl HookEvent {
             Event::CostUpdate { .. } => Some(HookEvent::OnBudgetThreshold),
             Event::SkillLearned { .. } => Some(HookEvent::OnSkillLearned),
             Event::ModelSwitched { .. } => Some(HookEvent::OnModelSwitched),
+            Event::Compacted { .. } => Some(HookEvent::PostCompact),
             _ => None,
         }
     }

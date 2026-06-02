@@ -5,9 +5,10 @@ use tokio::sync::mpsc;
 
 use super::{Tool, ToolCtx, ToolResult};
 use crate::config::Config;
-use crate::engine::{Engine, Task};
+use crate::engine::{Engine, Identity, Task};
 use crate::event::{Block, Event, RiskLevel};
 use crate::memory::Memory;
+use crate::permissions::PermissionMode;
 use crate::router::Router;
 
 // ─── Subagent spawn ─────────────────────────────────────────────────────────────
@@ -52,7 +53,10 @@ impl Tool for SubagentSpawn {
             "properties": {
                 "task": { "type": "string", "description": "Subtask description" },
                 "role": { "type": "string", "description": "Role for the subagent (e.g. tester, researcher, reviewer)" },
-                "model": { "type": "string", "description": "Optional: model to use for the subagent" }
+                "model": { "type": "string", "description": "Optional: provider:model or provider/model for the subagent" },
+                "permission_mode": { "type": "string", "description": "Optional: read-only, plan, supervised, trusted, autonomous, emergency-stop" },
+                "tools": { "type": "array", "items": { "type": "string" }, "description": "Optional explicit allowed tool patterns" },
+                "disallowed_tools": { "type": "array", "items": { "type": "string" }, "description": "Optional denied tool patterns for this subagent" }
             },
             "required": ["task"]
         })
@@ -63,6 +67,45 @@ impl Tool for SubagentSpawn {
     async fn call(&self, args: serde_json::Value, _ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
         let task_desc = args["task"].as_str().unwrap_or("");
         let role = args["role"].as_str().unwrap_or("helper");
+        let mut child_config = self.config.clone();
+        if let Some(model_ref) = args["model"].as_str() {
+            if let Some((provider, model)) = parse_model_ref(model_ref) {
+                child_config.forced_model = Some((provider.clone(), model.clone()));
+                for tier in ["trivial", "small", "medium", "hard", "vision"] {
+                    child_config
+                        .routing
+                        .policy
+                        .insert(tier.to_string(), provider.clone());
+                }
+                child_config
+                    .providers
+                    .entry(provider)
+                    .or_insert_with(|| crate::config::ProviderConfig {
+                        adapter: "openai-compatible".into(),
+                        base_url: None,
+                        models: vec![],
+                        api_key_env: None,
+                    })
+                    .models = vec![model];
+            }
+        }
+        if let Some(mode) = args["permission_mode"]
+            .as_str()
+            .and_then(PermissionMode::parse)
+        {
+            child_config.defaults.autonomy = mode.autonomy_level();
+            child_config.permissions.mode = mode;
+        }
+        for tool in string_array(&args["tools"]) {
+            if !child_config.permissions.tools.allow.contains(&tool) {
+                child_config.permissions.tools.allow.push(tool);
+            }
+        }
+        for tool in string_array(&args["disallowed_tools"]) {
+            if !child_config.permissions.tools.deny.contains(&tool) {
+                child_config.permissions.tools.deny.push(tool);
+            }
+        }
 
         let (tx, mut rx) = mpsc::unbounded_channel();
 
@@ -72,7 +115,11 @@ impl Tool for SubagentSpawn {
         };
 
         // Build a fresh child engine for this subagent.
-        let mut child = Engine::new(self.router.clone(), self.config.clone());
+        let mut child = Engine::new(self.router.clone(), child_config).with_identity(Identity {
+            name: role.to_string(),
+            role: role.to_string(),
+            personality: format!("Focused {} subagent. Be concise and return evidence.", role),
+        });
         if let Some(mem) = &self.memory {
             child = child.with_memory(mem.clone());
         }
@@ -133,6 +180,45 @@ impl Tool for SubagentSpawn {
             role, outcome.status, output
         ))]))
     }
+}
+
+fn string_array(value: &serde_json::Value) -> Vec<String> {
+    value
+        .as_array()
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .map(str::trim)
+                .filter(|item| !item.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_model_ref(model_ref: &str) -> Option<(String, String)> {
+    let model_ref = model_ref.trim();
+    if model_ref.is_empty() {
+        return None;
+    }
+    if let Some((provider, model)) = model_ref.split_once(':') {
+        let provider = provider.trim();
+        let model = model.trim();
+        if !provider.is_empty() && !model.is_empty() {
+            return Some((provider.to_string(), model.to_string()));
+        }
+    }
+    if let Some((provider, rest)) = model_ref.split_once('/') {
+        let provider = provider.trim();
+        if !provider.is_empty() {
+            return Some((provider.to_string(), model_ref.to_string()));
+        }
+        if !rest.trim().is_empty() {
+            return Some(("custom".into(), model_ref.to_string()));
+        }
+    }
+    Some(("custom".into(), model_ref.to_string()))
 }
 
 // ─── Persistent Python kernel ─────────────────────────────────────────────────

@@ -295,6 +295,17 @@
     </select>
   </div>
   <div class="row">
+    <label>permit</label>
+    <select id="permissionSelect">
+      <option value="read-only">read-only · no mutation</option>
+      <option value="plan">plan · no tools</option>
+      <option value="supervised">supervised · ask by risk</option>
+      <option value="trusted">trusted · checkpoint guard</option>
+      <option value="autonomous">autonomous · bounded action</option>
+      <option value="emergency-stop">emergency-stop · deny all</option>
+    </select>
+  </div>
+  <div class="row">
     <label>sandbox</label>
     <select id="sandboxSelect">
       <option value="local">local</option>
@@ -633,6 +644,10 @@ function bootIntro(){
         <h3>Live workspace</h3>
         <p>Attach files from the input bar, watch context usage, then let planner, coder and verifier stream their state below.</p>
       </div>
+      <div class="home-block">
+        <h3>Memory</h3>
+        <p id="memorySummary">Loading bounded memory docs and session index…</p>
+      </div>
     </section>`;
   term.appendChild(home);
   const boot=line('<span class="sec">— cockpit online —</span>');
@@ -646,6 +661,7 @@ function bootIntro(){
   pulseLearnToast('learn-toast');
   startTokenCounter('tok');
   updateContextMeter();
+  loadMemory();
   typeCmd('status',term);
 }
 
@@ -709,6 +725,8 @@ function attachmentPrompt(){
 
 async function runTask(){
   const task=$('taskInput').value.trim();if(!task&&!attachedFiles.length)return;
+  if(task.startsWith('/help')){await showCommands();$('taskInput').value='';updateContextMeter();return;}
+  if(task.startsWith('/plan')){await planTask(task.replace(/^\/plan\s*/,'').trim());return;}
   const payload=task+attachmentPrompt();
   $('taskInput').value='';
   updateContextMeter();
@@ -720,6 +738,72 @@ async function runTask(){
     if(!j.ok)line(`<span class="err">Error: ${esc(j.message)}</span>`);
     else{attachedFiles=[];renderAttachments();updateContextMeter();}
   }catch(e){line(`<span class="err">Error: ${esc(e.message)}</span>`)}
+}
+
+async function showCommands(){
+  try{
+    const r=await fetch('/commands');
+    const j=await r.json();
+    if(!j.ok){line(`<span class="err">Error: ${esc(j.message)}</span>`);return;}
+    line('<span class="acc">/help</span> <span class="muted">available slash commands</span>');
+    (j.commands||[]).forEach(cmd=>{
+      line(`<span class="planner">${esc(cmd.name)}</span> <span class="muted">— ${esc(cmd.description)} · ${esc(cmd.source)}</span>`);
+    });
+  }catch(e){line(`<span class="err">Error: ${esc(e.message)}</span>`)}
+}
+
+async function loadMemory(){
+  try{
+    const r=await fetch('/memory');
+    const j=await r.json();
+    if(!j.ok||!j.stats)return;
+    const s=j.stats;
+    const text=`${s.facts} facts · MEMORY.md ${s.memory_chars}/${s.memory_limit} · USER.md ${s.user_chars}/${s.user_limit}`;
+    const target=$('memorySummary');
+    if(target)target.textContent=text;
+  }catch(_e){
+    const target=$('memorySummary');
+    if(target)target.textContent='Memory status unavailable.';
+  }
+}
+
+async function planTask(task){
+  if(!task&&attachedFiles.length){task='analyse attached files'}
+  if(!task){line('<span class="warn">Usage: /plan &lt;task&gt;</span>');return;}
+  const payload=task+attachmentPrompt();
+  $('taskInput').value='';
+  updateContextMeter();
+  line(`<span class="prompt">sparrow ›</span> <span class="cmd">/plan ${esc(task)}</span>`);
+  try{
+    const r=await fetch('/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task:payload})});
+    const j=await r.json();
+    if(!j.ok||!j.plan){line(`<span class="err">Error: ${esc(j.message)}</span>`);return;}
+    renderPlan(j.plan,task);
+  }catch(e){line(`<span class="err">Error: ${esc(e.message)}</span>`)}
+}
+
+function renderPlan(plan,task){
+  line(`<span class="acc">◆ read-only plan</span> <span class="muted">tier ${esc(plan.estimated_tier)} · no tools or edits executed</span>`);
+  line(`<span class="muted">${esc(plan.summary)}</span>`);
+  (plan.steps||[]).forEach((step,i)=>line(`<span class="planner">${i+1}.</span> <span class="cmd">${esc(step)}</span>`));
+  if((plan.risks||[]).length){
+    line('<span class="warn">Risks</span>');
+    plan.risks.forEach(r=>line(`<span class="muted">- ${esc(r)}</span>`));
+  }
+  const actions=line(`<span class="approval-actions" data-plan-task="${escAttr(task)}"><button class="approve" data-plan-action="run">run plan</button><button class="deny" data-plan-action="edit">edit</button></span>`);
+  actions.querySelector('[data-plan-action="run"]').addEventListener('click',()=>acceptPlan(task));
+  actions.querySelector('[data-plan-action="edit"]').addEventListener('click',()=>editPlan(task));
+}
+
+function acceptPlan(task){
+  $('taskInput').value=task;
+  runTask();
+}
+
+function editPlan(task){
+  $('taskInput').value=task;
+  $('taskInput').focus();
+  updateContextMeter();
 }
 
 async function resolveApproval(id,decision,btn){
@@ -749,6 +833,7 @@ async function loadConfig(){
     providers=j.providers||[];
     if(j.autonomy){$('autonomySelect').value=j.autonomy.toLowerCase();}
     if(j.sandbox){$('sandboxSelect').value=j.sandbox;}
+    await loadPermissions();
     setAuto(($('autonomySelect').value||'trusted').toLowerCase());
     const sel=$('provSelect');sel.innerHTML='<option value="">— choose provider —</option>'+providers.map(p=>`<option value="${escAttr(p.name)}">${esc(p.label||p.name)} (${esc(p.adapter)}) ${p.has_credential?'✓':p.configured?'•':''}</option>`).join('');
     sel.onchange=()=>selectProvider(sel.value);
@@ -758,6 +843,14 @@ async function loadConfig(){
       badge.textContent=found+'/'+providers.length+' keys';
       badge.className='badge '+(found>0?'found':'missing');
     }
+  }catch(e){}
+}
+
+async function loadPermissions(){
+  try{
+    const r=await fetch('/permissions');const j=await r.json();
+    const mode=j.permissions?.mode||'supervised';
+    if($('permissionSelect'))$('permissionSelect').value=mode;
   }catch(e){}
 }
 
@@ -789,9 +882,23 @@ $('saveConfig').addEventListener('click',async()=>{
     const j=await r.json();
     $('saveMsg').textContent=j.ok?'saved ✓':'error: '+j.message;
     $('saveMsg').style.color=j.ok?'var(--add)':'var(--rem)';
-    if(j.ok){$('apiKey').value='';await loadConfig();if(name)selectProvider(name);setAuto(($('autonomySelect').value||'trusted').toLowerCase());setTimeout(closeConfig,450)}
+    if(j.ok){
+      await savePermissions();
+      $('apiKey').value='';
+      await loadConfig();
+      if(name)selectProvider(name);
+      setAuto(($('autonomySelect').value||'trusted').toLowerCase());
+      setTimeout(closeConfig,450)
+    }
   }catch(e){$('saveMsg').textContent='error: '+e.message;$('saveMsg').style.color='var(--rem)'}
 });
+
+async function savePermissions(){
+  if(!$('permissionSelect'))return;
+  const r=await fetch('/permissions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:$('permissionSelect').value})});
+  const j=await r.json();
+  if(!j.ok)throw new Error(j.message||'permissions save failed');
+}
 
 // Presets
 document.querySelectorAll('.preset').forEach(el=>{

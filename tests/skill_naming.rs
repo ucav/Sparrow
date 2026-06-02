@@ -46,6 +46,10 @@ fn duplicate_skill_not_proposed() {
             created_at: "2026-05-31".into(),
             score: 0.8,
             auto_generated: false,
+            references: Vec::new(),
+            templates: Vec::new(),
+            scripts: Vec::new(),
+            assets: Vec::new(),
         })
         .unwrap();
 

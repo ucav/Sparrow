@@ -33,12 +33,23 @@ Sparrow is **alpha software** with a green cross-platform CI baseline. The kerne
 | CI / Rust build | Green | Latest completed GitHub Actions baseline passes on Ubuntu, macOS, and Windows; `cargo fmt`, `clippy -D warnings`, `check`, and release builds are covered |
 | Test suite | Green | 109 tests pass locally with `cargo test`, including 95 integration tests |
 | Security audit | Green | CI runs `rustsec/audit-check` on Ubuntu, macOS, and Windows |
-| Engine loop | Alpha | `src/engine/mod.rs`, JSON smoke tests, event stream, task classification, and fallback execution are wired |
+| Engine loop | Stable | `src/engine/mod.rs`, JSON smoke tests, event stream, task classification, fallback execution, auto-checkpoint before mutating/exec/destructive, and auto-compaction when transcript exceeds the budget are wired |
 | Provider routing | Alpha | Ollama + NVIDIA stored-credential discovery tested locally; 92 NVIDIA chat-capable models cached from `/v1/models`; explicit `nvidia:<model>` routing validated |
-| WebView console | Alpha | HTTP `/`, `/config`, `/run`, live WebSocket events, token/cost counters, route summaries, logo, and swarm cockpit are implemented on port 9339 |
-| TUI cockpit | Alpha | Animated terminal cockpit, canonical ASCII logo, swarm lanes, checkpoint/diff/cost panels, and graceful fallback messages are implemented |
-| Gateway WebSocket | Alpha | `/status` command roundtrip tested on port 9338 with ACK and engine status response |
-| Replay / checkpoints / memory | Stable | Recorder, checkpoint, rewind, transcript, and SQLite memory flows are covered by tests and CLI smoke checks |
+| WebView console | Stable | HTTP `/`, `/config`, `/run`, live WebSocket events, token/cost counters, route summaries, logo, and swarm cockpit are implemented on port 9339 |
+| TUI cockpit | Stable | Animated terminal cockpit, canonical ASCII logo, swarm lanes, checkpoint/diff/cost panels, `@<name>` agent picker, slash autocomplete, history, fold/unfold |
+| Plan mode / slash commands | Stable | `sparrow plan`, WebView `/plan`, TUI `/plan`, built-in slash commands, user/project Markdown command discovery, and skill-to-slash exposure are wired read-only |
+| Permissions / hooks | Stable | `sparrow permissions`, persisted permission modes, tool/path/provider/surface rules, WebView mode control, lifecycle hooks (`Pre`/`Post` for run/tool/checkpoint/compact) |
+| Declarative agents | Stable | SOUL TOML plus Markdown frontmatter agents support role, prompt, model, permission mode, tool allow/deny metadata, `agent run`, `agent mention`, and `.agent.md` CRUD |
+| Skills / plugins | Stable | Progressive skill references + templates + scripts + assets loaded on invoke, plugin manifests, namespaced plugin slash commands, plugin scanner, CLI install/list/remove, WebView `/plugins` |
+| Toolsets | Stable | Known tools declare toolset/risk/auth/mutation/network/exec metadata; CLI `sparrow tools`, surface filtering, gateway-safe defaults, WebView `/tools` |
+| Security audit | Stable | `sparrow security audit [--json]`, WebView `/security`, checks for permissions/gateway/tools/plugins/hooks/secrets/sandbox |
+| Sandbox policy | Stable | `LocalSandbox` enforces workdir-inside-root, default protected paths (`.git`, `.env`, `.ssh`, …), env allowlist; Docker / SSH / Worktree backends wired; Modal/Daytona/Vercel/Singularity return honest errors when the vendor CLI is missing |
+| Media tools | Stable | `vision`, `image_generate`, `text_to_speech`, `transcribe` hit OpenAI-compatible endpoints, honest errors on missing key/non-2xx; WebView `POST /upload` (10 MB cap, classified text/image/audio/pdf) and `GET /artifacts` |
+| GitHub Action | Stable | Composite `action.yml`, sample `sparrow-pr-review.yml` workflow, `sparrow github review/status/logs` CLI, `--dry-run` review that needs no token, fails loudly on missing `GITHUB_TOKEN` or `gh` |
+| Context / compaction | Stable | `ContextMeter`, `HookEvent::PreCompact`/`PostCompact`, `Event::Compacted` in the stream, engine-level auto-trigger when transcript > 120k chars, `sparrow compact` writes a durable `HandoffDoc` Markdown |
+| UI / TUI | Stable | WebView `/sessions` + `/memory` + `/permissions` + `/plugins` + `/security` + `/upload` + `/artifacts` panels; TUI slash & `@` autocomplete, history, fold/unfold, context bar; theme variants `captain`/`midnight`/`paper` via `SPARROW_THEME`; keyboard shortcut docs |
+| Gateway | Stable | `/status` command roundtrip tested on port 9338; scoped gateway sessions, health/abort commands with an in-process run registry that actually cancels active runs, session list/export/cleanup |
+| Replay / checkpoints / memory | Stable | Recorder, checkpoint, rewind, transcript, SQLite facts, bounded `MEMORY.md` / `USER.md`, memory tool, and session search are wired with tests |
 | First-run setup | Alpha | Conversational setup agent plus fallback interactive setup are wired for provider/model configuration |
 | Telegram / Discord / Slack | Partial | Transport implementations exist; real account tokens are still required for end-to-end validation |
 | Extra transports | Experimental | WhatsApp, Signal, Email, Feishu, WeCom, QQ, and Teams adapters are present but not all fully wired |
@@ -156,6 +167,7 @@ Current NVIDIA defaults are intentionally not a single Nemotron pin:
 
 ```bash
 sparrow setup
+sparrow plan "inspect the repo and propose a safe implementation path"
 sparrow console
 sparrow run "fix the failing test"
 sparrow --json run "summarize the repo"
@@ -170,6 +182,11 @@ sparrow rewind <checkpoint-id>
 sparrow memory list
 sparrow doctor
 ```
+
+Slash commands can be declared as Markdown files in `.sparrow/commands/*.md` or
+`%APPDATA%\sparrow\commands\*.md`. User-level commands override project and
+built-in commands by name. Skills are also exposed as slash commands so reusable
+workflows can become promptable control surfaces.
 
 ## Architecture
 

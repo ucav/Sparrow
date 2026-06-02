@@ -82,6 +82,15 @@ impl LogStyle {
 }
 
 const SLASH_COMMANDS: &[&str] = &[
+    "/help",
+    "/plan",
+    "/permissions",
+    "/memory",
+    "/compact",
+    "/model",
+    "/agents",
+    "/sessions",
+    "/export",
     "/run",
     "/chat",
     "/swarm",
@@ -90,9 +99,7 @@ const SLASH_COMMANDS: &[&str] = &[
     "/checkpoint",
     "/rewind",
     "/replay",
-    "/model",
     "/auth",
-    "/help",
     "/clear",
     "/collapse",
     "/expand",
@@ -348,6 +355,10 @@ pub struct Tui {
     /// When set, the TUI is in replay mode: scrub events with ←/→.
     replay_events: Option<Vec<Event>>,
     replay_idx: usize,
+    /// Strips <think> reasoning blocks from streamed deltas.
+    think: crate::event::ThinkStripper,
+    /// Known agent names for `@<name>` autocomplete; populated by the host.
+    agent_names: Vec<String>,
 }
 
 impl Tui {
@@ -363,8 +374,13 @@ impl Tui {
             .map(|s| s.lines().map(String::from).collect())
             .unwrap_or_default();
 
+        // Pick theme from $SPARROW_THEME or default to `captain`.
+        let theme = std::env::var("SPARROW_THEME")
+            .ok()
+            .map(|n| crate::tui::theme::by_name(&n))
+            .unwrap_or_default();
         Self {
-            theme: Theme::default(),
+            theme,
             lines: Vec::new(),
             route: "idle".into(),
             cost_usd: 0.0,
@@ -398,6 +414,8 @@ impl Tui {
             focus_group: None,
             replay_events: None,
             replay_idx: 0,
+            think: crate::event::ThinkStripper::new(),
+            agent_names: Vec::new(),
         }
     }
 
@@ -491,15 +509,70 @@ impl Tui {
     /// Match autocomplete candidates for the current input.
     fn autocomplete_matches(&self) -> Vec<&'static str> {
         let line = &self.input_lines[0];
-        if !line.starts_with('/') {
+        if line.starts_with('/') {
+            return SLASH_COMMANDS
+                .iter()
+                .filter(|c| c.starts_with(line.as_str()) && **c != line.as_str())
+                .copied()
+                .take(5)
+                .collect();
+        }
+        vec![]
+    }
+
+    /// Test hook: mutable access to the first input line.
+    #[doc(hidden)]
+    pub fn debug_first_line_mut(&mut self) -> &mut String {
+        if self.input_lines.is_empty() {
+            self.input_lines.push(String::new());
+        }
+        &mut self.input_lines[0]
+    }
+
+    /// Test hook: set the cursor column.
+    #[doc(hidden)]
+    pub fn debug_set_cursor_col(&mut self, col: usize) {
+        self.cursor_row = 0;
+        self.cursor_col = col;
+    }
+
+    /// `@<name>` agent picker: returns owned strings prefixed with `@`. Separate
+    /// from the slash autocomplete because the candidate list is dynamic.
+    pub fn agent_matches(&self) -> Vec<String> {
+        // Find the last `@` token on the current line.
+        let line = &self.input_lines[self.cursor_row];
+        let upto = line.get(..self.cursor_col).unwrap_or(line);
+        let Some(at_pos) = upto.rfind('@') else {
+            return vec![];
+        };
+        // Don't trigger when `@` is preceded by a non-whitespace char (so e-mails
+        // like foo@example don't fire the picker).
+        if at_pos > 0
+            && !upto[..at_pos]
+                .chars()
+                .last()
+                .map(|c| c.is_whitespace())
+                .unwrap_or(true)
+        {
             return vec![];
         }
-        SLASH_COMMANDS
+        let prefix = &upto[at_pos + 1..];
+        // Bail if the fragment already contains whitespace — picker is over.
+        if prefix.contains(char::is_whitespace) {
+            return vec![];
+        }
+        self.agent_names
             .iter()
-            .filter(|c| c.starts_with(line.as_str()) && **c != line.as_str())
-            .copied()
+            .filter(|n| n.starts_with(prefix))
             .take(5)
+            .map(|n| format!("@{}", n))
             .collect()
+    }
+
+    /// Populate the `@<name>` agent picker with the agents the host knows about.
+    pub fn with_agents(mut self, names: Vec<String>) -> Self {
+        self.agent_names = names;
+        self
     }
 
     pub fn with_channels(
@@ -515,6 +588,7 @@ impl Tui {
     pub fn push_event(&mut self, event: Event) {
         match &event {
             Event::RunStarted { task, .. } => {
+                self.think = crate::event::ThinkStripper::new();
                 self.open_group(&format!("started: {}", task), LogStyle::Brand);
             }
             Event::RouteSelected { chain, .. } => {
@@ -536,7 +610,12 @@ impl Tui {
                 };
                 self.add_line(&label, LogStyle::Warn, 1);
             }
-            Event::ThinkingDelta { text, .. } => self.add_line(text, LogStyle::Cmd, 1),
+            Event::ThinkingDelta { text, .. } => {
+                let visible = self.think.feed(text);
+                if !visible.is_empty() {
+                    self.add_line(&visible, LogStyle::Cmd, 1);
+                }
+            }
             Event::ToolUseProposed { name, .. } => {
                 self.open_group(&format!("tool · {}", name), LogStyle::Steel);
             }
@@ -695,6 +774,11 @@ impl Tui {
                 }
             }
             Event::RunFinished { outcome, .. } => {
+                // Recover any text held by the think-stripper (unclosed <think>).
+                let tail = self.think.flush();
+                if !tail.trim().is_empty() {
+                    self.add_line(&tail, LogStyle::Cmd, 1);
+                }
                 self.close_group();
                 self.add_line(
                     &format!(
@@ -816,7 +900,11 @@ impl Tui {
                 "library indexed · self-improving",
                 LogStyle::Accent,
             ),
-            ("memory  ", "4 tiers · sqlite profile", LogStyle::Ok),
+            (
+                "memory  ",
+                "sqlite · bounded docs · session search",
+                LogStyle::Ok,
+            ),
             (
                 "autonomy",
                 "dial: supervised → trusted → autonomous",
@@ -1015,6 +1103,33 @@ impl Tui {
                                             LogStyle::Dim,
                                             1,
                                         );
+                                    }
+                                    s if s.starts_with("/plan") => {
+                                        let planned = s.trim_start_matches("/plan").trim();
+                                        if planned.is_empty() {
+                                            self.add_line("Usage: /plan <task>", LogStyle::Warn, 0);
+                                        } else {
+                                            let plan =
+                                                crate::plan::build_read_only_plan(planned, &[]);
+                                            self.add_line(
+                                                "Read-only plan · no tools or edits executed",
+                                                LogStyle::Planner,
+                                                0,
+                                            );
+                                            self.add_line(&plan.summary, LogStyle::Dim, 1);
+                                            for (idx, step) in plan.steps.iter().enumerate() {
+                                                self.add_line(
+                                                    &format!("{}. {}", idx + 1, step),
+                                                    LogStyle::Cmd,
+                                                    1,
+                                                );
+                                            }
+                                            self.add_line(
+                                                "Run the task explicitly when you accept the plan.",
+                                                LogStyle::Warn,
+                                                0,
+                                            );
+                                        }
                                     }
                                     _ => {
                                         // Send to engine
