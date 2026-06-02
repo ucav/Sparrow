@@ -178,6 +178,75 @@
     .attachments{grid-row:3}
   }
 
+  /* ─── Sprint 1 inc 2 : rail + drawer with 7 panels ─────────────────── */
+  .win{margin-left:48px;transition:margin-left .25s cubic-bezier(.2,.8,.2,1)}
+  body.drawer-open .win{margin-left:340px}
+  .rail{position:fixed;top:0;left:0;bottom:0;width:48px;z-index:30;
+    background:#0c0907;border-right:1px solid var(--line);
+    display:flex;flex-direction:column;align-items:center;gap:3px;
+    padding-top:50px;padding-bottom:8px;font-family:inherit}
+  .rail-logo{position:absolute;top:8px;left:8px;width:32px;height:32px;
+    filter:drop-shadow(0 0 6px rgba(242,169,60,.45))}
+  .rail .ico{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;
+    color:var(--dim);font-size:14px;cursor:pointer;transition:.15s;position:relative;
+    background:transparent;border:none;font-family:inherit}
+  .rail .ico:hover{color:var(--fg);background:color-mix(in srgb,var(--brand) 8%,transparent)}
+  .rail .ico.active{color:var(--brand);background:color-mix(in srgb,var(--brand) 14%,transparent)}
+  .rail .ico.active::before{content:"";position:absolute;left:-1px;top:7px;bottom:7px;width:2px;background:var(--brand);border-radius:2px}
+  .rail .ico .badge{position:absolute;top:3px;right:2px;min-width:13px;height:13px;border-radius:7px;padding:0 4px;
+    background:var(--coral);color:#fff;font-size:8.5px;font-weight:700;
+    display:flex;align-items:center;justify-content:center}
+  .rail .sep{width:22px;height:1px;background:var(--line);margin:5px 0}
+  .rail .spacer{flex:1}
+  .drawer{position:fixed;top:0;left:48px;bottom:0;width:292px;z-index:25;
+    background:linear-gradient(180deg,var(--panel),color-mix(in srgb,var(--bg) 80%,var(--panel)));
+    border-right:1px solid var(--line);
+    transform:translateX(-100%);transition:transform .25s cubic-bezier(.2,.8,.2,1);
+    overflow-y:auto;padding:14px 13px 18px}
+  body.drawer-open .drawer{transform:translateX(0)}
+  .drawer::-webkit-scrollbar{width:6px}
+  .drawer::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--line-hot) 70%,var(--bg));border-radius:6px}
+  .drawer h3{font-size:9.5px;letter-spacing:1.7px;text-transform:uppercase;color:var(--dimmer);
+    margin:14px 4px 8px;font-weight:700;display:flex;align-items:center;gap:6px}
+  .drawer h3:first-of-type{margin-top:0}
+  .drawer h3 .count{margin-left:auto;background:color-mix(in srgb,var(--brand) 14%,transparent);
+    color:var(--brand);padding:1px 6px;border-radius:4px;font-size:9px;letter-spacing:.8px}
+  .drawer .panel{display:none}
+  .drawer .panel.active{display:block;animation:fade .25s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
+  .drw-row{display:flex;flex-direction:column;gap:3px;padding:8px 10px;border-radius:7px;
+    background:var(--panel2);border:1px solid transparent;cursor:pointer;transition:.15s;margin-bottom:5px}
+  .drw-row:hover{border-color:var(--line-hot)}
+  .drw-row .ttl{font-size:11.5px;color:var(--fg);font-weight:500;display:flex;align-items:center;gap:6px;
+    overflow-wrap:anywhere;word-break:break-word}
+  .drw-row .ttl .led{width:6px;height:6px;border-radius:50%;background:var(--add);box-shadow:0 0 6px var(--add)}
+  .drw-row .meta{font-size:10px;color:var(--dim);display:flex;gap:8px;flex-wrap:wrap}
+  .drw-row .meta b{color:var(--fg);font-weight:500}
+  .drw-empty{color:var(--dimmer);font-size:11px;font-style:italic;padding:8px 10px;text-align:center}
+  .mem-doc{padding:8px 10px;border-radius:7px;background:var(--panel2);font-size:11px;margin-bottom:5px}
+  .mem-doc .label{color:var(--dim);font-size:9.5px;letter-spacing:.7px;text-transform:uppercase;
+    margin-bottom:5px;display:flex;align-items:center}
+  .mem-doc .label b{margin-left:auto;color:var(--brand);font-variant-numeric:tabular-nums;
+    font-weight:600;letter-spacing:0;text-transform:none}
+  .mem-doc .bar{height:4px;border-radius:3px;background:color-mix(in srgb,var(--line-hot) 50%,var(--bg));
+    overflow:hidden;margin-top:3px}
+  .mem-doc .bar > span{display:block;height:100%;background:linear-gradient(90deg,var(--brand),var(--coral));
+    border-radius:3px;transition:width .5s ease}
+  .sec-score{display:flex;align-items:center;gap:10px;padding:10px;border-radius:8px;
+    background:var(--panel2);margin-bottom:8px}
+  .sec-score .num{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--add)}
+  .sec-score .num.warn{color:var(--verifier)}.sec-score .num.crit{color:var(--rem)}
+  .sec-finding{padding:7px 9px;border-radius:6px;background:var(--panel2);font-size:10.5px;
+    margin-bottom:4px;border-left:3px solid var(--dimmer)}
+  .sec-finding.warn{border-left-color:var(--verifier)}
+  .sec-finding.crit{border-left-color:var(--rem)}
+  .sec-finding .cat{color:var(--dim);text-transform:uppercase;letter-spacing:.6px;font-size:8.5px}
+  .sec-finding .msg{color:var(--fg);margin-top:2px;overflow-wrap:anywhere}
+  @media(max-width:820px){
+    body.drawer-open .win{margin-left:48px}
+    .drawer{width:min(292px,calc(100vw - 48px))}
+  }
+
   .config-panel{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:200;
     background:var(--panel);border:1px solid var(--line);border-radius:14px;width:min(700px,90vw);max-height:80vh;
     overflow-y:auto;padding:18px 20px;box-shadow:0 30px 80px rgba(0,0,0,.9)}
@@ -340,6 +409,51 @@
     <span class="dimd" id="saveMsg" style="font-size:11px"></span>
   </div>
 </div>
+
+<!-- Sprint 1 inc 2: icon rail + drawer with 7 panels -->
+<svg class="rail-logo" viewBox="0 0 240 240" aria-label="Sparrow"><use href="#sparrow"/></svg>
+<nav class="rail" aria-label="Sparrow panels">
+  <button class="ico" data-panel="sessions" title="Sessions"><span aria-hidden="true">◷</span></button>
+  <button class="ico" data-panel="memory" title="Memory"><span aria-hidden="true">✦</span></button>
+  <button class="ico" data-panel="plugins" title="Plugins"><span aria-hidden="true">⌗</span></button>
+  <button class="ico" data-panel="tools" title="Tools"><span aria-hidden="true">⚒</span></button>
+  <button class="ico" data-panel="permissions" title="Permissions"><span aria-hidden="true">◉</span></button>
+  <button class="ico" data-panel="security" title="Security"><span aria-hidden="true">⛨</span></button>
+  <button class="ico" data-panel="artifacts" title="Artifacts"><span aria-hidden="true">◇</span></button>
+  <div class="sep"></div>
+  <div class="spacer"></div>
+  <button class="ico" id="rail-settings" title="Settings"><span aria-hidden="true">⚙</span></button>
+</nav>
+<aside class="drawer" id="drawer" aria-label="Drawer">
+  <div class="panel" data-panel-body="sessions">
+    <h3>Sessions <span class="count" id="drw-sessions-count">0</span></h3>
+    <div id="drw-sessions-list"><div class="drw-empty">loading…</div></div>
+  </div>
+  <div class="panel" data-panel-body="memory">
+    <h3>Memory</h3>
+    <div id="drw-memory-body"><div class="drw-empty">loading…</div></div>
+  </div>
+  <div class="panel" data-panel-body="plugins">
+    <h3>Plugins <span class="count" id="drw-plugins-count">0</span></h3>
+    <div id="drw-plugins-list"><div class="drw-empty">loading…</div></div>
+  </div>
+  <div class="panel" data-panel-body="tools">
+    <h3>Tools <span class="count" id="drw-tools-count">0</span></h3>
+    <div id="drw-tools-list"><div class="drw-empty">loading…</div></div>
+  </div>
+  <div class="panel" data-panel-body="permissions">
+    <h3>Permissions</h3>
+    <div id="drw-permissions-body"><div class="drw-empty">loading…</div></div>
+  </div>
+  <div class="panel" data-panel-body="security">
+    <h3>Security</h3>
+    <div id="drw-security-body"><div class="drw-empty">loading…</div></div>
+  </div>
+  <div class="panel" data-panel-body="artifacts">
+    <h3>Artifacts <span class="count" id="drw-artifacts-count">0</span></h3>
+    <div id="drw-artifacts-list"><div class="drw-empty">loading…</div></div>
+  </div>
+</aside>
 
 <div class="win">
   <div class="chrome">
@@ -584,6 +698,135 @@ function resetSwarm(){
   setSwarm('verifier','idle','standing by for adversarial review');
 }
 
+// ─── Sprint 1 inc 2 : drawer + 7 panels ──────────────────────────────
+const PANEL_LOADERS={
+  sessions:loadSessionsPanel,
+  memory:loadMemoryPanel,
+  plugins:loadPluginsPanel,
+  tools:loadToolsPanel,
+  permissions:loadPermissionsPanel,
+  security:loadSecurityPanel,
+  artifacts:loadArtifactsPanel,
+};
+function openPanel(name){
+  const cur=localStorage.getItem('sparrow-active-panel');
+  if(cur===name){
+    // toggle off
+    document.body.classList.remove('drawer-open');
+    document.querySelectorAll('.rail .ico').forEach(b=>b.classList.remove('active'));
+    localStorage.removeItem('sparrow-active-panel');
+    return;
+  }
+  document.body.classList.add('drawer-open');
+  document.querySelectorAll('.rail .ico').forEach(b=>b.classList.toggle('active',b.dataset.panel===name));
+  document.querySelectorAll('.drawer .panel').forEach(p=>p.classList.toggle('active',p.dataset.panelBody===name));
+  localStorage.setItem('sparrow-active-panel',name);
+  const loader=PANEL_LOADERS[name];
+  if(loader)loader().catch(()=>{});
+}
+document.addEventListener('click',e=>{
+  const ico=e.target.closest('.rail .ico[data-panel]');
+  if(ico)openPanel(ico.dataset.panel);
+});
+function restoreActivePanel(){
+  const name=localStorage.getItem('sparrow-active-panel');
+  if(name&&PANEL_LOADERS[name])openPanel(name);
+}
+function escHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+
+async function loadSessionsPanel(){
+  const host=document.getElementById('drw-sessions-list');
+  try{
+    const r=await fetch('/sessions');const j=await r.json();
+    const sess=Array.isArray(j.sessions)?j.sessions:[];
+    document.getElementById('drw-sessions-count').textContent=sess.length;
+    if(!sess.length){host.innerHTML='<div class="drw-empty">No sessions yet — start your first run.</div>';return;}
+    host.innerHTML=sess.slice(0,20).map(s=>{
+      const ts=s.updated_at?new Date(s.updated_at*1000).toLocaleString('fr-FR',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}):'';
+      const turns=(s.messages_json||'[]').match(/"role":/g)?.length||0;
+      return `<div class="drw-row" title="${escHtml(s.id)}"><div class="ttl">${escHtml(s.name||s.id)}</div><div class="meta"><span><b>${turns}</b> turns</span><span>${escHtml(s.status||'')}</span><span>${ts}</span></div></div>`;
+    }).join('');
+  }catch(_){host.innerHTML='<div class="drw-empty">unable to load /sessions</div>';}
+}
+async function loadMemoryPanel(){
+  const host=document.getElementById('drw-memory-body');
+  try{
+    const r=await fetch('/memory');const j=await r.json();
+    const facts=Array.isArray(j.facts)?j.facts:[];
+    const docs=Array.isArray(j.docs)?j.docs:[];
+    let html='';
+    docs.forEach(d=>{
+      const used=d.chars||0,lim=d.limit||1;
+      const pct=Math.min(100,Math.round(used/lim*100));
+      html+=`<div class="mem-doc"><div class="label">${escHtml(d.kind||'doc')} <b>${used} / ${lim}</b></div><div class="bar"><span style="width:${pct}%"></span></div></div>`;
+    });
+    html+=`<div class="mem-doc"><div class="label">Facts <b>${facts.length}</b></div></div>`;
+    if(facts.length){
+      html+='<div style="margin-top:6px">'+facts.slice(0,8).map(f=>`<div class="drw-row"><div class="ttl">${escHtml(f.key)}</div><div class="meta"><span>${escHtml((f.value||'').slice(0,80))}</span></div></div>`).join('')+'</div>';
+    }
+    host.innerHTML=html||'<div class="drw-empty">MEMORY.md is empty — Sparrow will learn as you go.</div>';
+  }catch(_){host.innerHTML='<div class="drw-empty">unable to load /memory</div>';}
+}
+async function loadPluginsPanel(){
+  const host=document.getElementById('drw-plugins-list');
+  try{
+    const r=await fetch('/plugins');const j=await r.json();
+    const ps=Array.isArray(j.plugins)?j.plugins:[];
+    document.getElementById('drw-plugins-count').textContent=ps.length;
+    if(!ps.length){host.innerHTML='<div class="drw-empty">No plugins installed — try <code>sparrow plugins install</code></div>';return;}
+    host.innerHTML=ps.map(p=>`<div class="drw-row"><div class="ttl">${escHtml(p.name)}</div><div class="meta"><span>${escHtml(p.version||'')}</span><span>${p.commands||0} cmds</span><span>${p.skills||0} skills</span></div></div>`).join('');
+  }catch(_){host.innerHTML='<div class="drw-empty">unable to load /plugins</div>';}
+}
+async function loadToolsPanel(){
+  const host=document.getElementById('drw-tools-list');
+  try{
+    const r=await fetch('/tools');const j=await r.json();
+    const ts=Array.isArray(j.tools)?j.tools:[];
+    document.getElementById('drw-tools-count').textContent=ts.length;
+    if(!ts.length){host.innerHTML='<div class="drw-empty">no tools metadata</div>';return;}
+    host.innerHTML=ts.map(t=>`<div class="drw-row" title="${escHtml(t.toolset||'')}"><div class="ttl">${escHtml(t.name)}</div><div class="meta"><span>${escHtml(t.toolset||'')}</span>${t.exec?'<span style="color:var(--rem)">exec</span>':''}${t.mutates_files?'<span style="color:var(--verifier)">mutates</span>':''}${t.network?'<span>net</span>':''}</div></div>`).join('');
+  }catch(_){host.innerHTML='<div class="drw-empty">unable to load /tools</div>';}
+}
+async function loadPermissionsPanel(){
+  const host=document.getElementById('drw-permissions-body');
+  try{
+    const r=await fetch('/permissions');const j=await r.json();
+    const p=j.permissions||{};
+    const tools=p.tools||{};
+    const paths=p.paths||{};
+    host.innerHTML=
+      `<div class="mem-doc"><div class="label">Mode <b>${escHtml(p.mode||'unknown')}</b></div></div>`+
+      `<div class="mem-doc"><div class="label">Tools allow <b>${(tools.allow||[]).length}</b></div></div>`+
+      `<div class="mem-doc"><div class="label">Tools deny <b>${(tools.deny||[]).length}</b></div></div>`+
+      `<div class="mem-doc"><div class="label">Paths deny <b>${(paths.deny||[]).length}</b></div></div>`;
+  }catch(_){host.innerHTML='<div class="drw-empty">unable to load /permissions</div>';}
+}
+async function loadSecurityPanel(){
+  const host=document.getElementById('drw-security-body');
+  try{
+    const r=await fetch('/security');const j=await r.json();
+    const a=j.audit||{};const findings=Array.isArray(a.findings)?a.findings:[];
+    const score=a.score??100;
+    const klass=score>=80?'':score>=50?'warn':'crit';
+    let html=`<div class="sec-score"><div class="num ${klass}">${score}</div><div style="font-size:11px;color:var(--dim)">/ 100<div style="color:var(--dimmer);font-size:9.5px;letter-spacing:.5px">${findings.filter(f=>(f.severity==='Critical')).length} crit · ${findings.filter(f=>(f.severity==='Warning')).length} warn</div></div></div>`;
+    html+=findings.slice(0,12).map(f=>{
+      const kl=f.severity==='Critical'?'crit':f.severity==='Warning'?'warn':'';
+      return `<div class="sec-finding ${kl}"><div class="cat">${escHtml(f.category||'')}</div><div class="msg">${escHtml(f.message||'')}</div></div>`;
+    }).join('');
+    host.innerHTML=html;
+  }catch(_){host.innerHTML='<div class="drw-empty">unable to load /security</div>';}
+}
+async function loadArtifactsPanel(){
+  const host=document.getElementById('drw-artifacts-list');
+  try{
+    const r=await fetch('/artifacts');const j=await r.json();
+    const its=Array.isArray(j.items)?j.items:[];
+    document.getElementById('drw-artifacts-count').textContent=its.length;
+    if(!its.length){host.innerHTML='<div class="drw-empty">No artifacts yet — drag a file onto the page to upload.</div>';return;}
+    host.innerHTML=its.map(it=>`<div class="drw-row" title="${escHtml(it.path||'')}"><div class="ttl">${escHtml(it.name)}</div><div class="meta"><span>${escHtml(it.kind||'file')}</span><span>${Math.round((it.size||0)/1024)} KB</span></div></div>`).join('');
+  }catch(_){host.innerHTML='<div class="drw-empty">unable to load /artifacts</div>';}
+}
+
 // ─── Dynamic swarm row (Sprint 1 / STATUS2.md item 1bis) ─────────────
 // Fetches every installed agent from `GET /agents` and renders any agent
 // outside the orchestrator triad as an extra lane. Triade always rendered
@@ -642,7 +885,7 @@ function cssSlug(s){return String(s).toLowerCase().replace(/[^a-z0-9-]+/g,'-').r
 let ws;
 function connect(){
   ws=new WebSocket(`ws://${location.host}/ws`);
-  ws.onopen=()=>{$('conn').textContent='live';$('status').className='status on';$('status').textContent='● live';loadConfig();loadSwarmAgents()};
+  ws.onopen=()=>{$('conn').textContent='live';$('status').className='status on';$('status').textContent='● live';loadConfig();loadSwarmAgents();restoreActivePanel()};
   ws.onclose=()=>{$('conn').textContent='reconnecting…';$('status').className='status off';$('status').textContent='● disconnected';setTimeout(connect,2000)};
   ws.onmessage=(e)=>{try{handleEvent(JSON.parse(e.data))}catch(err){}};
 }
