@@ -19,6 +19,7 @@ impl DockerSandbox {
             policy: FsNetPolicy {
                 allowed_paths: vec![root],
                 allow_network: false,
+                ..FsNetPolicy::default()
             },
         }
     }
@@ -80,6 +81,7 @@ impl SshSandbox {
             policy: FsNetPolicy {
                 allowed_paths: vec![],
                 allow_network: true,
+                ..FsNetPolicy::default()
             },
         }
     }
@@ -137,6 +139,7 @@ macro_rules! cli_sandbox {
                     policy: FsNetPolicy {
                         allowed_paths: vec![root],
                         allow_network: true,
+                        ..FsNetPolicy::default()
                     },
                 }
             }
@@ -200,3 +203,86 @@ cli_sandbox!(ModalSandbox, "modal", "modal", ["run", "--"]);
 cli_sandbox!(DaytonaSandbox, "daytona", "daytona", ["exec", "--"]);
 cli_sandbox!(VercelSandbox, "vercel-sandbox", "vercel", ["exec", "--"]);
 cli_sandbox!(SingularitySandbox, "singularity", "singularity", ["exec"]);
+
+// ─── Worktree sandbox ───────────────────────────────────────────────────────────
+//
+// Runs commands inside a dedicated `git worktree` so mutations land on an
+// isolated branch and never touch the user's working copy. If the `repo_root`
+// is not a git repository the constructor returns an error — no fake success.
+
+use crate::sandbox::{LocalSandbox, default_denied_paths};
+
+pub struct WorktreeSandbox {
+    inner: LocalSandbox,
+    worktree_path: PathBuf,
+    branch: String,
+}
+
+impl WorktreeSandbox {
+    /// Create a new git worktree under `parent_dir` checked out on `branch`.
+    /// `repo_root` must be a git repo. The worktree path is
+    /// `parent_dir/sparrow-<branch>`.
+    pub fn create(repo_root: &Path, parent_dir: &Path, branch: &str) -> anyhow::Result<Self> {
+        if !repo_root.join(".git").exists() {
+            anyhow::bail!(
+                "WorktreeSandbox requires a git repo at {} (no .git/)",
+                repo_root.display()
+            );
+        }
+        std::fs::create_dir_all(parent_dir)?;
+        let worktree_path = parent_dir.join(format!("sparrow-{}", branch));
+
+        let status = StdCommand::new("git")
+            .args([
+                "-C",
+                &repo_root.to_string_lossy(),
+                "worktree",
+                "add",
+                "-B",
+                branch,
+                &worktree_path.to_string_lossy(),
+            ])
+            .status();
+        match status {
+            Ok(s) if s.success() => {}
+            Ok(s) => anyhow::bail!("git worktree add failed (exit {:?})", s.code()),
+            Err(e) => anyhow::bail!("git not available: {}", e),
+        }
+
+        let policy = FsNetPolicy {
+            allowed_paths: vec![worktree_path.clone()],
+            allow_network: true,
+            denied_paths: default_denied_paths(),
+            env_allowlist: Vec::new(),
+        };
+        let inner = LocalSandbox::new(worktree_path.clone()).with_policy(policy);
+        Ok(Self {
+            inner,
+            worktree_path,
+            branch: branch.to_string(),
+        })
+    }
+
+    pub fn branch(&self) -> &str {
+        &self.branch
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.worktree_path
+    }
+}
+
+#[async_trait::async_trait]
+impl Sandbox for WorktreeSandbox {
+    async fn exec(&self, cmd: &Command, limits: &Limits) -> anyhow::Result<ExecResult> {
+        self.inner.exec(cmd, limits).await
+    }
+
+    fn root(&self) -> &Path {
+        self.inner.root()
+    }
+
+    fn policy(&self) -> &FsNetPolicy {
+        self.inner.policy()
+    }
+}

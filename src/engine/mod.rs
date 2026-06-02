@@ -772,12 +772,31 @@ impl Engine {
 
         // Build tools and workspace
         let workspace_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        let sandbox: Arc<dyn Sandbox> = if self.config.defaults.sandbox == "local-hardened" {
-            Arc::new(crate::sandbox::LocalSandbox::hardened(
+        let sandbox: Arc<dyn Sandbox> = match self.config.defaults.sandbox.as_str() {
+            "local-hardened" => Arc::new(crate::sandbox::LocalSandbox::hardened(
                 workspace_root.clone(),
-            ))
-        } else {
-            Arc::new(crate::sandbox::LocalSandbox::new(workspace_root.clone()))
+            )),
+            "docker" => Arc::new(crate::sandbox::backends::DockerSandbox::new(
+                workspace_root.clone(),
+                "ubuntu:latest",
+            )),
+            s if s.starts_with("ssh:") => Arc::new(crate::sandbox::backends::SshSandbox::new(
+                workspace_root.clone(),
+                s.trim_start_matches("ssh:"),
+            )),
+            "modal" => Arc::new(crate::sandbox::backends::ModalSandbox::new(
+                workspace_root.clone(),
+            )),
+            "daytona" => Arc::new(crate::sandbox::backends::DaytonaSandbox::new(
+                workspace_root.clone(),
+            )),
+            "vercel" => Arc::new(crate::sandbox::backends::VercelSandbox::new(
+                workspace_root.clone(),
+            )),
+            "singularity" => Arc::new(crate::sandbox::backends::SingularitySandbox::new(
+                workspace_root.clone(),
+            )),
+            _ => Arc::new(crate::sandbox::LocalSandbox::new(workspace_root.clone())),
         };
 
         let mut registry = ToolRegistry::new();
