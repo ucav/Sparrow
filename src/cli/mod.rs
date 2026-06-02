@@ -152,6 +152,12 @@ pub enum Commands {
         action: ToolsAction,
     },
 
+    /// Security audit of config, permissions, plugins, hooks, secrets
+    Security {
+        #[command(subcommand)]
+        action: SecurityAction,
+    },
+
     /// Manage MCP connectors
     Mcp {
         #[command(subcommand)]
@@ -301,6 +307,16 @@ pub enum PluginsAction {
     },
     Rm {
         name: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum SecurityAction {
+    /// Run a full security audit
+    Audit {
+        /// Emit JSON instead of human-readable summary
+        #[arg(long)]
+        json: bool,
     },
 }
 

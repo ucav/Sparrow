@@ -48,6 +48,7 @@ pub mod redaction;
 pub mod router;
 pub mod runtime;
 pub mod sandbox;
+pub mod security;
 pub mod tools;
 pub mod tui;
 pub mod update;
