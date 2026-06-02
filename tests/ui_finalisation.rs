@@ -124,6 +124,37 @@ fn console_html_has_drawer_with_seven_panels() {
 }
 
 #[test]
+fn console_html_has_paper_theme_and_chrome_chips() {
+    let html =
+        std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");
+    // Sprint 1 inc 4-5: paper theme variant + chrome chips for palette /
+    // replay / sound / theme. The selector must come from a CSS block keyed
+    // on `data-theme="paper"`.
+    assert!(
+        html.contains("[data-theme=\"paper\"]"),
+        "console.html must declare a paper theme block"
+    );
+    for chip in ["cmdkBtn", "replayBtn", "soundBtn", "themeBtn"] {
+        let marker = format!("id=\"{}\"", chip);
+        assert!(html.contains(&marker), "chrome must expose {} chip", chip);
+    }
+    // Hero welcome + boot animation must be wired.
+    assert!(
+        html.contains("injectHero") && html.contains(".hero{"),
+        "hero welcome must be injected at term boot"
+    );
+    assert!(
+        html.contains("runBootAnimation") && html.contains("bootOverlay"),
+        "boot overlay must be present and triggered"
+    );
+    // Sound system + Cmd+M mute toggle.
+    assert!(
+        html.contains("function chirp(") && html.contains("'sparrow-muted'"),
+        "WebAudio chirp + mute persistence must be wired"
+    );
+}
+
+#[test]
 fn console_html_has_slash_palette_and_agent_picker() {
     let html =
         std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");
