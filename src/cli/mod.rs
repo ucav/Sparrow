@@ -188,6 +188,12 @@ pub enum Commands {
         action: MemoryAction,
     },
 
+    /// Inspect and update permission policy
+    Permissions {
+        #[command(subcommand)]
+        action: PermissionAction,
+    },
+
     /// Profile management
     Profile {
         #[command(subcommand)]
@@ -321,4 +327,22 @@ pub enum MemoryAction {
     List,
     Forget { id: String },
     Add { key: String, value: String },
+}
+
+#[derive(Subcommand)]
+pub enum PermissionAction {
+    /// Show current permission mode and rules
+    List,
+    /// Set permission mode (read-only|plan|supervised|trusted|autonomous|emergency-stop)
+    Set { mode: String },
+    /// Add an explicitly allowed tool pattern
+    AllowTool { tool: String },
+    /// Add a tool pattern that always asks for approval
+    AskTool { tool: String },
+    /// Add an explicitly denied tool pattern
+    DenyTool { tool: String },
+    /// Add an allowed path boundary
+    AllowPath { path: PathBuf },
+    /// Add a denied path boundary
+    DenyPath { path: PathBuf },
 }

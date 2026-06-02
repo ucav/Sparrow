@@ -295,6 +295,17 @@
     </select>
   </div>
   <div class="row">
+    <label>permit</label>
+    <select id="permissionSelect">
+      <option value="read-only">read-only · no mutation</option>
+      <option value="plan">plan · no tools</option>
+      <option value="supervised">supervised · ask by risk</option>
+      <option value="trusted">trusted · checkpoint guard</option>
+      <option value="autonomous">autonomous · bounded action</option>
+      <option value="emergency-stop">emergency-stop · deny all</option>
+    </select>
+  </div>
+  <div class="row">
     <label>sandbox</label>
     <select id="sandboxSelect">
       <option value="local">local</option>
@@ -802,6 +813,7 @@ async function loadConfig(){
     providers=j.providers||[];
     if(j.autonomy){$('autonomySelect').value=j.autonomy.toLowerCase();}
     if(j.sandbox){$('sandboxSelect').value=j.sandbox;}
+    await loadPermissions();
     setAuto(($('autonomySelect').value||'trusted').toLowerCase());
     const sel=$('provSelect');sel.innerHTML='<option value="">— choose provider —</option>'+providers.map(p=>`<option value="${escAttr(p.name)}">${esc(p.label||p.name)} (${esc(p.adapter)}) ${p.has_credential?'✓':p.configured?'•':''}</option>`).join('');
     sel.onchange=()=>selectProvider(sel.value);
@@ -811,6 +823,14 @@ async function loadConfig(){
       badge.textContent=found+'/'+providers.length+' keys';
       badge.className='badge '+(found>0?'found':'missing');
     }
+  }catch(e){}
+}
+
+async function loadPermissions(){
+  try{
+    const r=await fetch('/permissions');const j=await r.json();
+    const mode=j.permissions?.mode||'supervised';
+    if($('permissionSelect'))$('permissionSelect').value=mode;
   }catch(e){}
 }
 
@@ -842,9 +862,23 @@ $('saveConfig').addEventListener('click',async()=>{
     const j=await r.json();
     $('saveMsg').textContent=j.ok?'saved ✓':'error: '+j.message;
     $('saveMsg').style.color=j.ok?'var(--add)':'var(--rem)';
-    if(j.ok){$('apiKey').value='';await loadConfig();if(name)selectProvider(name);setAuto(($('autonomySelect').value||'trusted').toLowerCase());setTimeout(closeConfig,450)}
+    if(j.ok){
+      await savePermissions();
+      $('apiKey').value='';
+      await loadConfig();
+      if(name)selectProvider(name);
+      setAuto(($('autonomySelect').value||'trusted').toLowerCase());
+      setTimeout(closeConfig,450)
+    }
   }catch(e){$('saveMsg').textContent='error: '+e.message;$('saveMsg').style.color='var(--rem)'}
 });
+
+async function savePermissions(){
+  if(!$('permissionSelect'))return;
+  const r=await fetch('/permissions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mode:$('permissionSelect').value})});
+  const j=await r.json();
+  if(!j.ok)throw new Error(j.message||'permissions save failed');
+}
 
 // Presets
 document.querySelectorAll('.preset').forEach(el=>{
