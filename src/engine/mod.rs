@@ -885,6 +885,10 @@ impl Engine {
         let mut had_mutation = false;
         let mut verify_attempts: u32 = 0;
         const MAX_VERIFY_ATTEMPTS: u32 = 2;
+        // Whether the run has produced ANY visible output (text or tool use). If
+        // a model returns an empty completion and nothing has been produced yet,
+        // we fall back to the next model in the chain (rescues a dead provider).
+        let mut produced_any_output = false;
 
         // Helper to send redacted events
         let send = |event: Event| {
@@ -1467,7 +1471,30 @@ impl Engine {
                             BrainEvent::Done(reason) => {
                                 match reason {
                                     crate::event::StopReason::EndTurn => {
+                                        // Empty-completion fallback: if this model
+                                        // produced nothing (no text, no tool) and the
+                                        // run has produced nothing so far, try the
+                                        // next model instead of finishing empty.
+                                        let this_empty = assistant_text.trim().is_empty()
+                                            && !tool_output_seen_this_completion;
+                                        if this_empty && !produced_any_output {
+                                            let next_idx = current_chain_idx + 1;
+                                            if next_idx < brain_policy.chain.len() {
+                                                current_chain_idx = next_idx;
+                                                let _ = event_tx.send(Event::ModelSwitched {
+                                                    run: run_id.clone(),
+                                                    from: brain.id().to_string(),
+                                                    to: brain_policy.chain[current_chain_idx]
+                                                        .id()
+                                                        .to_string(),
+                                                    reason: "empty response".into(),
+                                                });
+                                                continue_agent_loop = true;
+                                                break;
+                                            }
+                                        }
                                         if !assistant_text.trim().is_empty() {
+                                            produced_any_output = true;
                                             let assistant_msg = Msg {
                                                 role: "assistant".into(),
                                                 content: vec![ContentBlock::Text {
@@ -1626,6 +1653,9 @@ impl Engine {
                                                 }],
                                             });
                                         }
+                                        if tool_output_seen_this_completion {
+                                            produced_any_output = true;
+                                        }
                                         continue_agent_loop =
                                             !waiting_for_approval && !stop_after_tool_result;
                                         break;
@@ -1657,6 +1687,29 @@ impl Engine {
                             }
                         }
                     }
+
+                    // Robust empty-completion fallback: some providers end the
+                    // stream WITHOUT a Done(EndTurn) (so the in-stream check never
+                    // fires). If this completion produced nothing and the run has
+                    // produced nothing, advance to the next model in the chain.
+                    if !continue_agent_loop && !had_error {
+                        let this_empty = assistant_text.trim().is_empty()
+                            && !tool_output_seen_this_completion;
+                        if this_empty && !produced_any_output {
+                            let next_idx = current_chain_idx + 1;
+                            if next_idx < brain_policy.chain.len() {
+                                let _ = event_tx.send(Event::ModelSwitched {
+                                    run: run_id.clone(),
+                                    from: brain.id().to_string(),
+                                    to: brain_policy.chain[next_idx].id().to_string(),
+                                    reason: "empty response".into(),
+                                });
+                                current_chain_idx = next_idx;
+                                continue;
+                            }
+                        }
+                    }
+
                     if continue_agent_loop {
                         continue;
                     }

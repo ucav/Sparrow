@@ -259,45 +259,66 @@ impl Router for BasicRouter {
         // so equal-scored discovered models keep a deterministic order).
         scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
-        // De-duplicate by brain id, then cap to a sane fallback depth.
-        // A 90-model chain bloats every RouteSelected event and pushes junk
-        // models (PII/vision-only) ahead of real fallbacks. Keep top-K distinct.
+        // Build a PROVIDER-DIVERSE fallback chain. A single preferred provider
+        // (e.g. opencode-zen) can have dozens of discovered models that would
+        // otherwise fill every slot — leaving no fallback if that whole provider
+        // is down (no credits / empty responses). Cap models per provider so
+        // other providers (NVIDIA, ollama…) always get fallback slots.
         const MAX_CHAIN: usize = 6;
+        const PER_PROVIDER_CAP: usize = 3;
         let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-        let mut result: Vec<Arc<dyn Brain>> = Vec::new();
-        for (_, _, brain) in &scored {
-            if seen.insert(brain.id().to_string()) {
-                result.push(brain.clone());
+        let mut per_provider: HashMap<String, usize> = HashMap::new();
+        // (provider, brain) so we can reorder by provider below.
+        let mut result: Vec<(String, Arc<dyn Brain>)> = Vec::new();
+
+        // Pass 1: respect the per-provider cap → forces cross-provider diversity.
+        for (_, prov, brain) in &scored {
+            if result.len() >= MAX_CHAIN {
+                break;
+            }
+            let id = brain.id().to_string();
+            if seen.contains(&id) {
+                continue;
+            }
+            let count = per_provider.entry(prov.clone()).or_insert(0);
+            if *count >= PER_PROVIDER_CAP {
+                continue;
+            }
+            *count += 1;
+            seen.insert(id);
+            result.push((prov.clone(), brain.clone()));
+        }
+        // Pass 2: if too few providers to fill the chain, top up over the cap.
+        if result.len() < MAX_CHAIN {
+            for (_, prov, brain) in &scored {
+                if result.len() >= MAX_CHAIN {
+                    break;
+                }
+                let id = brain.id().to_string();
+                if seen.insert(id) {
+                    result.push((prov.clone(), brain.clone()));
+                }
             }
         }
 
-        if preferred_is_local && matches!(need.tier, TaskTier::Trivial | TaskTier::Small) {
-            if let Some((pos, _)) = scored
+        // For trivial/small tasks with a local-preferred policy, put a local/free
+        // model first (works offline, $0).
+        if matches!(need.tier, TaskTier::Trivial | TaskTier::Small)
+            && (preferred_is_local || self.free_first)
+        {
+            if let Some(pos) = result
                 .iter()
-                .enumerate()
-                .find(|(_, (_, provider_name, _))| {
-                    provider_name == "local" || provider_name == "ollama"
+                .position(|(prov, b)| {
+                    (prov == "local" || prov == "ollama")
+                        || b.caps().cost_input_per_mtok == 0.0
                 })
             {
-                let local_brain = result.remove(pos);
-                result.insert(0, local_brain);
+                let chosen = result.remove(pos);
+                result.insert(0, chosen);
             }
         }
 
-        // If free_first and there's a free model, push it first for small tasks.
-        if self.free_first && preferred_is_local {
-            if let Some(pos) = result.iter().position(|b| {
-                b.caps().cost_input_per_mtok == 0.0
-                    && matches!(need.tier, TaskTier::Trivial | TaskTier::Small)
-            }) {
-                let free_brain = result.remove(pos);
-                result.insert(0, free_brain);
-            }
-        }
-
-        // Cap the fallback depth. Done last so reordering above still applies.
-        result.truncate(MAX_CHAIN);
-        result
+        result.into_iter().map(|(_, brain)| brain).collect()
     }
 
     fn on_error(&self, _b: &dyn Brain, e: &BrainError) -> Retry {
