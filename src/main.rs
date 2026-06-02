@@ -34,10 +34,14 @@ use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Quiet by default so structured logs (e.g. "Transcript saved") never
+    // interleave with the user-facing answer on stdout. Logs go to stderr;
+    // set RUST_LOG=sparrow=info (or debug) for verbose diagnostics.
     tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "sparrow=info".into()),
+                .unwrap_or_else(|_| "sparrow=warn".into()),
         )
         .init();
 
@@ -90,6 +94,8 @@ async fn main() -> anyhow::Result<()> {
             providers: Default::default(),
             surfaces: Default::default(),
             skills: Default::default(),
+            permissions: Default::default(),
+            hooks: Default::default(),
             theme: "captain".into(),
             config_dir: active_config_dir.clone(),
             state_dir: active_state_dir.clone(),
@@ -301,6 +307,12 @@ async fn main() -> anyhow::Result<()> {
                 .await?;
             }
         }
+        Some(Commands::Plan { ref task, json }) => {
+            handle_plan(task, &config, skill_library.clone(), json || cli.json)?;
+        }
+        Some(Commands::Permissions { action }) => {
+            handle_permissions(action, &config, &config_store)?;
+        }
         Some(Commands::Chat) => {
             handle_chat(&config, memory.clone()).await?;
         }
@@ -320,6 +332,21 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::Skills { action }) => {
             handle_skills(action, &skill_library)?;
+        }
+        Some(Commands::Plugins { action }) => {
+            handle_plugins(action, &config_dir)?;
+        }
+        Some(Commands::Tools { action }) => {
+            handle_tools(action, &config_store)?;
+        }
+        Some(Commands::Security { action }) => {
+            handle_security(action, &config)?;
+        }
+        Some(Commands::Github { action }) => {
+            handle_github(action)?;
+        }
+        Some(Commands::Compact { task, out, json }) => {
+            handle_compact(task, out, json)?;
         }
         Some(Commands::Mcp { action }) => {
             handle_mcp(action, &config_dir).await?;
@@ -355,6 +382,9 @@ async fn main() -> anyhow::Result<()> {
                 recorder.clone(),
             )
             .await?;
+        }
+        Some(Commands::Sessions { action }) => {
+            handle_sessions(action, &active_state_dir)?;
         }
         Some(Commands::Model { set, list }) => {
             if list {
@@ -766,7 +796,11 @@ async fn main() -> anyhow::Result<()> {
             )?;
         }
         Some(Commands::Memory { action }) => {
-            handle_memory(action, &(memory.clone() as Arc<dyn Memory>))?;
+            handle_memory(
+                action,
+                &(memory.clone() as Arc<dyn Memory>),
+                &active_state_dir,
+            )?;
         }
         Some(Commands::Config { edit }) => {
             if edit {
@@ -818,7 +852,26 @@ async fn handle_agent(
             } else {
                 println!("Defined agents:");
                 for a in &agents {
-                    println!("  {}  |  {}  |  {}", a.name, a.role, a.personality);
+                    println!(
+                        "  {}  |  {}  |  {}  | tools: {} deny: {}",
+                        a.name,
+                        a.role,
+                        if a.description.is_empty() {
+                            a.personality.as_str()
+                        } else {
+                            a.description.as_str()
+                        },
+                        if a.tools.is_empty() {
+                            "all".into()
+                        } else {
+                            a.tools.join(",")
+                        },
+                        if a.disallowed_tools.is_empty() {
+                            "none".into()
+                        } else {
+                            a.disallowed_tools.join(",")
+                        }
+                    );
                 }
             }
         }
@@ -854,6 +907,15 @@ async fn handle_agent(
                 anyhow::bail!("Agent '{}' not found.", name);
             }
         }
+        sparrow::cli::AgentAction::Mention { name, message } => {
+            if let Some(soul) = store.get(&name) {
+                let task = format!("@{} {}", soul.name, message);
+                println!("Mentioning agent '{}': {}", soul.name, message);
+                run_task(&task, config, memory, skills, recorder, Some(soul)).await?;
+            } else {
+                anyhow::bail!("Agent '{}' not found.", name);
+            }
+        }
     }
     Ok(())
 }
@@ -880,6 +942,15 @@ fn apply_cli_overrides(config: &mut sparrow::config::Config, cli: &Cli) {
                 } else {
                     config.defaults.autonomy.clone()
                 }
+            }
+        };
+        config.permissions.mode = match config.defaults.autonomy {
+            sparrow::event::AutonomyLevel::Supervised => {
+                sparrow::permissions::PermissionMode::Supervised
+            }
+            sparrow::event::AutonomyLevel::Trusted => sparrow::permissions::PermissionMode::Trusted,
+            sparrow::event::AutonomyLevel::Autonomous => {
+                sparrow::permissions::PermissionMode::Autonomous
             }
         };
     }
@@ -1538,10 +1609,15 @@ async fn run_task(
     use sparrow::router::BasicRouter;
     use std::sync::Arc;
 
-    let providers = build_provider_brains(config, &memory, true);
+    let run_config = soul
+        .as_ref()
+        .map(|soul| config_for_soul(config, soul))
+        .unwrap_or_else(|| config.clone());
 
-    let router = Arc::new(BasicRouter::new(config, providers));
-    let mut engine = Engine::new(router, config.clone())
+    let providers = build_provider_brains(&run_config, &memory, true);
+
+    let router = Arc::new(BasicRouter::new(&run_config, providers));
+    let mut engine = Engine::new(router, run_config.clone())
         .with_memory(memory.clone())
         .with_skills(skills);
     if let Some(soul) = &soul {
@@ -1553,7 +1629,7 @@ async fn run_task(
     // surfaces. Key: $SPARROW_SESSION (set it to "user:<id>" to continue a
     // Telegram/Slack thread) else a per-workspace CLI session.
     let sessions =
-        sparrow::runtime::session::SessionStore::open(&config.state_dir.join("sessions.db"))
+        sparrow::runtime::session::SessionStore::open(&run_config.state_dir.join("sessions.db"))
             .ok()
             .map(Arc::new);
     let session_key = std::env::var("SPARROW_SESSION").unwrap_or_else(|_| {
@@ -1567,7 +1643,13 @@ async fn run_task(
     let prior_msgs: Vec<sparrow::provider::Msg> = sessions
         .as_ref()
         .and_then(|s| s.load(&session_key))
-        .and_then(|sess| serde_json::from_str(&sess.messages_json).ok())
+        .and_then(|sess| match serde_json::from_str(&sess.messages_json) {
+            Ok(v) => Some(v),
+            Err(e) => {
+                tracing::warn!("session '{}' deserialize failed: {}", session_key, e);
+                None
+            }
+        })
         .unwrap_or_default();
 
     let task_obj = sparrow::engine::Task {
@@ -1578,10 +1660,12 @@ async fn run_task(
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
     let task_for_recording = task.to_string();
-    let config_snapshot = redacted_config_snapshot(config);
+    let config_snapshot = redacted_config_snapshot(&run_config);
     let repo_head = current_repo_head();
     let print_handle = tokio::spawn(async move {
         let mut full_reply = String::new();
+        let mut think = sparrow::event::ThinkStripper::new();
+        use std::io::Write as _;
         while let Some(event) = rx.recv().await {
             if let sparrow::event::Event::ThinkingDelta { text, .. } = &event {
                 full_reply.push_str(text);
@@ -1605,7 +1689,12 @@ async fn run_task(
             }
             match &event {
                 sparrow::event::Event::ThinkingDelta { text, .. } => {
-                    print!("{}", text);
+                    // Strip <think> reasoning blocks; stream the rest.
+                    let visible = think.feed(text);
+                    if !visible.is_empty() {
+                        print!("{}", visible);
+                        let _ = std::io::stdout().flush();
+                    }
                 }
                 sparrow::event::Event::ToolUseProposed { name, .. } => {
                     println!("\n[Tool: {}]", name);
@@ -1629,10 +1718,15 @@ async fn run_task(
                         println!("\n[Routing] {} → {} ({})", from, to, clean);
                     }
                 }
-                sparrow::event::Event::CostUpdate { usd, .. } => {
-                    println!("\n[Cost: ${:.4}]", usd);
-                }
+                // Cost is shown once at the end (no noisy inline $0.0000 prints).
                 sparrow::event::Event::RunFinished { outcome, .. } => {
+                    // Flush any text held back by the think-stripper (recovers an
+                    // unclosed <think> so the answer is never silently swallowed).
+                    let tail = think.flush();
+                    if !tail.trim().is_empty() {
+                        print!("{}", tail);
+                        let _ = std::io::stdout().flush();
+                    }
                     println!(
                         "\nDone. Cost: ${:.4}, Tokens: {} in / {} out",
                         outcome.cost_usd, outcome.tokens.input, outcome.tokens.output
@@ -1650,11 +1744,11 @@ async fn run_task(
     });
 
     println!("Running: {}", task);
-    let outcome = engine.drive(task_obj, tx).await?;
-    let full_reply = print_handle.await?;
-    println!("Status: {}", outcome.status);
+    let drive_result = engine.drive(task_obj, tx).await;
+    let full_reply = print_handle.await.unwrap_or_default();
 
-    // Persist the turn to the session (prior + user + assistant), capped.
+    // Persist the turn to the session BEFORE propagating any error, so a
+    // transient failure never erases the user's message from the conversation.
     if let Some(store) = &sessions {
         let mut updated = prior_msgs;
         updated.push(sparrow::provider::Msg {
@@ -1675,7 +1769,206 @@ async fn run_task(
         }
         let _ = store.save(&session_key, &updated, None);
     }
+
+    let outcome = drive_result?;
+    println!("Status: {}", outcome.status);
     Ok(())
+}
+
+fn config_for_soul(config: &sparrow::config::Config, soul: &Soul) -> sparrow::config::Config {
+    let mut run_config = config.clone();
+    if let Some(model_ref) = soul.default_model.as_deref() {
+        if let Some((provider, model)) = parse_agent_model_ref(model_ref) {
+            run_config.forced_model = Some((provider.clone(), model.clone()));
+            for tier in ["trivial", "small", "medium", "hard", "vision"] {
+                run_config
+                    .routing
+                    .policy
+                    .insert(tier.to_string(), provider.clone());
+            }
+            run_config
+                .providers
+                .entry(provider)
+                .or_insert_with(|| ProviderConfig {
+                    adapter: "openai-compatible".into(),
+                    base_url: None,
+                    models: vec![],
+                    api_key_env: None,
+                })
+                .models = vec![model];
+        }
+    }
+    if let Some(mode) = soul
+        .permission_mode
+        .as_deref()
+        .or(soul.default_autonomy.as_deref())
+        .and_then(sparrow::permissions::PermissionMode::parse)
+    {
+        run_config.defaults.autonomy = mode.autonomy_level();
+        run_config.permissions.mode = mode;
+    }
+    for tool in &soul.disallowed_tools {
+        if !run_config.permissions.tools.deny.contains(tool) {
+            run_config.permissions.tools.deny.push(tool.clone());
+        }
+    }
+    if !soul.tools.is_empty() {
+        for tool in &soul.tools {
+            if !run_config.permissions.tools.allow.contains(tool) {
+                run_config.permissions.tools.allow.push(tool.clone());
+            }
+        }
+    }
+    run_config
+}
+
+fn parse_agent_model_ref(model_ref: &str) -> Option<(String, String)> {
+    let model_ref = model_ref.trim();
+    if model_ref.is_empty() {
+        return None;
+    }
+    if let Some((provider, model)) = model_ref.split_once(':') {
+        let provider = provider.trim();
+        let model = model.trim();
+        if !provider.is_empty() && !model.is_empty() {
+            return Some((provider.to_string(), model.to_string()));
+        }
+    }
+    if let Some((provider, rest)) = model_ref.split_once('/') {
+        let provider = provider.trim();
+        if !provider.is_empty() {
+            return Some((provider.to_string(), model_ref.to_string()));
+        }
+        if !rest.trim().is_empty() {
+            return Some(("custom".into(), model_ref.to_string()));
+        }
+    }
+    Some(("custom".into(), model_ref.to_string()))
+}
+
+fn handle_plan(
+    task: &str,
+    config: &sparrow::config::Config,
+    skills: Arc<dyn SkillLibrary>,
+    json: bool,
+) -> anyhow::Result<()> {
+    let project_root = std::env::current_dir()?;
+    let commands =
+        sparrow::commands::all_commands(&project_root, &config.config_dir, Some(skills.as_ref()));
+    let plan = sparrow::plan::build_read_only_plan(task, &commands);
+    if json {
+        println!("{}", serde_json::to_string_pretty(&plan)?);
+    } else {
+        println!("{}", plan.render_markdown());
+    }
+    Ok(())
+}
+
+fn handle_permissions(
+    action: sparrow::cli::PermissionAction,
+    config: &sparrow::config::Config,
+    store: &FsConfigStore,
+) -> anyhow::Result<()> {
+    let mut updated = config.clone();
+    match action {
+        sparrow::cli::PermissionAction::List => {
+            print_permission_policy(&updated);
+            return Ok(());
+        }
+        sparrow::cli::PermissionAction::Set { mode } => {
+            let Some(mode) = sparrow::permissions::PermissionMode::parse(&mode) else {
+                anyhow::bail!(
+                    "Unknown permission mode '{}'. Use read-only, plan, supervised, trusted, autonomous, or emergency-stop.",
+                    mode
+                );
+            };
+            updated.permissions.mode = mode.clone();
+            updated.defaults.autonomy = mode.autonomy_level();
+            println!(
+                "Permission mode set to '{}' (autonomy: {:?}).",
+                mode.as_str(),
+                updated.defaults.autonomy
+            );
+        }
+        sparrow::cli::PermissionAction::AllowTool { tool } => {
+            push_unique(&mut updated.permissions.tools.allow, tool);
+            println!("Tool allow rule added.");
+        }
+        sparrow::cli::PermissionAction::AskTool { tool } => {
+            push_unique(&mut updated.permissions.tools.ask, tool);
+            println!("Tool approval rule added.");
+        }
+        sparrow::cli::PermissionAction::DenyTool { tool } => {
+            push_unique(&mut updated.permissions.tools.deny, tool);
+            println!("Tool deny rule added.");
+        }
+        sparrow::cli::PermissionAction::AllowPath { path } => {
+            push_unique_path(&mut updated.permissions.paths.allow, path);
+            println!("Path allow rule added.");
+        }
+        sparrow::cli::PermissionAction::DenyPath { path } => {
+            push_unique_path(&mut updated.permissions.paths.deny, path);
+            println!("Path deny rule added.");
+        }
+    }
+    store.save(&updated)?;
+    print_permission_policy(&updated);
+    Ok(())
+}
+
+fn push_unique(values: &mut Vec<String>, value: String) {
+    if !values.iter().any(|existing| existing == &value) {
+        values.push(value);
+    }
+}
+
+fn push_unique_path(values: &mut Vec<std::path::PathBuf>, value: std::path::PathBuf) {
+    if !values.iter().any(|existing| existing == &value) {
+        values.push(value);
+    }
+}
+
+fn print_permission_policy(config: &sparrow::config::Config) {
+    let policy = &config.permissions;
+    println!("Permission policy");
+    println!("=================");
+    println!("Mode     : {}", policy.mode.as_str());
+    println!("Autonomy : {:?}", config.defaults.autonomy);
+    println!("Tools");
+    println!("  allow : {}", list_or_empty(&policy.tools.allow));
+    println!("  ask   : {}", list_or_empty(&policy.tools.ask));
+    println!("  deny  : {}", list_or_empty(&policy.tools.deny));
+    println!("Paths");
+    println!("  allow : {}", path_list_or_empty(&policy.paths.allow));
+    println!("  deny  : {}", path_list_or_empty(&policy.paths.deny));
+    println!("Providers");
+    println!("  allow : {}", list_or_empty(&policy.providers.allow));
+    println!("  ask   : {}", list_or_empty(&policy.providers.ask));
+    println!("  deny  : {}", list_or_empty(&policy.providers.deny));
+    println!("Surfaces");
+    println!("  allow : {}", list_or_empty(&policy.surfaces.allow));
+    println!("  ask   : {}", list_or_empty(&policy.surfaces.ask));
+    println!("  deny  : {}", list_or_empty(&policy.surfaces.deny));
+}
+
+fn list_or_empty(values: &[String]) -> String {
+    if values.is_empty() {
+        "(empty)".into()
+    } else {
+        values.join(", ")
+    }
+}
+
+fn path_list_or_empty(values: &[std::path::PathBuf]) -> String {
+    if values.is_empty() {
+        "(empty)".into()
+    } else {
+        values
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
 }
 
 // ─── Swarm command ──────────────────────────────────────────────────────────────
@@ -1806,6 +2099,23 @@ fn handle_skills(
                 }
             }
         }
+        sparrow::cli::SkillsAction::View { name } => match library.invoke(&name)? {
+            Some(invocation) => {
+                println!("# {}", invocation.skill.name);
+                println!("{}", invocation.skill.description);
+                println!("Triggers: {}", invocation.skill.trigger.join(", "));
+                println!();
+                println!("{}", invocation.skill.body);
+                if !invocation.loaded_references.is_empty() {
+                    println!("\nLoaded references:");
+                    for (path, content) in invocation.loaded_references {
+                        println!("## {}", path);
+                        println!("{}", content);
+                    }
+                }
+            }
+            None => println!("No skill named '{}'.", name),
+        },
         sparrow::cli::SkillsAction::Create { name } => {
             let skill = sparrow::capabilities::Skill {
                 name: name.clone(),
@@ -1817,12 +2127,30 @@ fn handle_skills(
                 created_at: chrono::Utc::now().format("%Y-%m-%d").to_string(),
                 score: 0.5,
                 auto_generated: false,
+                references: Vec::new(),
+                templates: Vec::new(),
+                scripts: Vec::new(),
+                assets: Vec::new(),
             };
             library.add(skill)?;
             println!(
                 "Skill '{}' created. Edit: ~/.config/sparrow/skills/{}/SKILL.md",
                 name, name
             );
+        }
+        sparrow::cli::SkillsAction::Install { source } => {
+            let skill = load_skill_from_source(&source)?;
+            let name = skill.name.clone();
+            library.add(skill)?;
+            println!("Installed skill '{}'.", name);
+        }
+        sparrow::cli::SkillsAction::Update { name } => {
+            let Some(skill) = library.get(&name) else {
+                println!("No skill named '{}'.", name);
+                return Ok(());
+            };
+            library.add(skill)?;
+            println!("Skill '{}' refreshed.", name);
         }
         sparrow::cli::SkillsAction::Prune => {
             let removed = library.prune(0.2)?;
@@ -1832,6 +2160,276 @@ fn handle_skills(
             );
             let skills = library.all();
             println!("Library now has {} skills.", skills.len());
+        }
+        sparrow::cli::SkillsAction::Rm { name } => {
+            if library.remove(&name)? {
+                println!("Removed skill '{}'.", name);
+            } else {
+                println!(
+                    "No skill named '{}'. Run 'sparrow skills list' to see names.",
+                    name
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn load_skill_from_source(source: &str) -> anyhow::Result<sparrow::capabilities::Skill> {
+    let source = source.trim();
+    let temp_dir;
+    let path = if source.starts_with("http://")
+        || source.starts_with("https://")
+        || source.ends_with(".git")
+        || source.contains("github.com")
+    {
+        temp_dir = std::env::temp_dir().join(format!("sparrow-skill-{}", uuid::Uuid::new_v4()));
+        let status = std::process::Command::new("git")
+            .args([
+                "clone",
+                "--depth",
+                "1",
+                source,
+                temp_dir.to_string_lossy().as_ref(),
+            ])
+            .status()?;
+        if !status.success() {
+            anyhow::bail!("git clone failed for skill source {}", source);
+        }
+        temp_dir.clone()
+    } else {
+        temp_dir = std::path::PathBuf::new();
+        std::path::PathBuf::from(source)
+    };
+
+    let skill_file = if path.is_dir() {
+        path.join("SKILL.md")
+    } else {
+        path.clone()
+    };
+    let content = std::fs::read_to_string(&skill_file)?;
+    let source_file = skill_file
+        .file_name()
+        .map(|name| name.to_string_lossy().to_string())
+        .unwrap_or_else(|| "SKILL.md".into());
+    let skill = sparrow::capabilities::Skill::from_markdown(&content, &source_file)
+        .ok_or_else(|| anyhow::anyhow!("could not parse skill from {}", skill_file.display()))?;
+    if !temp_dir.as_os_str().is_empty() {
+        let _ = std::fs::remove_dir_all(temp_dir);
+    }
+    Ok(skill)
+}
+
+fn handle_plugins(
+    action: sparrow::cli::PluginsAction,
+    config_dir: &std::path::Path,
+) -> anyhow::Result<()> {
+    let plugins_dir = config_dir.join("plugins");
+    match action {
+        sparrow::cli::PluginsAction::List => {
+            let registry = sparrow::capabilities::plugin::PluginRegistry::new(plugins_dir);
+            let plugins = registry.scan();
+            if plugins.is_empty() {
+                println!("No plugins installed.");
+            } else {
+                println!("Plugins ({}):", plugins.len());
+                for plugin in plugins {
+                    let audit = registry.audit(&plugin);
+                    println!(
+                        "  {} {} | commands:{} skills:{} hooks:{} | {}",
+                        plugin.manifest.name,
+                        plugin.manifest.version,
+                        plugin.manifest.commands.len(),
+                        plugin.manifest.skills.len(),
+                        plugin.manifest.hooks.len(),
+                        if audit.allowed { "allowed" } else { "blocked" }
+                    );
+                    for warning in audit.warnings {
+                        println!("    - {}", warning);
+                    }
+                }
+            }
+        }
+        sparrow::cli::PluginsAction::Install { source, allow } => {
+            let source_path = std::path::PathBuf::from(&source);
+            let mut allowlist = Vec::new();
+            if allow {
+                if let Ok(plugin) = sparrow::capabilities::plugin::load_plugin(&source_path) {
+                    allowlist.push(plugin.manifest.name);
+                }
+            }
+            let registry = sparrow::capabilities::plugin::PluginRegistry::new(plugins_dir)
+                .with_allowlist(allowlist);
+            let plugin = if source.starts_with("http://")
+                || source.starts_with("https://")
+                || source.ends_with(".git")
+                || source.contains("github.com")
+            {
+                registry.install_github(&source)?
+            } else {
+                registry.install_local(&source_path)?
+            };
+            println!("Installed plugin '{}'.", plugin.manifest.name);
+        }
+        sparrow::cli::PluginsAction::Rm { name } => {
+            let path = plugins_dir.join(&name);
+            if path.exists() {
+                std::fs::remove_dir_all(path)?;
+                println!("Removed plugin '{}'.", name);
+            } else {
+                println!("No plugin named '{}'.", name);
+            }
+        }
+    }
+    Ok(())
+}
+
+fn handle_tools(
+    action: sparrow::cli::ToolsAction,
+    config_store: &FsConfigStore,
+) -> anyhow::Result<()> {
+    match action {
+        sparrow::cli::ToolsAction::List { surface } => {
+            let metas = sparrow::tools::known_tool_metadata(surface.as_deref());
+            println!("Toolsets: {}", sparrow::tools::TOOLSETS.join(", "));
+            println!("Tools ({}):", metas.len());
+            for meta in metas {
+                println!(
+                    "  {:16} set:{:14} risk:{:?} auth:{} mutates:{} network:{} exec:{}",
+                    meta.name,
+                    meta.toolset,
+                    meta.risk,
+                    meta.requires_auth,
+                    meta.mutates_files,
+                    meta.network,
+                    meta.exec
+                );
+            }
+        }
+        sparrow::cli::ToolsAction::Enable { tool } => {
+            let mut cfg = config_store.load()?;
+            cfg.permissions.tools.deny.retain(|item| item != &tool);
+            if !cfg.permissions.tools.allow.contains(&tool) {
+                cfg.permissions.tools.allow.push(tool.clone());
+            }
+            config_store.save(&cfg)?;
+            println!("Tool '{}' enabled in permissions.", tool);
+        }
+        sparrow::cli::ToolsAction::Disable { tool } => {
+            let mut cfg = config_store.load()?;
+            cfg.permissions.tools.allow.retain(|item| item != &tool);
+            if !cfg.permissions.tools.deny.contains(&tool) {
+                cfg.permissions.tools.deny.push(tool.clone());
+            }
+            config_store.save(&cfg)?;
+            println!("Tool '{}' disabled in permissions.", tool);
+        }
+    }
+    Ok(())
+}
+
+// ─── Security audit ─────────────────────────────────────────────────────────────
+
+fn handle_security(
+    action: sparrow::cli::SecurityAction,
+    config: &sparrow::config::Config,
+) -> anyhow::Result<()> {
+    match action {
+        sparrow::cli::SecurityAction::Audit { json } => {
+            let audit = sparrow::security::SecurityAudit::run(config, &config.hooks);
+            if json {
+                println!("{}", audit.to_json());
+            } else {
+                println!("{}", audit.summary());
+                for f in &audit.findings {
+                    let tag = match f.severity {
+                        sparrow::security::Severity::Critical => "CRIT",
+                        sparrow::security::Severity::Warning => "WARN",
+                        sparrow::security::Severity::Info => "INFO",
+                    };
+                    println!("  [{}] {}: {}", tag, f.category, f.message);
+                    if !f.recommendation.is_empty() {
+                        println!("        → {}", f.recommendation);
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+// ─── Context compaction / handoff ───────────────────────────────────────────────
+
+fn handle_compact(
+    task: Option<String>,
+    out: Option<std::path::PathBuf>,
+    json: bool,
+) -> anyhow::Result<()> {
+    use sparrow::context::HandoffDoc;
+
+    let task_str = task.unwrap_or_else(|| "ad-hoc handoff".into());
+    let doc = HandoffDoc::new(task_str);
+
+    let default_path = std::path::PathBuf::from(".sparrow/handoff").join(format!(
+        "{}.md",
+        chrono::Utc::now().format("%Y%m%dT%H%M%SZ")
+    ));
+    let path = out.unwrap_or(default_path);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let md = doc.to_markdown();
+    std::fs::write(&path, &md)?;
+
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "ok": true,
+                "path": path.to_string_lossy(),
+                "doc": doc,
+            }))?
+        );
+    } else {
+        println!("handoff written: {}", path.display());
+        println!("---");
+        println!("{}", md);
+    }
+    Ok(())
+}
+
+// ─── GitHub Action / remote PR ──────────────────────────────────────────────────
+
+fn handle_github(action: sparrow::cli::GithubAction) -> anyhow::Result<()> {
+    use sparrow::cli::GithubAction;
+    use sparrow::github;
+
+    match action {
+        GithubAction::Review {
+            pr,
+            dry_run,
+            model,
+            allowed_tools,
+        } => {
+            let mut plan = github::plan_review(pr, model, allowed_tools, dry_run);
+            if dry_run {
+                println!("{}", serde_json::to_string_pretty(&plan)?);
+                return Ok(());
+            }
+            github::require_action_env()?;
+            plan.diff_preview = github::fetch_pr_diff(pr)?;
+            // We intentionally do NOT call the model here. The actual review
+            // is performed by `sparrow run` invoked separately by the Action
+            // composite step, so this command stays a pure data-fetcher.
+            println!("{}", serde_json::to_string_pretty(&plan)?);
+        }
+        GithubAction::Status => {
+            github::require_action_env()?;
+            println!("{}", github::ci_status()?);
+        }
+        GithubAction::Logs { run_id } => {
+            github::require_action_env()?;
+            println!("{}", github::ci_logs(&run_id)?);
         }
     }
     Ok(())
@@ -2248,6 +2846,37 @@ async fn handle_gateway(
             println!("\nGateway running. Press Ctrl+C to stop.");
             println!("Send messages via any configured surface.\n");
 
+            // Abort poller: watch `<state>/gateway-abort/<run>.abort` files
+            // written by `sparrow gateway abort <run>` and cancel the matching
+            // in-process run via the registry.
+            {
+                let registry = router_handler.run_registry.clone();
+                let abort_dir = state_dir.join("gateway-abort");
+                std::fs::create_dir_all(&abort_dir).ok();
+                tokio::spawn(async move {
+                    loop {
+                        if let Ok(entries) = std::fs::read_dir(&abort_dir) {
+                            for entry in entries.flatten() {
+                                let path = entry.path();
+                                let run_id = path
+                                    .file_stem()
+                                    .map(|s| s.to_string_lossy().to_string())
+                                    .unwrap_or_default();
+                                if run_id.is_empty() {
+                                    continue;
+                                }
+                                let aborted = registry.abort(&run_id);
+                                let _ = std::fs::remove_file(&path);
+                                if aborted {
+                                    eprintln!("[gateway] aborted run {}", run_id);
+                                }
+                            }
+                        }
+                        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                    }
+                });
+            }
+
             // Main loop: route messages and responses
             loop {
                 tokio::select! {
@@ -2313,6 +2942,43 @@ async fn handle_gateway(
             }
             Ok(())
         }
+        sparrow::cli::GatewayAction::Health => {
+            let pid = read_gateway_pid(state_dir);
+            let pid_running = pid.is_some_and(process_is_running);
+            let ws_open = gateway_ws_port_open();
+            println!("Gateway health");
+            println!(
+                "  pid_file : {}",
+                if pid.is_some() { "present" } else { "absent" }
+            );
+            println!(
+                "  process  : {}",
+                if pid_running { "running" } else { "stopped" }
+            );
+            println!(
+                "  ws       : {}",
+                if ws_open { "online" } else { "offline" }
+            );
+            println!(
+                "  sessions : {}",
+                config.state_dir.join("sessions.db").display()
+            );
+            if pid.is_some() && !pid_running && !ws_open {
+                println!("  warning  : stale gateway pid file");
+            }
+            Ok(())
+        }
+        sparrow::cli::GatewayAction::Abort { run } => {
+            let abort_dir = state_dir.join("gateway-abort");
+            std::fs::create_dir_all(&abort_dir)?;
+            std::fs::write(
+                abort_dir.join(format!("{}.abort", sanitize_file_component(&run))),
+                chrono::Utc::now().to_rfc3339(),
+            )?;
+            println!("Gateway abort requested for run '{}'.", run);
+            println!("Abort signal: {}", abort_dir.display());
+            Ok(())
+        }
         sparrow::cli::GatewayAction::Stop => {
             match read_gateway_pid(state_dir) {
                 Some(pid) if process_is_running(pid) => {
@@ -2355,6 +3021,26 @@ fn remove_gateway_pid(state_dir: &std::path::Path) -> std::io::Result<()> {
         std::fs::remove_file(path)?;
     }
     Ok(())
+}
+
+fn sanitize_file_component(value: &str) -> String {
+    let cleaned = value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('_')
+        .to_string();
+    if cleaned.is_empty() {
+        "run".into()
+    } else {
+        cleaned
+    }
 }
 
 fn gateway_ws_port_open() -> bool {
@@ -2404,6 +3090,60 @@ fn stop_gateway_process(pid: u32) -> anyhow::Result<()> {
             .status()?;
         if !status.success() {
             anyhow::bail!("kill failed for PID {}", pid);
+        }
+    }
+    Ok(())
+}
+
+fn handle_sessions(
+    action: sparrow::cli::SessionAction,
+    state_dir: &std::path::Path,
+) -> anyhow::Result<()> {
+    let store = sparrow::runtime::session::SessionStore::open(&state_dir.join("sessions.db"))?;
+    match action {
+        sparrow::cli::SessionAction::List => {
+            let sessions = store.list();
+            if sessions.is_empty() {
+                println!("No sessions stored.");
+            } else {
+                println!("Sessions ({}):", sessions.len());
+                for session in sessions {
+                    println!(
+                        "  {} | status:{} | updated:{} | {} bytes",
+                        session.id,
+                        session.status,
+                        session.updated_at,
+                        session.messages_json.len()
+                    );
+                }
+            }
+        }
+        sparrow::cli::SessionAction::Export { id, path } => {
+            let Some(session) = store.load(&id) else {
+                anyhow::bail!("session '{}' not found", id);
+            };
+            let output = path.unwrap_or_else(|| {
+                state_dir.join(format!("session-{}.json", sanitize_file_component(&id)))
+            });
+            if let Some(parent) = output.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(&output, serde_json::to_string_pretty(&session)?)?;
+            println!("Exported session '{}' to {}", id, output.display());
+        }
+        sparrow::cli::SessionAction::Cleanup { older_than_days } => {
+            let cutoff = chrono::Utc::now().timestamp() - (older_than_days as i64 * 86_400);
+            let mut removed = 0usize;
+            for session in store.list() {
+                if session.updated_at < cutoff {
+                    store.delete(&session.id)?;
+                    removed += 1;
+                }
+            }
+            println!(
+                "Removed {} session(s) older than {} day(s).",
+                removed, older_than_days
+            );
         }
     }
     Ok(())
@@ -2474,10 +3214,16 @@ fn handle_profile(
 fn handle_memory(
     action: sparrow::cli::MemoryAction,
     memory: &Arc<dyn Memory>,
+    state_dir: &std::path::Path,
 ) -> anyhow::Result<()> {
     match action {
         sparrow::cli::MemoryAction::List => {
             let facts = memory.all_facts();
+            let stats = memory.memory_stats();
+            println!(
+                "Memory docs: MEMORY.md {}/{} chars, USER.md {}/{} chars",
+                stats.memory_chars, stats.memory_limit, stats.user_chars, stats.user_limit
+            );
             if facts.is_empty() {
                 println!("No facts stored. Facts are auto-distilled from successful runs.");
             } else {
@@ -2501,6 +3247,93 @@ fn handle_memory(
             };
             memory.remember(fact)?;
             println!("Fact added.");
+        }
+        sparrow::cli::MemoryAction::Replace { id, key, value } => {
+            let fact = sparrow::memory::Fact {
+                id: id.clone(),
+                key,
+                value,
+                created_at: chrono::Utc::now().to_rfc3339(),
+                updated_at: chrono::Utc::now().to_rfc3339(),
+            };
+            memory.remember(fact)?;
+            println!("Fact '{}' replaced.", id);
+        }
+        sparrow::cli::MemoryAction::Recall { query, limit } => {
+            let facts = memory.recall(&query, limit);
+            if facts.is_empty() {
+                println!("No facts match '{}'.", query);
+            } else {
+                println!("Matching facts ({}):", facts.len());
+                for f in &facts {
+                    println!("  {}  {}: {}", f.id, f.key, f.value);
+                }
+            }
+        }
+        sparrow::cli::MemoryAction::Consolidate => {
+            memory.consolidate_memory()?;
+            println!("Memory consolidated into bounded MEMORY.md/USER.md docs.");
+        }
+        sparrow::cli::MemoryAction::Docs => {
+            let mut found = false;
+            for kind in [
+                sparrow::memory::MemoryDocKind::Memory,
+                sparrow::memory::MemoryDocKind::User,
+            ] {
+                if let Some(doc) = memory.memory_doc(kind) {
+                    found = true;
+                    println!("## {} ({})", kind.as_str(), doc.updated_at);
+                    println!("{}", doc.content);
+                    println!();
+                }
+            }
+            if !found {
+                println!("No MEMORY.md/USER.md docs stored yet.");
+            }
+        }
+        sparrow::cli::MemoryAction::Search { query, limit } => {
+            let store =
+                sparrow::runtime::session::SessionStore::open(&state_dir.join("sessions.db"))?;
+            let hits = store.search(&query, limit);
+            if hits.is_empty() {
+                println!("No sessions match '{}'.", query);
+            } else {
+                for hit in hits {
+                    println!(
+                        "{} #{} [{}] {}",
+                        hit.session_id,
+                        hit.turn_index,
+                        hit.role,
+                        hit.text.replace('\n', " ")
+                    );
+                }
+            }
+        }
+        sparrow::cli::MemoryAction::Scroll {
+            session,
+            around,
+            before,
+            after,
+        } => {
+            let store =
+                sparrow::runtime::session::SessionStore::open(&state_dir.join("sessions.db"))?;
+            if let Some(slice) = store.scroll(&session, around, before, after) {
+                for (offset, msg) in slice.messages.iter().enumerate() {
+                    let idx = slice.start + offset;
+                    let text = msg
+                        .content
+                        .iter()
+                        .filter_map(|block| match block {
+                            sparrow::provider::ContentBlock::Text { text } => Some(text.as_str()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    println!("#{} [{}] {}", idx, msg.role, text.replace('\n', " "));
+                }
+            } else {
+                println!("Session '{}' not found.", session);
+            }
         }
     }
     Ok(())
@@ -2928,6 +3761,8 @@ async fn handle_webview(
         Some(command_tx),
         Some(shared_config),
         Some(approvals),
+        Some(skills),
+        Some(memory.clone()),
     );
     server.serve().await?;
 
@@ -3066,8 +3901,15 @@ fn handle_status(
     }
 
     // Memory & model cache
-    let facts = memory.all_facts();
-    println!("Memory     : {} facts stored", facts.len());
+    let mem_stats = memory.memory_stats();
+    println!(
+        "Memory     : {} facts | MEMORY.md {}/{} | USER.md {}/{} chars",
+        mem_stats.facts,
+        mem_stats.memory_chars,
+        mem_stats.memory_limit,
+        mem_stats.user_chars,
+        mem_stats.user_limit
+    );
     let total_discovered: usize = sparrow::config::providers::provider_registry()
         .iter()
         .map(|p| {

@@ -47,6 +47,91 @@ pub fn is_local_model_unavailable(reason: &str) -> bool {
     )
 }
 
+/// Streaming filter that strips `<think>…</think>` reasoning blocks emitted by
+/// reasoning models (minimax, deepseek-r1, qwq…) so surfaces show the answer,
+/// not the chain-of-thought. Handles tags split across streamed deltas.
+#[derive(Default)]
+pub struct ThinkStripper {
+    in_think: bool,
+    pending: String,
+    /// Content seen inside the current (unclosed) think block, kept so that if
+    /// the block NEVER closes (model didn't emit </think>) we can recover it on
+    /// flush rather than silently swallowing the whole answer (fail-open).
+    think_buf: String,
+}
+
+impl ThinkStripper {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Feed a streamed delta; returns the portion that should be displayed.
+    pub fn feed(&mut self, delta: &str) -> String {
+        const OPEN: &str = "<think>";
+        const CLOSE: &str = "</think>";
+        self.pending.push_str(delta);
+        let mut out = String::new();
+        loop {
+            if !self.in_think {
+                if let Some(i) = self.pending.find(OPEN) {
+                    out.push_str(&self.pending[..i]);
+                    self.pending.replace_range(..i + OPEN.len(), "");
+                    self.in_think = true;
+                    self.think_buf.clear();
+                    continue;
+                }
+                let keep = dangling_prefix(&self.pending, OPEN);
+                let emit_to = self.pending.len() - keep;
+                out.push_str(&self.pending[..emit_to]);
+                self.pending.replace_range(..emit_to, "");
+                break;
+            } else {
+                if let Some(i) = self.pending.find(CLOSE) {
+                    // Real closed think block → discard its content.
+                    self.pending.replace_range(..i + CLOSE.len(), "");
+                    self.in_think = false;
+                    self.think_buf.clear();
+                    continue;
+                }
+                let keep = dangling_prefix(&self.pending, CLOSE);
+                let drop_to = self.pending.len() - keep;
+                // Stash dropped think content for fail-open recovery.
+                self.think_buf.push_str(&self.pending[..drop_to]);
+                self.pending.replace_range(..drop_to, "");
+                break;
+            }
+        }
+        out
+    }
+
+    /// Flush remaining buffered text. If a think block was opened but never
+    /// closed, recover its content (the model likely put the answer there).
+    pub fn flush(&mut self) -> String {
+        let mut rest = std::mem::take(&mut self.pending);
+        if self.in_think {
+            // Unclosed think → show what we stashed (fail-open).
+            let recovered = std::mem::take(&mut self.think_buf);
+            self.in_think = false;
+            format!("{}{}", recovered, rest)
+        } else {
+            self.think_buf.clear();
+            std::mem::take(&mut rest)
+        }
+    }
+}
+
+/// Length (bytes) of the trailing portion of `s` that is a prefix of `tag`,
+/// so a tag split across deltas isn't emitted prematurely. ASCII tags only.
+fn dangling_prefix(s: &str, tag: &str) -> usize {
+    let max = tag.len().saturating_sub(1).min(s.len());
+    for n in (1..=max).rev() {
+        if s.is_char_boundary(s.len() - n) && s[s.len() - n..] == tag[..n] {
+            return n;
+        }
+    }
+    0
+}
+
 // ─── Content blocks ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -272,5 +357,13 @@ pub enum Event {
     Error {
         run: RunId,
         message: String,
+    },
+    /// A compaction pass has just completed. Surfaces the before/after sizes
+    /// (in chars) and the path of the handoff doc, if any.
+    Compacted {
+        run: RunId,
+        before_chars: usize,
+        after_chars: usize,
+        handoff_path: Option<String>,
     },
 }

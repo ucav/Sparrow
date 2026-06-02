@@ -65,6 +65,16 @@ pub enum Commands {
         json: bool,
     },
 
+    /// Create a read-only execution plan for a task
+    Plan {
+        /// Task description
+        task: String,
+
+        /// Emit JSON instead of Markdown
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Interactive multi-turn chat
     Chat,
 
@@ -130,6 +140,43 @@ pub enum Commands {
         action: SkillsAction,
     },
 
+    /// Manage local Sparrow plugins
+    Plugins {
+        #[command(subcommand)]
+        action: PluginsAction,
+    },
+
+    /// Inspect and gate toolsets
+    Tools {
+        #[command(subcommand)]
+        action: ToolsAction,
+    },
+
+    /// Security audit of config, permissions, plugins, hooks, secrets
+    Security {
+        #[command(subcommand)]
+        action: SecurityAction,
+    },
+
+    /// GitHub Action / remote PR workflow
+    Github {
+        #[command(subcommand)]
+        action: GithubAction,
+    },
+
+    /// Compact context and write a durable handoff doc
+    Compact {
+        /// Task description (recorded in the handoff)
+        #[arg(long)]
+        task: Option<String>,
+        /// Output path (default: .sparrow/handoff/<timestamp>.md)
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Emit JSON instead of Markdown to stdout (the file is always Markdown)
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Manage MCP connectors
     Mcp {
         #[command(subcommand)]
@@ -163,6 +210,12 @@ pub enum Commands {
         action: GatewayAction,
     },
 
+    /// Manage saved sessions
+    Sessions {
+        #[command(subcommand)]
+        action: SessionAction,
+    },
+
     /// Interactive tutorial
     Learn,
 
@@ -176,6 +229,12 @@ pub enum Commands {
     Memory {
         #[command(subcommand)]
         action: MemoryAction,
+    },
+
+    /// Inspect and update permission policy
+    Permissions {
+        #[command(subcommand)]
+        action: PermissionAction,
     },
 
     /// Profile management
@@ -214,6 +273,7 @@ pub enum AgentAction {
     Edit { name: String },
     Rm { name: String },
     Run { name: String, task: String },
+    Mention { name: String, message: String },
 }
 
 #[derive(Subcommand)]
@@ -237,8 +297,82 @@ pub enum AuthAction {
 #[derive(Subcommand)]
 pub enum SkillsAction {
     List,
-    Create { name: String },
+    View {
+        name: String,
+    },
+    Create {
+        name: String,
+    },
+    Install {
+        source: String,
+    },
+    Update {
+        name: String,
+    },
     Prune,
+    /// Remove a skill by name (e.g. to delete junk auto-learned skills)
+    Rm {
+        name: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum PluginsAction {
+    List,
+    Install {
+        source: String,
+        #[arg(long)]
+        allow: bool,
+    },
+    Rm {
+        name: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum GithubAction {
+    /// Review a pull request: fetch diff via `gh`, run a read-only review prompt
+    Review {
+        /// PR number
+        pr: u64,
+        /// Print the review plan without invoking the model or posting comments
+        #[arg(long)]
+        dry_run: bool,
+        /// Override the model id
+        #[arg(long)]
+        model: Option<String>,
+        /// Restrict tool allow-list (comma-separated). Empty = inherit config.
+        #[arg(long)]
+        allowed_tools: Option<String>,
+    },
+    /// Show CI status for the current branch (via `gh run list`)
+    Status,
+    /// Fetch CI logs for a workflow run id (via `gh run view --log`)
+    Logs { run_id: String },
+}
+
+#[derive(Subcommand)]
+pub enum SecurityAction {
+    /// Run a full security audit
+    Audit {
+        /// Emit JSON instead of human-readable summary
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ToolsAction {
+    List {
+        #[arg(long)]
+        surface: Option<String>,
+    },
+    Enable {
+        tool: String,
+    },
+    Disable {
+        tool: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -285,7 +419,22 @@ pub enum CheckpointAction {
 pub enum GatewayAction {
     Start,
     Status,
+    Health,
+    Abort { run: String },
     Stop,
+}
+
+#[derive(Subcommand)]
+pub enum SessionAction {
+    List,
+    Export {
+        id: String,
+        path: Option<PathBuf>,
+    },
+    Cleanup {
+        #[arg(long, default_value_t = 30)]
+        older_than_days: u64,
+    },
 }
 
 #[derive(Subcommand)]
@@ -303,6 +452,55 @@ pub enum ImportSource {
 #[derive(Subcommand)]
 pub enum MemoryAction {
     List,
-    Forget { id: String },
-    Add { key: String, value: String },
+    Forget {
+        id: String,
+    },
+    Add {
+        key: String,
+        value: String,
+    },
+    Replace {
+        id: String,
+        key: String,
+        value: String,
+    },
+    Recall {
+        query: String,
+        #[arg(long, default_value_t = 10)]
+        limit: usize,
+    },
+    Consolidate,
+    Docs,
+    Search {
+        query: String,
+        #[arg(long, default_value_t = 10)]
+        limit: usize,
+    },
+    Scroll {
+        session: String,
+        #[arg(long, default_value_t = 0)]
+        around: usize,
+        #[arg(long, default_value_t = 3)]
+        before: usize,
+        #[arg(long, default_value_t = 3)]
+        after: usize,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum PermissionAction {
+    /// Show current permission mode and rules
+    List,
+    /// Set permission mode (read-only|plan|supervised|trusted|autonomous|emergency-stop)
+    Set { mode: String },
+    /// Add an explicitly allowed tool pattern
+    AllowTool { tool: String },
+    /// Add a tool pattern that always asks for approval
+    AskTool { tool: String },
+    /// Add an explicitly denied tool pattern
+    DenyTool { tool: String },
+    /// Add an allowed path boundary
+    AllowPath { path: PathBuf },
+    /// Add a denied path boundary
+    DenyPath { path: PathBuf },
 }

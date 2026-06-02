@@ -165,7 +165,8 @@ fn event_run_id(event: &Event) -> &str {
         | Event::TokenUsageEstimated { run, .. }
         | Event::AutonomyChanged { run, .. }
         | Event::RunFinished { run, .. }
-        | Event::Error { run, .. } => &run.0,
+        | Event::Error { run, .. }
+        | Event::Compacted { run, .. } => &run.0,
     }
 }
 

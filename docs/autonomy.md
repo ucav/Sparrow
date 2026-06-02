@@ -22,6 +22,22 @@ Every tool declares a risk level:
 
 ## Gate Decisions
 
+Sparrow evaluates permissions first, then autonomy. Permission modes can deny or
+force approval by tool, path, provider, or surface before the autonomy matrix is
+consulted.
+
+| Permission mode | Behavior |
+|---|---|
+| Read-only | Allows read-only tools; denies mutating, exec, network, and destructive tools |
+| Plan | Denies tool execution entirely; use for planning-only sessions |
+| Supervised | Defers to the Supervised autonomy gate unless an explicit permission rule matches |
+| Trusted | Defers to the Trusted autonomy gate, still protected by denied paths and checkpoints |
+| Autonomous | Defers to the Autonomous autonomy gate, still protected by denied paths and budget hard stops |
+| Emergency stop | Denies every tool execution |
+
+Default denied path boundaries include `.git`, `.env`, `.env.local`, `.ssh`,
+`id_rsa`, and `id_ed25519`. Add or inspect rules with `sparrow permissions list`.
+
 The autonomy gate maps `(autonomy_level, risk_level) → decision`:
 
 | Risk | Supervised | Trusted | Autonomous |

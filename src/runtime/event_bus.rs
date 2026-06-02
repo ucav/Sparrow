@@ -103,6 +103,7 @@ impl EventFilter {
                 Event::AutonomyChanged { run, .. } => &run.0,
                 Event::RunFinished { run, .. } => &run.0,
                 Event::Error { run, .. } => &run.0,
+                Event::Compacted { run, .. } => &run.0,
             };
             if event_run != rid {
                 return false;
@@ -135,6 +136,7 @@ impl EventFilter {
                 Event::AutonomyChanged { .. } => "AutonomyChanged",
                 Event::RunFinished { .. } => "RunFinished",
                 Event::Error { .. } => "Error",
+                Event::Compacted { .. } => "Compacted",
             };
             if !self.event_types.contains(&event_type.to_string()) {
                 return false;

@@ -41,3 +41,15 @@ Anti-collision via file-level locks in shared workspace. Agents acquire locks be
 ## Subagent Spawn
 
 `subagent_spawn` tool delegates a subtask to a child AgentRun with its own conversation, sandbox, and model. Subagent output is collected and returned.
+
+The tool accepts Alpha-scoped controls:
+
+- `role`: child identity name/role.
+- `model`: provider/model hint (`provider:model` or `provider/model`).
+- `permission_mode`: `read-only`, `plan`, `supervised`, `trusted`, `autonomous`, or `emergency-stop`.
+- `tools`: allowed tool patterns.
+- `disallowed_tools`: denied tool patterns.
+
+Named agents can also be declared with SOUL TOML or Markdown frontmatter and run
+through `sparrow agent run` / `sparrow agent mention`. Background restart and
+worktree isolation are still planned, not stable.

@@ -199,6 +199,108 @@ impl Tool for Tts {
     }
 }
 
+// ─── Speech to text (Transcribe) ────────────────────────────────────────────────
+//
+// Voice-mode building block: posts a workspace audio file to an OpenAI-compatible
+// `/audio/transcriptions` endpoint and returns the transcript as text. Missing
+// key or non-2xx response is an HONEST error — never a fake success.
+
+pub struct Transcribe {
+    base_url: String,
+    model: String,
+}
+
+impl Transcribe {
+    pub fn new() -> Self {
+        Self {
+            base_url: std::env::var("TRANSCRIBE_API_BASE")
+                .unwrap_or_else(|_| "https://api.openai.com/v1".into()),
+            model: std::env::var("TRANSCRIBE_MODEL").unwrap_or_else(|_| "whisper-1".into()),
+        }
+    }
+}
+
+#[async_trait]
+impl Tool for Transcribe {
+    fn name(&self) -> &str {
+        "transcribe"
+    }
+    fn description(&self) -> &str {
+        "Transcribe an audio file in the workspace to text via an OpenAI-compatible /audio/transcriptions endpoint."
+    }
+    fn schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "Workspace-relative path to the audio file" },
+                "language": { "type": "string", "description": "Optional ISO-639-1 language hint" }
+            },
+            "required": ["path"]
+        })
+    }
+    fn risk(&self) -> RiskLevel {
+        RiskLevel::Network
+    }
+    async fn call(&self, args: serde_json::Value, ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
+        let Some(key) = resolve_key(&["TRANSCRIBE_API_KEY", "OPENAI_API_KEY"]) else {
+            return Ok(ToolResult::error(
+                "No transcription API key. Set TRANSCRIBE_API_KEY or OPENAI_API_KEY.",
+            ));
+        };
+        let path = args["path"].as_str().unwrap_or("");
+        if path.is_empty() {
+            return Ok(ToolResult::error("transcribe: missing 'path' argument"));
+        }
+        let full = super::resolve_workspace_path(&ctx.workspace_root, path)?;
+        if !full.exists() {
+            return Ok(ToolResult::error(format!("audio file not found: {}", path)));
+        }
+        let bytes = std::fs::read(&full)?;
+        let filename = full
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "audio.bin".into());
+        let mime = mime_guess::from_path(&full)
+            .first_or_octet_stream()
+            .to_string();
+
+        let part = reqwest::multipart::Part::bytes(bytes)
+            .file_name(filename)
+            .mime_str(&mime)
+            .unwrap_or_else(|_| reqwest::multipart::Part::text("")); // mime parse rarely fails
+        let mut form = reqwest::multipart::Form::new()
+            .text("model", self.model.clone())
+            .part("file", part);
+        if let Some(lang) = args["language"].as_str() {
+            if !lang.is_empty() {
+                form = form.text("language", lang.to_string());
+            }
+        }
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(format!(
+                "{}/audio/transcriptions",
+                self.base_url.trim_end_matches('/')
+            ))
+            .bearer_auth(&key)
+            .multipart(form)
+            .send()
+            .await?;
+        if !resp.status().is_success() {
+            let status = resp.status();
+            let body = resp.text().await.unwrap_or_default();
+            return Ok(ToolResult::error(format!(
+                "transcribe API error {}: {}",
+                status, body
+            )));
+        }
+        let value: serde_json::Value = resp.json().await?;
+        let text = value["text"].as_str().unwrap_or("").to_string();
+        Ok(ToolResult::ok(vec![Block::Text(text)]))
+    }
+}
+
 // Minimal base64 decoder (avoid adding a crate). Standard alphabet, no padding strictness.
 mod base64_decode {
     pub fn decode(s: &str) -> Result<Vec<u8>, &'static str> {
