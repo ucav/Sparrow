@@ -40,6 +40,7 @@ pub mod hooks;
 pub mod memory;
 pub mod onboarding;
 pub mod orchestrator;
+pub mod permissions;
 pub mod plan;
 pub mod provider;
 pub mod reasoning;

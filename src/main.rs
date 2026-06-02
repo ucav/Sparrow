@@ -94,6 +94,8 @@ async fn main() -> anyhow::Result<()> {
             providers: Default::default(),
             surfaces: Default::default(),
             skills: Default::default(),
+            permissions: Default::default(),
+            hooks: Default::default(),
             theme: "captain".into(),
             config_dir: active_config_dir.clone(),
             state_dir: active_state_dir.clone(),
@@ -307,6 +309,9 @@ async fn main() -> anyhow::Result<()> {
         }
         Some(Commands::Plan { ref task, json }) => {
             handle_plan(task, &config, skill_library.clone(), json || cli.json)?;
+        }
+        Some(Commands::Permissions { action }) => {
+            handle_permissions(action, &config, &config_store)?;
         }
         Some(Commands::Chat) => {
             handle_chat(&config, memory.clone()).await?;
@@ -887,6 +892,15 @@ fn apply_cli_overrides(config: &mut sparrow::config::Config, cli: &Cli) {
                 } else {
                     config.defaults.autonomy.clone()
                 }
+            }
+        };
+        config.permissions.mode = match config.defaults.autonomy {
+            sparrow::event::AutonomyLevel::Supervised => {
+                sparrow::permissions::PermissionMode::Supervised
+            }
+            sparrow::event::AutonomyLevel::Trusted => sparrow::permissions::PermissionMode::Trusted,
+            sparrow::event::AutonomyLevel::Autonomous => {
+                sparrow::permissions::PermissionMode::Autonomous
             }
         };
     }
@@ -1722,6 +1736,113 @@ fn handle_plan(
         println!("{}", plan.render_markdown());
     }
     Ok(())
+}
+
+fn handle_permissions(
+    action: sparrow::cli::PermissionAction,
+    config: &sparrow::config::Config,
+    store: &FsConfigStore,
+) -> anyhow::Result<()> {
+    let mut updated = config.clone();
+    match action {
+        sparrow::cli::PermissionAction::List => {
+            print_permission_policy(&updated);
+            return Ok(());
+        }
+        sparrow::cli::PermissionAction::Set { mode } => {
+            let Some(mode) = sparrow::permissions::PermissionMode::parse(&mode) else {
+                anyhow::bail!(
+                    "Unknown permission mode '{}'. Use read-only, plan, supervised, trusted, autonomous, or emergency-stop.",
+                    mode
+                );
+            };
+            updated.permissions.mode = mode.clone();
+            updated.defaults.autonomy = mode.autonomy_level();
+            println!(
+                "Permission mode set to '{}' (autonomy: {:?}).",
+                mode.as_str(),
+                updated.defaults.autonomy
+            );
+        }
+        sparrow::cli::PermissionAction::AllowTool { tool } => {
+            push_unique(&mut updated.permissions.tools.allow, tool);
+            println!("Tool allow rule added.");
+        }
+        sparrow::cli::PermissionAction::AskTool { tool } => {
+            push_unique(&mut updated.permissions.tools.ask, tool);
+            println!("Tool approval rule added.");
+        }
+        sparrow::cli::PermissionAction::DenyTool { tool } => {
+            push_unique(&mut updated.permissions.tools.deny, tool);
+            println!("Tool deny rule added.");
+        }
+        sparrow::cli::PermissionAction::AllowPath { path } => {
+            push_unique_path(&mut updated.permissions.paths.allow, path);
+            println!("Path allow rule added.");
+        }
+        sparrow::cli::PermissionAction::DenyPath { path } => {
+            push_unique_path(&mut updated.permissions.paths.deny, path);
+            println!("Path deny rule added.");
+        }
+    }
+    store.save(&updated)?;
+    print_permission_policy(&updated);
+    Ok(())
+}
+
+fn push_unique(values: &mut Vec<String>, value: String) {
+    if !values.iter().any(|existing| existing == &value) {
+        values.push(value);
+    }
+}
+
+fn push_unique_path(values: &mut Vec<std::path::PathBuf>, value: std::path::PathBuf) {
+    if !values.iter().any(|existing| existing == &value) {
+        values.push(value);
+    }
+}
+
+fn print_permission_policy(config: &sparrow::config::Config) {
+    let policy = &config.permissions;
+    println!("Permission policy");
+    println!("=================");
+    println!("Mode     : {}", policy.mode.as_str());
+    println!("Autonomy : {:?}", config.defaults.autonomy);
+    println!("Tools");
+    println!("  allow : {}", list_or_empty(&policy.tools.allow));
+    println!("  ask   : {}", list_or_empty(&policy.tools.ask));
+    println!("  deny  : {}", list_or_empty(&policy.tools.deny));
+    println!("Paths");
+    println!("  allow : {}", path_list_or_empty(&policy.paths.allow));
+    println!("  deny  : {}", path_list_or_empty(&policy.paths.deny));
+    println!("Providers");
+    println!("  allow : {}", list_or_empty(&policy.providers.allow));
+    println!("  ask   : {}", list_or_empty(&policy.providers.ask));
+    println!("  deny  : {}", list_or_empty(&policy.providers.deny));
+    println!("Surfaces");
+    println!("  allow : {}", list_or_empty(&policy.surfaces.allow));
+    println!("  ask   : {}", list_or_empty(&policy.surfaces.ask));
+    println!("  deny  : {}", list_or_empty(&policy.surfaces.deny));
+}
+
+fn list_or_empty(values: &[String]) -> String {
+    if values.is_empty() {
+        "(empty)".into()
+    } else {
+        values.join(", ")
+    }
+}
+
+fn path_list_or_empty(values: &[std::path::PathBuf]) -> String {
+    if values.is_empty() {
+        "(empty)".into()
+    } else {
+        values
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
 }
 
 // ─── Swarm command ──────────────────────────────────────────────────────────────

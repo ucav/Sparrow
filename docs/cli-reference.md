@@ -24,13 +24,25 @@ All planned Sparrow commands.
 | `sparrow plan "<task>"` | Alpha | Produce a read-only plan without tools, edits, exec, or checkpoints |
 | `sparrow plan "<task>" --json` | Alpha | Emit the read-only plan as JSON |
 
+## Permissions
+
+| Command | Status | Description |
+|---|---|---|
+| `sparrow permissions list` | Alpha | Show permission mode plus tool/path/provider/surface allow, ask, and deny rules |
+| `sparrow permissions set <mode>` | Alpha | Set `read-only`, `plan`, `supervised`, `trusted`, `autonomous`, or `emergency-stop` |
+| `sparrow permissions allow-tool <tool>` | Alpha | Add an explicit tool allow pattern |
+| `sparrow permissions ask-tool <tool>` | Alpha | Add a tool pattern that always asks for approval |
+| `sparrow permissions deny-tool <tool>` | Alpha | Add an explicit tool deny pattern |
+| `sparrow permissions allow-path <path>` | Alpha | Add an allowed path boundary |
+| `sparrow permissions deny-path <path>` | Alpha | Add a denied path boundary |
+
 ## Slash Commands
 
 | Command | Status | Description |
 |---|---|---|
 | `/help` | Alpha | List available built-in, project, user, and skill commands |
 | `/plan <task>` | Alpha | Produce a read-only plan before accepting execution |
-| `/permissions` | Alpha | Permission workflow placeholder command |
+| `/permissions` | Alpha | Open the permission workflow; CLI and WebView mode controls are wired |
 | `/memory` | Alpha | Memory workflow placeholder command |
 | `/compact` | Alpha | Context compaction workflow placeholder command |
 | `/model` | Alpha | Model routing workflow placeholder command |
