@@ -53,6 +53,19 @@ fn keyboard_doc_lists_critical_shortcuts() {
     for theme in ["captain", "midnight", "paper"] {
         assert!(doc.contains(theme), "docs/keyboard.md must list {}", theme);
     }
+    for shortcut in [
+        "Cmd/Ctrl+K",
+        "Cmd/Ctrl+Shift+L",
+        "Cmd/Ctrl+M",
+        "Drag files onto page",
+        "@",
+    ] {
+        assert!(
+            doc.contains(shortcut),
+            "docs/keyboard.md must document WebView shortcut {}",
+            shortcut
+        );
+    }
 }
 
 #[test]
