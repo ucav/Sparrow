@@ -35,7 +35,7 @@ Sparrow is **alpha software** with a green cross-platform CI baseline. The kerne
 | Security audit | Green | CI runs `rustsec/audit-check` on Ubuntu, macOS, and Windows |
 | Engine loop | Stable | `src/engine/mod.rs`, JSON smoke tests, event stream, task classification, fallback execution, auto-checkpoint before mutating/exec/destructive, and auto-compaction when transcript exceeds the budget are wired |
 | Provider routing | Alpha | Ollama + NVIDIA stored-credential discovery tested locally; 92 NVIDIA chat-capable models cached from `/v1/models`; explicit `nvidia:<model>` routing validated |
-| WebView console | Stable | HTTP `/`, `/config`, `/run`, live WebSocket events, token/cost counters, route summaries, logo, and swarm cockpit are implemented on port 9339 |
+| WebView console | Stable | Full cockpit on port 9339 with rail/drawer panels, typed event stream, animated route/token/cost/autonomy indicators, canonical logo, dynamic swarm row, approval modal, Captain/Paper themes, context meter, slash palette, `@` picker, history, multiline composer, paste/upload, and drag-and-drop |
 | TUI cockpit | Stable | Animated terminal cockpit, canonical ASCII logo, swarm lanes, checkpoint/diff/cost panels, `@<name>` agent picker, slash autocomplete, history, fold/unfold |
 | Plan mode / slash commands | Stable | `sparrow plan`, WebView `/plan`, TUI `/plan`, built-in slash commands, user/project Markdown command discovery, and skill-to-slash exposure are wired read-only |
 | Permissions / hooks | Stable | `sparrow permissions`, persisted permission modes, tool/path/provider/surface rules, WebView mode control, lifecycle hooks (`Pre`/`Post` for run/tool/checkpoint/compact) |
@@ -47,7 +47,7 @@ Sparrow is **alpha software** with a green cross-platform CI baseline. The kerne
 | Media tools | Stable | `vision`, `image_generate`, `text_to_speech`, `transcribe` hit OpenAI-compatible endpoints, honest errors on missing key/non-2xx; WebView `POST /upload` (10 MB cap, classified text/image/audio/pdf) and `GET /artifacts` |
 | GitHub Action | Stable | Composite `action.yml`, sample `sparrow-pr-review.yml` workflow, `sparrow github review/status/logs` CLI, `--dry-run` review that needs no token, fails loudly on missing `GITHUB_TOKEN` or `gh` |
 | Context / compaction | Stable | `ContextMeter`, `HookEvent::PreCompact`/`PostCompact`, `Event::Compacted` in the stream, engine-level auto-trigger when transcript > 120k chars, `sparrow compact` writes a durable `HandoffDoc` Markdown |
-| UI / TUI | Stable | WebView `/sessions` + `/memory` + `/permissions` + `/plugins` + `/security` + `/upload` + `/artifacts` panels; TUI slash & `@` autocomplete, history, fold/unfold, context bar; theme variants `captain`/`midnight`/`paper` via `SPARROW_THEME`; keyboard shortcut docs |
+| UI / TUI | Stable | WebView `/sessions` + `/memory` + `/permissions` + `/plugins` + `/security` + `/upload` + `/artifacts` panels; WebView and TUI slash & `@` autocomplete, history, fold/unfold, context bars; theme variants `captain`/`midnight`/`paper`; keyboard shortcut docs |
 | Gateway | Stable | `/status` command roundtrip tested on port 9338; scoped gateway sessions, health/abort commands with an in-process run registry that actually cancels active runs, session list/export/cleanup |
 | Replay / checkpoints / memory | Stable | Recorder, checkpoint, rewind, transcript, SQLite facts, bounded `MEMORY.md` / `USER.md`, memory tool, and session search are wired with tests |
 | First-run setup | Alpha | Conversational setup agent plus fallback interactive setup are wired for provider/model configuration |
@@ -67,6 +67,8 @@ The WebView console mirrors Sparrow's brand demo instead of exposing raw runtime
 - local model failures are presented as `modèle local indisponible -> routage modèle cloud`;
 - token and cost counters update live from the event stream;
 - boot lines, route changes, tool activity, skill learning, swarm lanes, and the Sparrow mascot use the same motion language as the presentation HTML;
+- the WebView composer supports `Cmd/Ctrl+K`, `@<agent>`, history, multiline input, paste/upload, drag-and-drop, and a live context bar;
+- Captain and Paper themes are both shipped, persisted, and auto-selected from `prefers-color-scheme`;
 - learned skills are pattern-based names such as `write-and-fix-tests`, not copied user prompts.
 
 Skill learning is intentionally conservative. Sparrow only proposes reusable workflow patterns after concrete evidence such as tests, fixes, diffs, refactors, or code changes, and it skips repository-specific prompts, URLs, file names, dates, versions, and duplicate skill names.

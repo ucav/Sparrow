@@ -2,6 +2,41 @@
 
 All notable changes to Sparrow will be documented in this file.
 
+## [0.3.0] — 2026-06-02
+
+WebView Cockpit v0.3.0 is shipped. The console now matches the presentation
+direction as a real local cockpit rather than a static mockup: every panel is
+fed by Sparrow endpoints, the composer is usable as a primary command surface,
+and both Captain/Paper themes are covered by tests.
+
+### Added
+- Three-column WebView cockpit: icon rail, persistent drawer, main event
+  stream, live cockpit metrics, boot animation, route chain, token/cost/context
+  counters, and dynamic swarm row from `GET /agents`.
+- Drawer panels wired to real endpoints: `/sessions`, `/memory`, `/plugins`,
+  `/tools`, `/permissions`, `/security`, and `/artifacts`.
+- Typed event renderers for tool cards, diff cards, compaction banners,
+  checkpoint timeline nodes, streaming text caret, skill notifications, route
+  updates, autonomy changes, token/cost updates, and model fallback labels.
+- Command composer upgrades: `Cmd/Ctrl+K` slash palette, inline `@<agent>`
+  picker, server-backed `/history`, multiline `Shift+Enter`, persisted draft,
+  paste attachment handling, real `POST /upload`, drag-and-drop overlay, and
+  live context meter.
+- Approval modal wired to `POST /approval`, replacing inline-only approval
+  controls for new approval events.
+- Paper theme coverage, theme query override for screenshots/tests, persisted
+  theme toggle, and reduced-motion fallback that disables animations, embers,
+  transitions, and the boot overlay.
+- WebView keyboard shortcuts documented in `docs/keyboard.md`.
+
+### Validation
+- `cargo fmt --all -- --check`
+- `cargo clippy --all-targets -- -D warnings`
+- `cargo test --all-targets`
+- `cargo build --release`
+- HTTP smoke: `GET /`, `/history`, `/agents`, `POST /upload`, and
+  `GET /artifacts`.
+
 ## [0.2.0] — 2026-06-02
 
 Autonomy mega-prompt phases 1–13 are landed and the deferred items have been
