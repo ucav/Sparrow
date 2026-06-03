@@ -2,7 +2,7 @@
 
 All notable changes to Sparrow will be documented in this file.
 
-## [Unreleased] — post-0.3.0
+## [0.3.1] — 2026-06-03
 
 ### Added — Rust
 - `GET /models` endpoint: returns the full provider registry (35 providers,

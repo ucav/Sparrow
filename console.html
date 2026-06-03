@@ -348,6 +348,24 @@
   .composer-hints kbd{background:var(--panel2);border:1px solid var(--line);border-radius:4px;
     padding:1px 5px;font-family:inherit;font-size:10px;color:var(--dim)}
 
+  /* route explorer panel */
+  .route-hop{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--line);transition:.15s}
+  .route-hop:last-child{border-bottom:none}
+  .route-hop.active{background:color-mix(in srgb,var(--planner) 7%,transparent)}
+  .route-hop .rh-led{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+  .route-hop.active .rh-led{background:var(--add);box-shadow:0 0 8px var(--add);animation:pulse 1.3s ease-in-out infinite}
+  .route-hop.standby .rh-led{background:var(--dimmer)}
+  .route-hop.error .rh-led{background:var(--rem)}
+  .route-hop .rh-info{flex:1;min-width:0}
+  .route-hop .rh-name{font-size:11.5px;color:var(--fg);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .route-hop .rh-name.active{color:var(--planner)}
+  .route-hop .rh-meta{font-size:9.5px;color:var(--dimmer);margin-top:2px;display:flex;gap:8px}
+  .route-hop .rh-ctx{color:var(--agent)}.route-hop .rh-cost{color:var(--brand)}
+  .route-hop .rh-pos{font-size:10px;color:var(--dimmer);font-weight:600}
+  .route-current-box{padding:10px 12px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--brand) 5%,transparent)}
+  .route-current-box .rc-label{font-size:9px;text-transform:uppercase;letter-spacing:1.5px;color:var(--dimmer);margin-bottom:4px}
+  .route-current-box .rc-model{font-size:13px;font-weight:600;color:var(--brand)}
+  .route-current-box .rc-ctx{font-size:10px;color:var(--agent);margin-top:3px}
   /* model picker dropdown */
   .mp-drop{position:absolute;bottom:calc(100% + 8px);left:0;z-index:200;
     background:var(--panel);border:1px solid var(--line-hot);border-radius:12px;
@@ -737,6 +755,7 @@
     <button class="ico" data-panel="tools" title="Tools"><span aria-hidden="true">⚒</span></button>
     <button class="ico" data-panel="permissions" title="Permissions"><span aria-hidden="true">◉</span></button>
     <button class="ico" data-panel="security" title="Security"><span aria-hidden="true">⛨</span></button>
+    <button class="ico" data-panel="route" title="Route Explorer"><span aria-hidden="true">⇄</span></button>
     <button class="ico" data-panel="artifacts" title="Artifacts"><span aria-hidden="true">◇</span></button>
     <div class="sep"></div>
     <div class="spacer"></div>
@@ -772,6 +791,10 @@
     <div class="panel" data-panel-body="security">
       <h3>Security</h3>
       <div id="drw-security-body"><div class="drw-empty">_none yet_ · connect to audit</div></div>
+    </div>
+    <div class="panel" data-panel-body="route">
+      <h3>Route Explorer</h3>
+      <div id="drw-route-body"><div class="drw-empty">start a run to see the active route chain</div></div>
     </div>
     <div class="panel" data-panel-body="artifacts">
       <h3>Artifacts <span class="count" id="drw-artifacts-count">0</span></h3>
@@ -1143,7 +1166,26 @@ async function hydrateHero(){
       const mode=(perm.permissions&&perm.permissions.mode)||'supervised';
       ms.textContent=`${facts} facts stored · permission mode: ${mode}`;
     }
+    // Onboarding: if no providers are configured, show setup guidance
+    if(activeProviders.length===0){
+      showOnboardingBanner();
+    }
   }catch(_){}
+}
+function showOnboardingBanner(){
+  if(document.getElementById('onboarding-banner'))return;
+  const b=document.createElement('div');
+  b.id='onboarding-banner';
+  b.style.cssText='margin:10px 0;padding:12px 16px;border:1px solid color-mix(in srgb,var(--brand) 40%,var(--line));border-radius:10px;background:color-mix(in srgb,var(--brand) 7%,transparent);font-size:11.5px;line-height:1.6';
+  b.innerHTML=`<div style="font-weight:700;color:var(--brand);letter-spacing:.5px;margin-bottom:6px">⬡ No providers configured</div>
+    <div style="color:var(--dim)">Sparrow needs at least one API key to route tasks. Run setup to configure providers:</div>
+    <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+      <button onclick="document.getElementById('taskInput').value='sparrow setup';document.getElementById('runBtn').click()" style="font-family:inherit;font-size:10.5px;padding:4px 12px;border-radius:7px;cursor:pointer;color:var(--brand);background:color-mix(in srgb,var(--brand) 12%,transparent);border:1px solid color-mix(in srgb,var(--brand) 40%,transparent)">▸ run sparrow setup</button>
+      <button onclick="openPanel('permissions')" style="font-family:inherit;font-size:10.5px;padding:4px 12px;border-radius:7px;cursor:pointer;color:var(--dim);background:var(--panel);border:1px solid var(--line)">◉ open permissions</button>
+      <button onclick="this.closest('#onboarding-banner').remove()" style="font-family:inherit;font-size:10.5px;padding:4px 12px;border-radius:7px;cursor:pointer;color:var(--dimmer);background:transparent;border:1px solid var(--line)">dismiss</button>
+    </div>
+    <div style="margin-top:8px;font-size:10px;color:var(--dimmer)">Or set <code style="color:var(--steel)">NVIDIA_API_KEY</code>, <code style="color:var(--steel)">ANTHROPIC_API_KEY</code>, or <code style="color:var(--steel)">OPENAI_API_KEY</code> in your environment and restart.</div>`;
+  const term=document.getElementById('term');if(term)term.prepend(b);
 }
 
 // ─── Sprint 1 inc 4 : boot animation (first connect of session) ──────
@@ -1252,6 +1294,7 @@ bindChromeChips();
 
 // ─── Sprint 1 inc 2 : drawer + 7 panels ──────────────────────────────
 const PANEL_LOADERS={
+  route:loadRoutePanel,
   crew:loadCrewPanel,
   sessions:loadSessionsPanel,
   memory:loadMemoryPanel,
@@ -1286,6 +1329,65 @@ function restoreActivePanel(){
 }
 function escHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 
+// ─── Route Explorer ───────────────────────────────────────────────────────
+let _currentRouteChain=[];let _currentRouteCtx=32000;
+async function loadRoutePanel(){
+  const host=document.getElementById('drw-route-body');if(!host)return;
+  // Fetch configured providers for health dots
+  let configured=window._configuredProviders||new Set();
+  try{
+    const cfg=await fetch('/config').then(r=>r.json());
+    configured=new Set((cfg.providers||[]).filter(p=>p.has_credential||p.configured).map(p=>p.name||p.id));
+    window._configuredProviders=configured;
+  }catch{}
+
+  if(!_currentRouteChain.length){
+    host.innerHTML='<div class="drw-empty">start a run to see the active route chain</div>';
+    return;
+  }
+  const chain=_currentRouteChain;
+  const ctxFmt=fmtCtx(_currentRouteCtx);
+  // Fetch model cost info from /models
+  let modelCosts={};
+  try{
+    const md=await fetch('/models').then(r=>r.json());
+    (md.providers||[]).forEach(p=>{
+      p.models.forEach(m=>{modelCosts[p.id+':'+m.name]={ctx:m.context_window,cost_in:m.cost_input_per_mtok,cost_out:m.cost_output_per_mtok};});
+    });
+  }catch{}
+
+  const currentBox=`<div class="route-current-box">
+    <div class="rc-label">active model</div>
+    <div class="rc-model">${escHtml(chain[0]||'—')}</div>
+    <div class="rc-ctx">context ${escHtml(ctxFmt)} · ${escHtml(chain.length)} hop${chain.length!==1?'s':''} in chain</div>
+  </div>`;
+
+  const hops=chain.map((id,i)=>{
+    const info=modelCosts[id]||{};
+    const active=i===0;
+    const hasKey=configured.has(id.split(':')[0]);
+    const ledClass=active?'active':(hasKey?'standby':'error');
+    const ctxStr=info.ctx?fmtCtx(info.ctx):'—';
+    const costStr=info.cost_in!==undefined?(info.cost_in===0?'free':'$'+info.cost_in+'/M'):'—';
+    return `<div class="route-hop ${ledClass}">
+      <span class="rh-led"></span>
+      <div class="rh-info">
+        <div class="rh-name${active?' active':''}">${escHtml(id)}</div>
+        <div class="rh-meta"><span class="rh-ctx">ctx ${escHtml(ctxStr)}</span><span class="rh-cost">${escHtml(costStr)}</span>${!hasKey?'<span style="color:var(--rem);font-size:9px">no key</span>':''}</div>
+      </div>
+      <span class="rh-pos">#${i+1}</span>
+    </div>`;
+  }).join('');
+
+  host.innerHTML=currentBox+hops;
+}
+function updateRoutePanel(chain,ctxWindow){
+  _currentRouteChain=chain||[];_currentRouteCtx=ctxWindow||_currentRouteCtx;
+  // If route panel is active, refresh it
+  const active=document.querySelector('.drawer .panel.active[data-panel-body="route"]');
+  if(active)loadRoutePanel();
+}
+// ──────────────────────────────────────────────────────────────────────────
 function updateCrewLiveStatus(name,status,note){
   const list=document.getElementById('drw-crew-list');if(!list)return;
   const items=list.querySelectorAll('[data-agent-name]');
@@ -1785,12 +1887,32 @@ function openDiffPanel(ev){
     else if(l.length){lineNum++;}
     return `<span style="display:block;padding:0 10px;background:${bg};border-left:2px solid ${border}"><span style="display:inline-block;width:28px;color:var(--dimmer);user-select:none;font-size:10px">${kls==='mns'?'':lineNum||''}</span><span style="color:${col}">${esc(l)}</span></span>`;
   }).join('');
-  document.getElementById('dpPath').textContent=path;
+  const dpPath=document.getElementById('dpPath');
+  dpPath.textContent=path;
+  dpPath.style.cursor='pointer';dpPath.title='Click to view full file';
+  dpPath.onclick=()=>loadFileInPanel(path);
   document.getElementById('dpStats').textContent=`+${pl} −${mn}`;
   document.getElementById('dpBody').innerHTML=`<div style="font-family:inherit">${dl}</div>`;
   document.getElementById('diffPanel').classList.add('open');
 }
 function closeDiffPanel(){document.getElementById('diffPanel').classList.remove('open');}
+async function loadFileInPanel(path){
+  const body=document.getElementById('dpBody');
+  const stats=document.getElementById('dpStats');
+  body.innerHTML='<div style="padding:14px;color:var(--dimmer)">loading…</div>';
+  stats.textContent='';
+  try{
+    const r=await fetch('/file?path='+encodeURIComponent(path));
+    if(!r.ok){body.innerHTML='<div style="padding:14px;color:var(--rem)">cannot read file (outside workdir or not found)</div>';return;}
+    const j=await r.json();
+    const lines=j.content.split('\n');
+    stats.textContent=`${j.lines} lines · ${j.lang}`;
+    body.innerHTML='<div style="font-family:inherit">'+
+      lines.map((l,i)=>`<span style="display:flex;min-height:1.6em"><span style="display:inline-block;width:38px;padding:0 8px;color:var(--dimmer);user-select:none;font-size:10px;text-align:right;border-right:1px solid var(--line);flex:0 0 auto">${i+1}</span><span style="padding:0 10px;color:var(--dim);white-space:pre;overflow-x:auto">${esc(l)}</span></span>`).join('')+
+    '</div>';
+    document.getElementById('diffPanel').classList.add('open');
+  }catch(e){body.innerHTML='<div style="padding:14px;color:var(--rem)">fetch failed: '+esc(String(e))+'</div>';}
+}
 function renderDiffCard(ev){
   const path=ev.file||ev.path||'<unknown>';
   const patch=ev.patch||ev.diff||'';
@@ -1888,6 +2010,7 @@ function handleEvent(ev){
       if(ev.context_window&&ev.context_window>0){contextLimit=ev.context_window;updateContextMeter();}
       const primary=Array.isArray(ev.chain)&&ev.chain[0]?ev.chain[0]:'auto';
       const lbl=$('modelPickerLabel');if(lbl)lbl.textContent=primary.length>22?primary.slice(0,20)+'…':primary;
+      updateRoutePanel(ev.chain,ev.context_window);
       break;
     }
     case 'ModelSwitched':line(`<span class="warn">${routeSwitchLabel(ev.from,ev.to,ev.reason)}</span>`);break;

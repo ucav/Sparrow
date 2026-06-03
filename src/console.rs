@@ -84,6 +84,8 @@ impl WebViewServer {
             .route("/plugins", get(get_plugins))
             .route("/tools", get(get_tools))
             .route("/models", get(list_models))
+            .route("/status", get(get_status))
+            .route("/file", get(read_file))
             .route("/approval", post(resolve_approval))
             .route("/config", get(get_config).post(save_provider))
             .route("/permissions", get(get_permissions).post(save_permissions))
@@ -524,6 +526,60 @@ async fn list_models() -> axum::extract::Json<serde_json::Value> {
         })
         .collect();
     axum::extract::Json(serde_json::json!({ "ok": true, "providers": out }))
+}
+
+async fn get_status() -> axum::extract::Json<serde_json::Value> {
+    use crate::config::providers::provider_registry;
+    let providers = provider_registry();
+    axum::extract::Json(serde_json::json!({
+        "ok": true,
+        "version": env!("CARGO_PKG_VERSION"),
+        "providers_total": providers.len(),
+        "workdir": std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string()),
+    }))
+}
+
+#[derive(serde::Deserialize)]
+struct FileQuery {
+    path: String,
+}
+
+async fn read_file(
+    axum::extract::Query(q): axum::extract::Query<FileQuery>,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    // Sandbox: only allow paths inside cwd.
+    let cwd = match std::env::current_dir() {
+        Ok(d) => d,
+        Err(_) => return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "cwd unavailable").into_response(),
+    };
+    // Canonicalize cwd too so UNC prefixes match on Windows.
+    let cwd_canon = cwd.canonicalize().unwrap_or(cwd.clone());
+    let requested = std::path::Path::new(&q.path);
+    let canonical = match cwd.join(requested).canonicalize() {
+        Ok(p) => p,
+        Err(_) => return (axum::http::StatusCode::NOT_FOUND, "file not found").into_response(),
+    };
+    if !canonical.starts_with(&cwd_canon) {
+        return (axum::http::StatusCode::FORBIDDEN, "path outside workdir").into_response();
+    }
+    match std::fs::read_to_string(&canonical) {
+        Ok(content) => {
+            let ext = canonical.extension().and_then(|e| e.to_str()).unwrap_or("");
+            let lang = match ext {
+                "rs" => "rust", "js"|"ts"|"jsx"|"tsx" => "javascript",
+                "py" => "python", "toml" => "toml", "md" => "markdown",
+                "html" => "html", "css" => "css", "json" => "json",
+                _ => "text",
+            };
+            axum::extract::Json(serde_json::json!({
+                "ok": true, "path": q.path, "lang": lang,
+                "lines": content.lines().count(),
+                "content": content,
+            })).into_response()
+        }
+        Err(_) => (axum::http::StatusCode::NOT_FOUND, "cannot read file").into_response(),
+    }
 }
 
 async fn resolve_approval(
