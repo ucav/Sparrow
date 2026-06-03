@@ -2,6 +2,44 @@
 
 All notable changes to Sparrow will be documented in this file.
 
+## [0.3.2] — 2026-06-03
+
+### Fixed (critical bugs from user report)
+- **Conversation context was dropped on every new run/model switch.**
+  `main.rs` now keeps a persistent `Arc<Mutex<Vec<Msg>>>` of the dialog
+  shared across runs; every command pulls prior turns into `Task.context`
+  (previously hardcoded to `vec![]`) and pushes user+assistant messages
+  back, capped at the last 40 turns.
+- **Cockpit counters never updated** because the rAF-based `countUp`
+  didn't fire in background tabs / headless contexts. `refreshTokens()`
+  now writes `textContent` directly first, then runs `countUp` as an
+  optional easing layer. Tokens, cost, and budget all animate live.
+- **No way to see which providers / models are configured.** The full
+  35-provider · 60+-model registry is now visible in the config panel
+  as expandable cards (was a single dropdown showing one provider at a
+  time). Search, default-route picker, and per-provider key input added.
+
+### Added
+- **`POST /conversation/reset`** endpoint + UI button (`⟲ new conversation`)
+  that clears retained context when the user wants a fresh start.
+- **Live "context retained · turn #N"** indicator on every `RunStarted` from
+  turn 2 onward; **"● context preserved"** marker on every `ModelSwitched`.
+- **BUDGET pill** in cockpit row: live `<pct>% / $<daily> day` with color
+  gradient (green → gold → coral → red) as the cap is approached.
+- **`/conversation/reset`**, **`/status`**, **`/file`**, **`/models`**
+  endpoints fully wired.
+- **Config panel** rebuilt with 3 tabs (providers&models / routing&autonomy /
+  permissions). Each provider card shows LED health · adapter · notes ·
+  per-model row with ★ recommended, ctx window, $/Mtok cost, "set default"
+  button, and API key input.
+
+### Polished
+- Welcome panel: shows `<N> providers · <M> models · <K> with key` and
+  the boot timestamp.
+- Route bar: 3-hop fallback chain with animated arrows.
+- Tool cards: summary like `2 files · 6 KB` for fs_read, `<N> hits` for
+  search, matching the validated mockup.
+
 ## [0.3.1] — 2026-06-03
 
 ### Added — Rust
