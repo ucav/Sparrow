@@ -3704,6 +3704,12 @@ async fn handle_webview(
     let recorder_for_runs = recorder.clone();
     tokio::spawn(async move {
         while let Some(task) = command_rx.recv().await {
+            // Sentinel: clear conversation history without driving the engine.
+            if task == "__reset_conversation__" {
+                let mut guard = conv_for_runs.lock().expect("conv lock poisoned");
+                guard.clear();
+                continue;
+            }
             let current_config = config_for_runs
                 .read()
                 .expect("config lock poisoned")

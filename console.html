@@ -891,6 +891,12 @@
   </aside>
 
   <!-- Main (col 3) — cockpit · swarm · stream · composer-hints · composer -->
+  <!-- conversation context indicator button at top-right of stream area -->
+  <button id="newConversation" title="Start a fresh conversation (clears retained context)"
+    style="position:absolute;top:88px;right:14px;font-family:inherit;font-size:10px;padding:4px 10px;
+    border-radius:7px;cursor:pointer;color:var(--dim);background:var(--panel);border:1px solid var(--line);
+    z-index:30;letter-spacing:.3px;transition:.15s"
+    onclick="newConversation()">⟲ new conversation</button>
   <section class="main">
 
   <div class="cockpit">
@@ -1120,12 +1126,39 @@ function setCost(c){
   if(tokenMeter)updateTokenMeter();
   updateSession();
 }
+// Smoothly animates a number element from its current value to `to` over `ms`.
+// Uses setInterval (which fires even when tab is in background, unlike
+// requestAnimationFrame). Stores the active timer on the element so a new
+// call cancels the previous animation cleanly.
+function countUp(el,to,ms=420){
+  if(!el)return;
+  const fromTxt=String(el.textContent||'').replace(/[^\d.-]/g,'');
+  const from=parseFloat(fromTxt)||0;
+  if(el._countUpTimer)clearInterval(el._countUpTimer);
+  if(from===to){el.textContent=to.toLocaleString();return;}
+  const start=Date.now();
+  const tick=()=>{
+    const t=Math.min(1,(Date.now()-start)/ms);
+    const eased=1-Math.pow(1-t,3); // ease-out cubic
+    const val=Math.round(from+(to-from)*eased);
+    el.textContent=val.toLocaleString();
+    if(t>=1){clearInterval(el._countUpTimer);el._countUpTimer=null;el.textContent=to.toLocaleString();}
+  };
+  el._countUpTimer=setInterval(tick,16); // ~60fps
+  tick();
+}
 function refreshTokens(){
   const prev=tokV;
   tokInV=actualInV+estInV;tokOutV=actualOutV+estOutV;tokV=tokInV+tokOutV;
   sessionTok+=tokV-prev;
-  $('tokIn').textContent=tokInV.toLocaleString();$('tokOut').textContent=tokOutV.toLocaleString();
-  $('tok').textContent=tokV.toLocaleString();updateSession();
+  // Direct assignment — countUp via setInterval/rAF didn't fire reliably in
+  // background tabs / headless contexts. The .up class still gives the flash.
+  const elIn=$('tokIn');if(elIn)elIn.textContent=tokInV.toLocaleString();
+  const elOut=$('tokOut');if(elOut)elOut.textContent=tokOutV.toLocaleString();
+  const elTok=$('tok');if(elTok)elTok.textContent=tokV.toLocaleString();
+  // Then animate via countUp from previous-frame value (best-effort eye candy).
+  if(prev!==tokV)countUp(elTok,tokV,400);
+  updateSession();
   updateTokenMeter();
   updateContextMeter();
   ['tokIn','tokOut','tok'].forEach(id=>{
@@ -1515,6 +1548,18 @@ function updateCrewLiveStatus(name,status,note){
       }
     }
   });
+}
+async function newConversation(){
+  if(!confirm('Clear retained conversation context and start fresh?'))return;
+  try{
+    await fetch('/conversation/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    localStorage.removeItem('sparrow-turn-count');
+    const term=document.getElementById('term');
+    const banner=document.createElement('div');
+    banner.style.cssText='margin:10px 0;padding:8px 14px;border-radius:8px;background:color-mix(in srgb,var(--add) 10%,transparent);border:1px solid color-mix(in srgb,var(--add) 35%,transparent);color:var(--add);font-size:11px';
+    banner.textContent='⟲ conversation cleared · context retained from this point forward';
+    term.appendChild(banner);term.scrollTop=term.scrollHeight;
+  }catch(e){alert('reset failed: '+e.message);}
 }
 async function loadCrewPanel(){
   const host=document.getElementById('drw-crew-list');
@@ -2131,7 +2176,12 @@ function handleEvent(ev){
   }
 
   switch(ev.type){
-    case 'RunStarted':line(`<span class="acc">▸ started:</span> <span class="cmd">analyse de la requête</span>`);resetRunMetrics();resetSwarm();runStartMs=Date.now();runDiffsApplied=0;runCheckpoints=0;runCheckpointIds=[];CHECKPOINT_TIMELINE=null;setSwarm('planner','thinking','classifying request and selecting route');ensureTokenMeter();break;
+    case 'RunStarted':{
+      const turnCount=parseInt(localStorage.getItem('sparrow-turn-count')||'0',10)+1;
+      localStorage.setItem('sparrow-turn-count',String(turnCount));
+      line(`<span class="acc">▸ started:</span> <span class="cmd">analyse de la requête</span>${turnCount>1?` <span style="color:var(--add);font-size:10px;margin-left:8px">● context retained · turn #${turnCount}</span>`:''}`);
+      resetRunMetrics();resetSwarm();runStartMs=Date.now();runDiffsApplied=0;runCheckpoints=0;runCheckpointIds=[];CHECKPOINT_TIMELINE=null;setSwarm('planner','thinking','classifying request and selecting route');ensureTokenMeter();break;
+    }
     case 'RouteSelected':{
       const chain=summarizeChain(ev.chain);
       const compact=compactChain(ev.chain);
@@ -2144,7 +2194,7 @@ function handleEvent(ev){
       updateRoutePanel(ev.chain,ev.context_window);
       break;
     }
-    case 'ModelSwitched':line(`<span class="warn">${routeSwitchLabel(ev.from,ev.to,ev.reason)}</span>`);break;
+    case 'ModelSwitched':line(`<span class="warn">${routeSwitchLabel(ev.from,ev.to,ev.reason)}</span> <span style="color:var(--add);font-size:10px;margin-left:6px">● context preserved</span>`);break;
     case 'Message':
       if(ev.role==='router'){line(`<span class="muted">○ routing · <span class="planner">${esc(ev.text)}</span></span>`)}
       else{line(`<span class="muted">${esc(ev.role)}:</span> <span class="cmd">${esc(ev.text)}</span>`)}

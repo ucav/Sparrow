@@ -86,6 +86,7 @@ impl WebViewServer {
             .route("/models", get(list_models))
             .route("/status", get(get_status))
             .route("/file", get(read_file))
+            .route("/conversation/reset", post(reset_conversation))
             .route("/approval", post(resolve_approval))
             .route("/config", get(get_config).post(save_provider))
             .route("/permissions", get(get_permissions).post(save_permissions))
@@ -538,6 +539,25 @@ async fn list_models() -> axum::extract::Json<serde_json::Value> {
         })
         .collect();
     axum::extract::Json(serde_json::json!({ "ok": true, "providers": out }))
+}
+
+async fn reset_conversation(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> axum::extract::Json<RunResponse> {
+    // Send a sentinel string through the command channel; main.rs interprets
+    // __reset_conversation__ as a request to drain conv_history.
+    match &state.command_tx {
+        Some(tx) if tx.send("__reset_conversation__".to_string()).is_ok() => {
+            axum::extract::Json(RunResponse {
+                ok: true,
+                message: "conversation cleared".into(),
+            })
+        }
+        _ => axum::extract::Json(RunResponse {
+            ok: false,
+            message: "console command channel unavailable".into(),
+        }),
+    }
 }
 
 async fn get_status() -> axum::extract::Json<serde_json::Value> {
