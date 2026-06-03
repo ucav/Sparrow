@@ -87,6 +87,7 @@ impl WebViewServer {
             .route("/status", get(get_status))
             .route("/file", get(read_file))
             .route("/conversation/reset", post(reset_conversation))
+            .route("/stop", post(stop_run))
             .route("/approval", post(resolve_approval))
             .route("/config", get(get_config).post(save_provider))
             .route("/permissions", get(get_permissions).post(save_permissions))
@@ -516,29 +517,77 @@ async fn get_tools() -> axum::extract::Json<ToolsResponse> {
     })
 }
 
-async fn list_models() -> axum::extract::Json<serde_json::Value> {
+async fn list_models(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> axum::extract::Json<serde_json::Value> {
     use crate::config::providers::provider_registry;
     let providers = provider_registry();
     let out: Vec<serde_json::Value> = providers
         .iter()
         .map(|p| {
+            // Curated models from the static registry.
+            let mut models: Vec<serde_json::Value> = p
+                .models
+                .iter()
+                .map(|m| {
+                    serde_json::json!({
+                        "name": m.name,
+                        "label": m.label,
+                        "tags": m.tags,
+                        "context_window": m.context_window,
+                        "cost_in": m.cost_input_per_mtok,
+                        "cost_out": m.cost_output_per_mtok,
+                        "recommended": m.recommended,
+                        "source": "registry",
+                    })
+                })
+                .collect();
+            // Merge live-discovered models from the SQLite cache (e.g. the 92
+            // NVIDIA models) so the picker shows everything, not just curated.
+            if let Some(mem) = &state.memory {
+                let curated: std::collections::HashSet<String> =
+                    p.models.iter().map(|m| m.name.clone()).collect();
+                let default_ctx = p.models.first().map(|m| m.context_window).unwrap_or(128_000);
+                for name in mem.get_discovered_models(&p.id) {
+                    if !curated.contains(&name) {
+                        models.push(serde_json::json!({
+                            "name": name,
+                            "label": name,
+                            "tags": [],
+                            "context_window": default_ctx,
+                            "cost_in": 0.0,
+                            "cost_out": 0.0,
+                            "recommended": false,
+                            "source": "discovered",
+                        }));
+                    }
+                }
+            }
             serde_json::json!({
                 "id": p.id,
                 "label": p.label,
                 "tags": p.tags,
-                "models": p.models.iter().map(|m| serde_json::json!({
-                    "name": m.name,
-                    "label": m.label,
-                    "tags": m.tags,
-                    "context_window": m.context_window,
-                    "cost_in": m.cost_input_per_mtok,
-                    "cost_out": m.cost_output_per_mtok,
-                    "recommended": m.recommended,
-                })).collect::<Vec<_>>(),
+                "model_count": models.len(),
+                "models": models,
             })
         })
         .collect();
     axum::extract::Json(serde_json::json!({ "ok": true, "providers": out }))
+}
+
+async fn stop_run(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> axum::extract::Json<RunResponse> {
+    match &state.command_tx {
+        Some(tx) if tx.send("__stop__".to_string()).is_ok() => axum::extract::Json(RunResponse {
+            ok: true,
+            message: "stop requested".into(),
+        }),
+        _ => axum::extract::Json(RunResponse {
+            ok: false,
+            message: "console command channel unavailable".into(),
+        }),
+    }
 }
 
 async fn reset_conversation(

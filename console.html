@@ -102,7 +102,7 @@
   .lane .st{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--dim);margin-left:auto;white-space:nowrap}
   /* No truncation — messages wrap freely */
   .lane .msg{color:var(--dim);font-size:11px;line-height:1.45;
-    overflow-wrap:anywhere;word-break:break-word;white-space:normal}
+    overflow-wrap:break-word;word-break:normal;white-space:normal}
   .lane .msg b{color:var(--fg);font-weight:500}
   .lane.working .st{color:var(--agent)}.lane.done .st{color:var(--add)}.lane.idle .st{color:var(--dimmer)}.lane.error .st{color:var(--rem)}
   .lane.idle-card{opacity:.65}
@@ -123,7 +123,12 @@
 
   #term{min-height:0;overflow-y:auto;padding:18px clamp(18px,2vw,34px) 22px;font-size:13px;line-height:1.62;scroll-behavior:smooth}
   #term::-webkit-scrollbar{width:9px}#term::-webkit-scrollbar-thumb{background:#2c2419;border-radius:6px}
-  .ln{white-space:pre-wrap;word-break:break-word;animation:in .18s ease}
+  /* Children always span the full stream width — prevents the column from
+     collapsing to min-content and breaking text vertically char-by-char. */
+  #term>*{max-width:100%;width:100%}
+  /* word-break:break-word is deprecated and acts like break-all in some
+     Chromium builds (mid-word vertical breaking). Use overflow-wrap instead. */
+  .ln{white-space:pre-wrap;word-break:normal;overflow-wrap:break-word;animation:in .18s ease}
   @keyframes in{from{opacity:0;transform:translateY(3px)}to{opacity:1}}
   .muted{color:var(--dim)}.dimd{color:var(--dimmer)}
   .prompt{color:var(--brand)}.cmd{color:var(--fg)}
@@ -160,7 +165,9 @@
     .home-left{border-right:none;border-bottom:1px solid var(--line);grid-template-columns:84px 1fr;padding:18px}
     .hero-logo{width:84px;height:84px}
   }
-  .status{position:fixed;bottom:48px;right:16px;font-size:10px;color:var(--dimmer);z-index:10}
+  /* The chrome bar already shows the live/offline tag — hide the redundant
+     fixed bottom-right status that overlapped the composer hints. */
+  .status{display:none}
   .status.on{color:var(--add)}.status.off{color:var(--rem)}
 
   .input-bar{display:grid;grid-template-columns:auto minmax(0,1fr) minmax(190px,270px) auto;gap:8px;padding:8px clamp(16px,2vw,30px) 12px;border-top:1px solid var(--line);align-items:end;background:linear-gradient(180deg,#15110c,#100d09)}
@@ -242,17 +249,18 @@
     color:var(--brand);padding:1px 6px;border-radius:4px;font-size:9px;letter-spacing:.8px}
   /* All panels stacked, always visible (mockup behavior). Active panel
      gets a brand-coloured left bar to mark the rail-icon focus. */
-  .drawer .panel{display:block;padding:6px 4px;border-left:2px solid transparent;transition:.18s}
-  .drawer .panel.active{border-left-color:var(--brand);background:color-mix(in srgb,var(--brand) 5%, transparent)}
-  .drawer .panel + .panel{margin-top:6px}
+  /* Only the panel matching the clicked rail icon is shown — not all metrics
+     stacked at once. openPanel() toggles the .active class. */
+  .drawer .panel{display:none;padding:6px 4px}
+  .drawer .panel.active{display:block}
   @keyframes fade{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
   .drw-row{display:flex;flex-direction:column;gap:3px;padding:8px 10px;border-radius:7px;
     background:var(--panel2);border:1px solid transparent;cursor:pointer;transition:.15s;margin-bottom:5px}
   .drw-row:hover{border-color:var(--line-hot)}
   .drw-row.cur{border-color:color-mix(in srgb,var(--brand) 55%,var(--line));background:color-mix(in srgb,var(--brand) 10%,var(--panel))}
   .drw-row .ttl{font-size:11.5px;color:var(--fg);font-weight:500;display:flex;align-items:center;gap:6px;
-    overflow-wrap:anywhere;word-break:break-word}
-  .drw-row .ttl .led{width:6px;height:6px;border-radius:50%;background:var(--add);box-shadow:0 0 6px var(--add)}
+    overflow-wrap:break-word;word-break:normal}
+  .drw-row .ttl .led{width:6px;height:6px;border-radius:50%;background:var(--add);box-shadow:0 0 6px var(--add);animation:pulse 1.4s ease-in-out infinite}
   .drw-row .meta{font-size:10px;color:var(--dim);display:flex;gap:8px;flex-wrap:wrap}
   .drw-row .meta b{color:var(--fg);font-weight:500}
   .drw-empty{color:var(--dimmer);font-size:11px;font-style:italic;padding:8px 10px;text-align:center}
@@ -623,7 +631,24 @@
   .approval-card .approve{color:var(--add);background:rgba(116,194,88,.12);border:1px solid rgba(116,194,88,.4)}
   .approval-card .deny{color:var(--rem);background:rgba(217,106,99,.12);border:1px solid rgba(217,106,99,.38)}
   /* run summary card */
+  /* collapsible code block (assistant code output) */
+  .code-card{margin:8px 0;border:1px solid var(--line-hot);border-radius:9px;background:var(--panel2);overflow:hidden}
+  .code-card>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:9px;padding:7px 12px;font-size:11px;color:var(--dim);background:var(--panel)}
+  .code-card>summary::-webkit-details-marker{display:none}
+  .code-card .cc-icon{color:var(--brand);transition:transform .2s;font-size:9px}
+  .code-card[open] .cc-icon{transform:rotate(90deg)}
+  .code-card .cc-lang{color:var(--agent);font-weight:600;letter-spacing:.5px;text-transform:lowercase}
+  .code-card .cc-meta{color:var(--dimmer);font-size:9.5px}
+  .code-card .cc-copy{margin-left:auto;font-family:inherit;font-size:9.5px;padding:2px 9px;border-radius:5px;cursor:pointer;background:transparent;border:1px solid var(--line);color:var(--dim);transition:.12s}
+  .code-card .cc-copy:hover{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 40%,var(--line))}
+  .code-card pre{margin:0;padding:11px 14px;overflow-x:auto;background:var(--bg)}
+  .code-card code{font-family:inherit;font-size:12px;line-height:1.55;color:var(--fg);white-space:pre;display:block}
+  .code-card pre::-webkit-scrollbar{height:7px}.code-card pre::-webkit-scrollbar-thumb{background:#2c2419;border-radius:6px}
   .run-summary{margin:10px 0;border:1px solid var(--line-hot);border-radius:10px;background:var(--panel);overflow:hidden;animation:in .2s ease}
+  .run-summary>summary{list-style:none;cursor:pointer}
+  .run-summary>summary::-webkit-details-marker{display:none}
+  .run-summary[open] .rs-chev{transform:rotate(180deg)}
+  .run-summary:not([open]) .rs-head{border-bottom:none}
   .run-summary .rs-head{display:flex;align-items:center;gap:10px;padding:8px 13px;border-bottom:1px solid var(--line);font-size:10.5px}
   .run-summary .rs-head .rs-ok{color:var(--add);font-size:13px}
   .run-summary .rs-head .rs-status{color:var(--fg);font-weight:500;flex:1}
@@ -963,7 +988,10 @@
       <div class="context-label"><span>context</span><b id="contextText">0% · 0 / 32k tok</b></div><!-- limit updated by updateContextMeter() -->
       <div class="context-track"><span class="context-fill" id="contextFill"></span></div>
     </div>
-    <button class="btn" id="runBtn">run</button>
+    <div style="display:flex;gap:6px;align-items:end">
+      <button class="btn" id="runBtn">run</button>
+      <button class="btn" id="stopBtn" title="Stop the running task" style="display:none;color:var(--rem);background:color-mix(in srgb,var(--rem) 10%,transparent);border-color:color-mix(in srgb,var(--rem) 40%,transparent)">◼ stop</button>
+    </div>
     <div class="attachments" id="attachments"></div>
   </div>
 
@@ -1104,14 +1132,20 @@ function setRoute(t){
   el.title=t;
 }
 function updateSession(){
-  $('tokSession').textContent=sessionTok.toLocaleString()+' tok · $'+sessionCost.toFixed(4);
+  // Session stat shows cumulative tokens only — the $ lives in COST and BUDGET,
+  // so we don't duplicate the dollar figure across the cockpit.
+  $('tokSession').textContent=sessionTok.toLocaleString()+' tok';
 }
-let _budgetDailyUsd=5;  // populated by hydrateHero from /config
+let _budgetDailyUsd=0;  // 0 = unlimited until /config says otherwise
 function updateBudget(){
   const el=$('budget');if(!el)return;
-  const pct=_budgetDailyUsd>0?Math.min(100,Math.round(sessionCost/_budgetDailyUsd*100)):0;
+  if(!_budgetDailyUsd||_budgetDailyUsd<=0){
+    el.textContent='unlimited';
+    el.style.color='var(--dim)';
+    return;
+  }
+  const pct=Math.min(100,Math.round(sessionCost/_budgetDailyUsd*100));
   el.textContent=`${pct}% / $${_budgetDailyUsd} day`;
-  // Colour gradient red as we approach the cap
   el.style.color=pct>=85?'var(--rem)':pct>=60?'var(--coral)':pct>=30?'var(--gold)':'var(--add)';
 }
 function setCost(c){
@@ -1204,7 +1238,14 @@ function updateContextMeter(){
   const used=Math.min(contextLimit,draftContextTokens());
   const pct=Math.min(100,Math.round((used/contextLimit)*100));
   if($('contextText'))$('contextText').textContent=`${pct}% · ${used.toLocaleString()} / ${fmtCtx(contextLimit)} tok`;
-  if($('contextFill'))$('contextFill').style.width=pct+'%';
+  const fill=$('contextFill');
+  if(fill){
+    fill.style.width=pct+'%';
+    // Color shifts green → amber → coral as the window fills.
+    const col=pct>=85?'var(--rem)':pct>=65?'var(--coral)':pct>=40?'var(--brand)':'var(--add)';
+    fill.style.background=col;
+    fill.style.boxShadow=pct>=65?`0 0 8px ${col}`:'none';
+  }
 }
 function setAuto(level){
   const map={supervised:'--sup',trusted:'--tru',autonomous:'--aut'};
@@ -2168,10 +2209,36 @@ function streamDelta(text){
 }
 function cryptoUid(){return Math.random().toString(36).slice(2,10)}
 
+// When a streamed assistant message finalizes, split out fenced ``` code blocks
+// into collapsible <details> cards so code never floods the conversation flow.
+function finalizeStreamBlock(buf){
+  const span=buf.querySelector('.streaming')||buf.querySelector('.cmd');
+  if(!span)return;
+  const raw=span.textContent||'';
+  if(!raw.includes('```')){return;} // plain prose — leave as-is
+  const parts=raw.split(/```/);
+  buf.innerHTML='';
+  parts.forEach((part,i)=>{
+    if(i%2===1){
+      // code block — first token may be a language hint
+      const nl=part.indexOf('\n');
+      const lang=nl>0?part.slice(0,nl).trim():'';
+      const code=nl>0?part.slice(nl+1):part;
+      const lineCount=code.split('\n').filter(l=>l.length).length;
+      const d=document.createElement('details');d.className='code-card';d.open=false;
+      d.innerHTML=`<summary><span class="cc-icon">▸</span><span class="cc-lang">${esc(lang||'code')}</span><span class="cc-meta">${lineCount} lines</span><button class="cc-copy" onclick="navigator.clipboard.writeText(this.closest('.code-card').querySelector('code').textContent);this.textContent='copied ✓'">copy</button></summary><pre><code>${esc(code)}</code></pre>`;
+      buf.appendChild(d);
+    }else if(part.trim()){
+      const p=document.createElement('div');p.className='cmd';p.style.whiteSpace='pre-wrap';p.textContent=part.trim();
+      buf.appendChild(p);
+    }
+  });
+}
 function handleEvent(ev){
   // End the streaming line as soon as a non-delta event arrives.
   if(STREAM_BUF&&ev.type!=='ThinkingDelta'){
     const s=STREAM_BUF.querySelector('.streaming');if(s)s.classList.remove('streaming');
+    finalizeStreamBlock(STREAM_BUF);
     STREAM_BUF=null;
   }
 
@@ -2180,7 +2247,8 @@ function handleEvent(ev){
       const turnCount=parseInt(localStorage.getItem('sparrow-turn-count')||'0',10)+1;
       localStorage.setItem('sparrow-turn-count',String(turnCount));
       line(`<span class="acc">▸ started:</span> <span class="cmd">analyse de la requête</span>${turnCount>1?` <span style="color:var(--add);font-size:10px;margin-left:8px">● context retained · turn #${turnCount}</span>`:''}`);
-      resetRunMetrics();resetSwarm();runStartMs=Date.now();runDiffsApplied=0;runCheckpoints=0;runCheckpointIds=[];CHECKPOINT_TIMELINE=null;setSwarm('planner','thinking','classifying request and selecting route');ensureTokenMeter();break;
+      resetRunMetrics();resetSwarm();runStartMs=Date.now();runDiffsApplied=0;runCheckpoints=0;runCheckpointIds=[];CHECKPOINT_TIMELINE=null;setSwarm('planner','thinking','classifying request and selecting route');ensureTokenMeter();
+      setRunActive(true);break;
     }
     case 'RouteSelected':{
       const chain=summarizeChain(ev.chain);
@@ -2230,12 +2298,18 @@ function handleEvent(ev){
       const durStr=durMs>60000?Math.floor(durMs/60000)+'m '+Math.round((durMs%60000)/1000)+'s':durMs>1000?(durMs/1000).toFixed(1)+'s':durMs+'ms';
       const finalCost=ev.outcome?.cost_usd??costV;
       const finalTok=ev.outcome?.tokens?.input+ev.outcome?.tokens?.output||tokV;
-      const card=document.createElement('div');card.className='run-summary';
-      card.innerHTML=`<div class="rs-head">
+      const status=esc(ev.outcome?.status||'done');
+      // Collapsible run summary: opens to show the grid, then auto-collapses to a
+      // single compact line after 2.5s. Click the summary to re-expand anytime.
+      const card=document.createElement('details');card.className='run-summary';card.open=true;
+      card.innerHTML=`<summary class="rs-head">
         <span class="rs-ok">✓</span>
-        <span class="rs-status">${esc(ev.outcome?.status||'done')}</span>
+        <span class="rs-status">${status}</span>
+        <span style="color:var(--brand);font-size:10px">$${finalCost.toFixed(4)}</span>
+        <span style="color:var(--agent);font-size:10px">${(finalTok||tokV).toLocaleString()} tok</span>
         <span class="rs-dur">${durStr}</span>
-      </div>
+        <span class="rs-chev" style="margin-left:auto;color:var(--dimmer);font-size:9px;transition:transform .2s">▼</span>
+      </summary>
       <div class="rs-grid">
         <div class="rs-stat"><span class="k">cost</span><span class="v cost">$${finalCost.toFixed(4)}</span></div>
         <div class="rs-stat"><span class="k">tokens</span><span class="v tok">${(finalTok||tokV).toLocaleString()}</span></div>
@@ -2243,13 +2317,16 @@ function handleEvent(ev){
         <div class="rs-stat"><span class="k">checkpoints</span><span class="v checks">${runCheckpoints}</span></div>
       </div>`;
       term.appendChild(card);term.scrollTop=term.scrollHeight;
+      setTimeout(()=>{card.open=false;},2500);
       chirp(900,.05);setTimeout(()=>chirp(1400,.07),100);
+      setRunActive(false);
       break;
     }
     case 'Error':
       if(!String(ev.message||'').includes('Ollama API error 404')){
         showError('Runtime error',ev.message,'Check config, provider availability, or retry after fixing the reported cause.','docs/troubleshooting.md')
       }
+      setRunActive(false);
       break;
     default:line(`<span class="dimd">${esc(JSON.stringify(ev))}</span>`);break;
   }
@@ -2317,8 +2394,23 @@ async function bootIntro(){
   typeCmd('status',term);
 }
 
+// ─── Run state (Stop button + mid-run injection hint) ───────────────
+let runActive=false;
+function setRunActive(active){
+  runActive=active;
+  const stop=$('stopBtn'),run=$('runBtn'),ta=$('taskInput');
+  if(stop)stop.style.display=active?'':'none';
+  if(run)run.textContent=active?'inject':'run';
+  if(ta)ta.placeholder=active?'type to inject into the running task · Enter to send':'Type a task and press Enter…';
+}
+async function stopRun(){
+  try{await fetch('/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});}
+  catch(e){}
+  setRunActive(false);
+}
 // ─── Input ─────────────────────────────────────────────────────────
 $('runBtn').addEventListener('click',runTask);
+$('stopBtn').addEventListener('click',stopRun);
 $('taskInput').addEventListener('keydown',composerKeydown);
 $('taskInput').addEventListener('input',composerInput);
 $('taskInput').addEventListener('paste',composerPaste);

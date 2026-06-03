@@ -3703,6 +3703,14 @@ async fn handle_webview(
     let approvals_for_runs = approvals.clone();
     let recorder_for_runs = recorder.clone();
     tokio::spawn(async move {
+        // Tracks the currently running task so we can inject mid-run messages
+        // and abort on stop. `inject_tx` forwards user text into the live run;
+        // `handle` lets us cancel it.
+        let mut active: Option<(
+            tokio::task::JoinHandle<()>,
+            tokio::sync::mpsc::UnboundedSender<String>,
+        )> = None;
+
         while let Some(task) = command_rx.recv().await {
             // Sentinel: clear conversation history without driving the engine.
             if task == "__reset_conversation__" {
@@ -3710,6 +3718,47 @@ async fn handle_webview(
                 guard.clear();
                 continue;
             }
+            // Sentinel: abort the active run.
+            if task == "__stop__" {
+                if let Some((handle, _)) = active.take() {
+                    handle.abort();
+                    let _ = events_for_runs.send(sparrow::event::Event::Message {
+                        run: sparrow::event::RunId("webview".into()),
+                        role: "system".into(),
+                        text: "run aborted by user".into(),
+                    });
+                    let _ = events_for_runs.send(sparrow::event::Event::RunFinished {
+                        run: sparrow::event::RunId("webview".into()),
+                        outcome: sparrow::event::OutcomeSummary {
+                            status: "aborted".into(),
+                            diffs: vec![],
+                            cost_usd: 0.0,
+                            tokens: sparrow::event::TokenUsage { input: 0, output: 0 },
+                        },
+                    });
+                }
+                continue;
+            }
+            // If a run is still active, treat this message as a mid-run injection
+            // instead of starting a new run.
+            if let Some((handle, inject_tx)) = active.as_ref() {
+                if !handle.is_finished() {
+                    let _ = inject_tx.send(task.clone());
+                    let _ = events_for_runs.send(sparrow::event::Event::Message {
+                        run: sparrow::event::RunId("webview".into()),
+                        role: "user".into(),
+                        text: format!("(injected) {task}"),
+                    });
+                    // Also append to persistent history so future runs see it.
+                    let mut guard = conv_for_runs.lock().expect("conv lock poisoned");
+                    guard.push(sparrow::provider::Msg {
+                        role: "user".into(),
+                        content: vec![sparrow::provider::ContentBlock::Text { text: task.clone() }],
+                    });
+                    continue;
+                }
+            }
+            active = None;
             let current_config = config_for_runs
                 .read()
                 .expect("config lock poisoned")
@@ -3747,11 +3796,19 @@ async fn handle_webview(
                 description: task,
                 context: prior_context,
             };
+            // Channel for injecting user messages mid-run.
+            let (inject_tx, inject_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
             let (run_tx, mut run_rx) = tokio::sync::mpsc::unbounded_channel();
             let forward_tx = events_for_runs.clone();
             let recorder = recorder_for_runs.clone();
             let conv_capture = conv_for_capture.clone();
             let forward = tokio::spawn(async move {
+                // Accumulate the assistant's streamed text for this run. The engine
+                // emits the final response as ThinkingDelta events (not a Message),
+                // so we concatenate the deltas and flush one assistant Msg into the
+                // persistent conversation history when the run finishes. THIS is what
+                // makes context survive across model switches and separate prompts.
+                let mut assistant_buf = String::new();
                 while let Some(event) = run_rx.recv().await {
                     if let sparrow::event::Event::RunStarted { run, agent, .. } = &event {
                         recorder.start_run(
@@ -3766,35 +3823,54 @@ async fn handle_webview(
                             },
                         );
                     }
-                    // Capture assistant Message events so the next run sees them.
-                    if let sparrow::event::Event::Message { role, text, .. } = &event {
-                        if role == "assistant" && !text.is_empty() {
+                    // Accumulate streamed assistant text.
+                    if let sparrow::event::Event::ThinkingDelta { text, .. } = &event {
+                        assistant_buf.push_str(text);
+                    }
+                    recorder.record(&event);
+                    if let sparrow::event::Event::RunFinished { run, .. } = &event {
+                        // Flush the accumulated assistant turn into the shared history.
+                        let trimmed = assistant_buf.trim();
+                        if !trimmed.is_empty() {
                             let mut guard = conv_capture.lock().expect("conv lock poisoned");
                             guard.push(sparrow::provider::Msg {
                                 role: "assistant".into(),
-                                content: vec![sparrow::provider::ContentBlock::Text { text: text.clone() }],
+                                content: vec![sparrow::provider::ContentBlock::Text {
+                                    text: trimmed.to_string(),
+                                }],
                             });
                             if guard.len() > 40 {
                                 let drop = guard.len() - 40;
                                 guard.drain(..drop);
                             }
                         }
-                    }
-                    recorder.record(&event);
-                    if let sparrow::event::Event::RunFinished { run, .. } = &event {
                         let _ = recorder.finalize(&run.0);
                     }
                     let _ = forward_tx.send(event);
                 }
             });
 
-            if let Err(err) = engine.drive(task_obj, run_tx).await {
-                let _ = events_for_runs.send(sparrow::event::Event::Error {
-                    run: sparrow::event::RunId("webview".into()),
-                    message: format!("run failed: {}", err),
-                });
-            }
-            let _ = forward.await;
+            // Spawn the run as a task so the command loop keeps receiving messages
+            // (for mid-run injection and stop) while the engine works.
+            let events_for_err = events_for_runs.clone();
+            let run_handle = tokio::spawn(async move {
+                if let Err(err) = engine
+                    .drive_with_inject(
+                        task_obj,
+                        run_tx,
+                        sparrow::event::RunId::new(),
+                        Some(inject_rx),
+                    )
+                    .await
+                {
+                    let _ = events_for_err.send(sparrow::event::Event::Error {
+                        run: sparrow::event::RunId("webview".into()),
+                        message: format!("run failed: {}", err),
+                    });
+                }
+                let _ = forward.await;
+            });
+            active = Some((run_handle, inject_tx));
         }
     });
 
