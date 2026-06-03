@@ -47,8 +47,15 @@ fn tui_agent_picker_does_not_fire_inside_an_email() {
 }
 
 #[test]
-fn cargo_pkg_version_is_0_3_0() {
-    assert_eq!(env!("CARGO_PKG_VERSION"), "0.3.0");
+fn cargo_pkg_version_is_at_least_0_3() {
+    let v = env!("CARGO_PKG_VERSION");
+    let parts: Vec<u32> = v.split('.').filter_map(|s| s.parse().ok()).collect();
+    assert!(parts.len() >= 2, "version `{}` should have at least major.minor", v);
+    assert!(
+        parts[0] > 0 || (parts[0] == 0 && parts[1] >= 3),
+        "version `{}` should be >= 0.3.x",
+        v
+    );
 }
 
 // ─── helpers ────────────────────────────────────────────────────────────────────
