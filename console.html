@@ -66,9 +66,15 @@
   .route .arrow{display:inline-block;margin:0 5px;color:var(--brand);animation:route-step 1.7s ease-in-out infinite}
   .route .arrow:nth-of-type(2n){animation-delay:.28s}
   @keyframes route-step{0%,100%{opacity:.45;transform:translateX(0)}50%{opacity:1;transform:translateX(2px)}}
-  .cost{color:var(--brand);font-weight:600;font-variant-numeric:tabular-nums}
-  .tok{font-variant-numeric:tabular-nums;transition:color .3s}
-  .tok.up{color:var(--brand)}
+  .cost{color:var(--brand);font-weight:600;font-variant-numeric:tabular-nums;transition:color .3s,text-shadow .3s,transform .3s}
+  .cost.up{animation:flash-cost .55s ease-out}
+  @keyframes flash-cost{0%{filter:brightness(1.8) saturate(1.4);text-shadow:0 0 12px var(--brand);transform:translateY(-1px) scale(1.05)}100%{filter:none;text-shadow:none;transform:none}}
+  .tok{font-variant-numeric:tabular-nums;transition:color .3s,text-shadow .3s,transform .3s;display:inline-block}
+  .tok.up{color:var(--brand);animation:flash-tok .55s ease-out}
+  @keyframes flash-tok{0%{filter:brightness(1.6);text-shadow:0 0 10px var(--brand);transform:translateY(-1px)}100%{filter:none;text-shadow:none;transform:none}}
+  .stat .pill{transition:.4s}
+  .hero-providers-pulse{animation:pulse-providers 1.2s ease-out}
+  @keyframes pulse-providers{0%{transform:scale(1)}30%{transform:scale(1.15);color:var(--add);text-shadow:0 0 10px var(--add)}100%{transform:scale(1)}}
   .pill{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:10.5px;font-weight:600;letter-spacing:.5px;transition:.3s}
   .pill .led{width:6px;height:6px;border-radius:50%}
   /* Swarm row — flex-wrap, dynamic, no truncation (Sprint 1 deliverable 1bis).
@@ -520,8 +526,50 @@
   .picker.hidden{display:none}
 
   .config-panel{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:200;
-    background:var(--panel);border:1px solid var(--line);border-radius:14px;width:min(700px,90vw);max-height:80vh;
+    background:var(--panel);border:1px solid var(--line);border-radius:14px;width:min(920px,94vw);max-height:88vh;
     overflow-y:auto;padding:18px 20px;box-shadow:0 30px 80px rgba(0,0,0,.9)}
+  /* Provider list view in config panel */
+  .cfg-provider{border:1px solid var(--line);border-radius:10px;margin:6px 0;background:var(--panel2);overflow:hidden;transition:.15s}
+  .cfg-provider.has-key{border-color:color-mix(in srgb,var(--add) 35%,var(--line))}
+  .cfg-provider summary{cursor:pointer;padding:10px 14px;display:flex;align-items:center;gap:10px;list-style:none;font-size:11.5px}
+  .cfg-provider summary::-webkit-details-marker{display:none}
+  .cfg-provider summary:hover{background:color-mix(in srgb,var(--brand) 5%,transparent)}
+  .cfg-provider .led{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+  .cfg-provider.has-key .led{background:var(--add);box-shadow:0 0 6px var(--add)}
+  .cfg-provider:not(.has-key) .led{background:var(--dimmer)}
+  .cfg-provider .lbl{font-weight:600;color:var(--fg);font-size:12px}
+  .cfg-provider .adp{font-size:9.5px;color:var(--dimmer);background:var(--bg);padding:1px 6px;border-radius:4px;letter-spacing:.5px}
+  .cfg-provider .count{margin-left:auto;font-size:10px;color:var(--dim)}
+  .cfg-provider .chev{color:var(--dimmer);transition:transform .2s;font-size:9px}
+  .cfg-provider[open] summary .chev{transform:rotate(90deg)}
+  .cfg-provider .body{padding:6px 14px 12px;border-top:1px solid var(--line);background:var(--bg)}
+  .cfg-provider .notes{color:var(--dim);font-size:10px;line-height:1.5;margin-bottom:8px;padding:6px 9px;border-radius:6px;background:color-mix(in srgb,var(--brand) 4%,transparent);border-left:2px solid color-mix(in srgb,var(--brand) 40%,transparent)}
+  .cfg-provider .models{display:flex;flex-direction:column;gap:4px;margin-top:6px}
+  .cfg-provider .mrow{display:flex;align-items:center;gap:8px;padding:5px 9px;border:1px solid var(--line);border-radius:6px;font-size:11px;background:var(--panel)}
+  .cfg-provider .mrow .mname{font-weight:500;color:var(--fg)}
+  .cfg-provider .mrow .mctx{font-size:9.5px;color:var(--agent);margin-left:auto}
+  .cfg-provider .mrow .mcost{font-size:9px;color:var(--brand)}
+  .cfg-provider .mrow .mstar{font-size:9px;color:var(--brand)}
+  .cfg-provider .mrow .mset{font-size:9px;padding:2px 7px;border-radius:5px;cursor:pointer;background:transparent;border:1px solid var(--line);color:var(--dim);transition:.12s;font-family:inherit}
+  .cfg-provider .mrow .mset:hover{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 40%,var(--line))}
+  .cfg-provider .mrow.is-default{background:color-mix(in srgb,var(--add) 8%,var(--panel));border-color:color-mix(in srgb,var(--add) 35%,var(--line))}
+  .cfg-provider .mrow.is-default .mset{color:var(--add);border-color:color-mix(in srgb,var(--add) 40%,var(--line))}
+  .cfg-provider .keyrow{display:flex;gap:8px;align-items:center;margin-top:8px}
+  .cfg-provider .keyrow input{flex:1;background:var(--bg);border:1px solid var(--line);border-radius:6px;color:var(--fg);font-family:inherit;font-size:11px;padding:5px 8px;outline:none}
+  .cfg-provider .keyrow input:focus{border-color:var(--brand)}
+  .cfg-provider .keyrow button{font-family:inherit;font-size:10px;padding:5px 12px;border-radius:6px;cursor:pointer;background:color-mix(in srgb,var(--brand) 12%,transparent);border:1px solid color-mix(in srgb,var(--brand) 40%,transparent);color:var(--brand);transition:.12s}
+  .cfg-provider .keyrow button:hover{background:color-mix(in srgb,var(--brand) 22%,transparent)}
+  .cfg-provider .keyrow .envhint{font-size:9.5px;color:var(--dimmer);font-family:inherit}
+  .cfg-section{margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+  .cfg-section h4{font-size:9px;text-transform:uppercase;letter-spacing:2px;color:var(--dimmer);margin-bottom:10px}
+  .cfg-tab-row{display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--line)}
+  .cfg-tab{font-family:inherit;background:transparent;border:none;color:var(--dimmer);font-size:11px;padding:8px 14px;cursor:pointer;border-bottom:2px solid transparent;letter-spacing:.5px;transition:.15s}
+  .cfg-tab:hover{color:var(--dim)}
+  .cfg-tab.active{color:var(--brand);border-bottom-color:var(--brand)}
+  .cfg-search{width:100%;background:var(--bg);border:1px solid var(--line);border-radius:7px;color:var(--fg);font-family:inherit;font-size:11px;padding:7px 10px;outline:none;margin-bottom:8px}
+  .cfg-search:focus{border-color:var(--brand)}
+  .cfg-summary-row{display:flex;gap:14px;margin-bottom:10px;font-size:10px;color:var(--dim)}
+  .cfg-summary-row b{color:var(--brand);font-weight:600}
   .config-panel.show{display:block;animation:in .2s ease}
   .config-panel h3{color:var(--brand);font-size:14px;letter-spacing:2px;margin-bottom:14px}
   .config-panel .row{display:flex;gap:8px;align-items:center;margin:6px 0}
@@ -678,55 +726,95 @@
 <div class="config-panel" id="configPanel">
   <span class="close" id="closeConfig">×</span>
   <h3>⚙ providers · models · routing</h3>
-  <div class="presets" id="presets">
-    <div class="preset" data-preset="local">🏠 local / free</div>
-    <div class="preset" data-preset="cloud">☁ cloud cheap</div>
-    <div class="preset" data-preset="strong">⚡ cloud strong</div>
+
+  <div class="cfg-tab-row">
+    <button class="cfg-tab active" data-cfg-tab="providers">providers &amp; models</button>
+    <button class="cfg-tab" data-cfg-tab="routing">routing &amp; autonomy</button>
+    <button class="cfg-tab" data-cfg-tab="permissions">permissions</button>
   </div>
-  <div class="row">
-    <label>provider</label>
-    <select id="provSelect"></select>
+
+  <!-- Tab: providers & models -->
+  <div data-cfg-pane="providers">
+    <div class="cfg-summary-row">
+      <span><b id="cfgProvCount">0</b> providers</span>
+      <span><b id="cfgKeyCount" style="color:var(--add)">0</b> configured</span>
+      <span><b id="cfgModelCount">0</b> models available</span>
+      <span style="margin-left:auto;color:var(--dimmer)">click ▸ to expand · set default · paste key</span>
+    </div>
+    <input type="text" class="cfg-search" id="cfgSearch" placeholder="search provider or model…" oninput="filterProviders(this.value)">
+    <div id="providerList"></div>
   </div>
-  <div class="row">
-    <label>model</label>
-    <select id="modelSelect"></select>
+
+  <!-- Tab: routing & autonomy -->
+  <div data-cfg-pane="routing" style="display:none">
+    <div class="row">
+      <label>default route</label>
+      <select id="defaultRouteSelect"><option value="">— auto (cheapest capable) —</option></select>
+    </div>
+    <div class="row">
+      <label>autonomy</label>
+      <select id="autonomySelect">
+        <option value="supervised">supervised · ask before writes/exec</option>
+        <option value="trusted">trusted · checkpoint then act</option>
+        <option value="autonomous">autonomous · act within limits</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>sandbox</label>
+      <select id="sandboxSelect">
+        <option value="local">local</option>
+        <option value="local-hardened">local-hardened</option>
+        <option value="docker">docker</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>budget</label>
+      <input type="number" id="budgetSession" placeholder="session $" style="width:120px">
+      <input type="number" id="budgetDaily" placeholder="daily $" style="width:120px">
+    </div>
+    <div class="cfg-section">
+      <h4>quick presets</h4>
+      <div class="presets" id="presets">
+        <div class="preset" data-preset="local">🏠 local / free</div>
+        <div class="preset" data-preset="cloud">☁ cloud cheap</div>
+        <div class="preset" data-preset="strong">⚡ cloud strong</div>
+      </div>
+    </div>
   </div>
-  <div class="row">
-    <label>API key</label>
-    <input type="password" id="apiKey" placeholder="paste key (never stored in HTML)">
-    <span class="badge missing" id="credBadge">no key</span>
+
+  <!-- Tab: permissions -->
+  <div data-cfg-pane="permissions" style="display:none">
+    <div class="row">
+      <label>permit</label>
+      <select id="permissionSelect">
+        <option value="read-only">read-only · no mutation</option>
+        <option value="plan">plan · no tools</option>
+        <option value="supervised">supervised · ask by risk</option>
+        <option value="trusted">trusted · checkpoint guard</option>
+        <option value="autonomous">autonomous · bounded action</option>
+        <option value="emergency-stop">emergency-stop · deny all</option>
+      </select>
+    </div>
+    <div class="cfg-section">
+      <h4>per-task model override</h4>
+      <p style="font-size:10.5px;color:var(--dim);line-height:1.5;margin-bottom:8px">Click <b>set default</b> next to any model above to force it for new tasks. Click <b>auto</b> below to clear and let the router decide.</p>
+      <button class="btn sm" onclick="setModelOverride(null)">⟳ clear override · auto-route</button>
+      <div style="margin-top:8px;font-size:10.5px;color:var(--dim)">current: <span id="cfgCurrentModel" style="color:var(--brand)">auto</span></div>
+    </div>
   </div>
-  <div class="row">
-    <label>autonomy</label>
-    <select id="autonomySelect">
-      <option value="supervised">supervised · ask before writes/exec</option>
-      <option value="trusted">trusted · checkpoint then act</option>
-      <option value="autonomous">autonomous · act within limits</option>
-    </select>
-  </div>
-  <div class="row">
-    <label>permit</label>
-    <select id="permissionSelect">
-      <option value="read-only">read-only · no mutation</option>
-      <option value="plan">plan · no tools</option>
-      <option value="supervised">supervised · ask by risk</option>
-      <option value="trusted">trusted · checkpoint guard</option>
-      <option value="autonomous">autonomous · bounded action</option>
-      <option value="emergency-stop">emergency-stop · deny all</option>
-    </select>
-  </div>
-  <div class="row">
-    <label>sandbox</label>
-    <select id="sandboxSelect">
-      <option value="local">local</option>
-      <option value="local-hardened">local-hardened</option>
-      <option value="docker">docker</option>
-    </select>
-  </div>
-  <div class="tags" id="modelTags"></div>
-  <div class="row" style="margin-top:12px">
-    <button class="btn" id="saveConfig">save provider</button>
+
+  <div class="row" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+    <button class="btn" id="saveConfig">save all</button>
     <span class="dimd" id="saveMsg" style="font-size:11px"></span>
+  </div>
+
+  <!-- Hidden legacy fields (still populated for compat) -->
+  <div style="display:none">
+    <select id="provSelect"></select>
+    <select id="modelSelect"></select>
+    <input type="password" id="apiKey">
+    <span id="credBadge" class="badge missing">no key</span>
+    <div id="modelTags"></div>
   </div>
 </div>
 
@@ -813,6 +901,7 @@
     <div class="stat"><span class="k">out</span><span class="tok" id="tokOut">0</span></div>
     <div class="stat"><span class="k">total</span><span class="tok" id="tok">0</span></div>
     <div class="stat"><span class="k">session</span><span class="tok" id="tokSession">0 tok · $0.000</span></div>
+    <div class="stat" title="Daily budget usage"><span class="k">budget</span><span class="tok" id="budget" style="color:var(--gold)">0% / —</span></div>
     <div class="stat"><span class="k">autonomy</span><span class="pill" id="auto"><span class="led"></span><span id="autotxt">—</span></span></div>
   </div>
 
@@ -1011,11 +1100,23 @@ function setRoute(t){
 function updateSession(){
   $('tokSession').textContent=sessionTok.toLocaleString()+' tok · $'+sessionCost.toFixed(4);
 }
+let _budgetDailyUsd=5;  // populated by hydrateHero from /config
+function updateBudget(){
+  const el=$('budget');if(!el)return;
+  const pct=_budgetDailyUsd>0?Math.min(100,Math.round(sessionCost/_budgetDailyUsd*100)):0;
+  el.textContent=`${pct}% / $${_budgetDailyUsd} day`;
+  // Colour gradient red as we approach the cap
+  el.style.color=pct>=85?'var(--rem)':pct>=60?'var(--coral)':pct>=30?'var(--gold)':'var(--add)';
+}
 function setCost(c){
   const next=Math.max(0,Number(c)||0);
   sessionCost+=next-costV;
   costV=next;
-  $('cost').textContent='$'+costV.toFixed(4);
+  const el=$('cost');
+  el.textContent='$'+costV.toFixed(4);
+  el.classList.remove('up');void el.offsetWidth;el.classList.add('up');
+  setTimeout(()=>el.classList.remove('up'),600);
+  updateBudget();
   if(tokenMeter)updateTokenMeter();
   updateSession();
 }
@@ -1027,7 +1128,11 @@ function refreshTokens(){
   $('tok').textContent=tokV.toLocaleString();updateSession();
   updateTokenMeter();
   updateContextMeter();
-  ['tokIn','tokOut','tok'].forEach(id=>{$(id).classList.add('up');setTimeout(()=>$(id).classList.remove('up'),400)});
+  ['tokIn','tokOut','tok'].forEach(id=>{
+    const el=$(id);if(!el)return;
+    el.classList.remove('up');void el.offsetWidth;el.classList.add('up');
+    setTimeout(()=>el.classList.remove('up'),600);
+  });
 }
 function addTokEstimate(input=0,output=0){estInV+=input||0;estOutV+=output||0;refreshTokens();}
 function addTokActual(input=0,output=0){
@@ -1150,7 +1255,13 @@ async function hydrateHero(){
     const allProviders=Array.isArray(cfg.providers)?cfg.providers:[];
     const activeProviders=allProviders.filter(p=>p.has_credential||p.configured);
     setIf('hero-providers',allProviders.length||'—');
-    setIf('hero-active',activeProviders.length||'0');
+    const heroActive=document.getElementById('hero-active');
+    if(heroActive){
+      const prev=heroActive.textContent;heroActive.textContent=activeProviders.length||'0';
+      if(prev!==String(activeProviders.length||'0')){heroActive.classList.remove('hero-providers-pulse');void heroActive.offsetWidth;heroActive.classList.add('hero-providers-pulse');}
+    }
+    // Budget
+    if(cfg.budget?.daily_usd){_budgetDailyUsd=cfg.budget.daily_usd;updateBudget();}
     setIf('hero-facts',(mem.stats&&mem.stats.facts!==undefined)?mem.stats.facts:(mem.facts||[]).length);
     setIf('hero-skills',(cfg.skills_count!==undefined)?cfg.skills_count:'—');
     setIf('hero-auto',(perm.permissions&&perm.permissions.mode)||'—');
@@ -1287,6 +1398,9 @@ function mirrorContextPct(){
   const m=src.textContent.match(/^([\d.]+%)/);if(m)dst.textContent=m[1];
 }
 const _mirrorIv=setInterval(mirrorContextPct,800);
+// Periodically refresh hero counters (active providers, facts, skills) so the
+// cockpit reflects external changes (e.g. user added a key in another tab).
+const _heroRefreshIv=setInterval(()=>{hydrateHero();},15000);
 
 initTheme();
 syncSoundBtn();
@@ -1854,6 +1968,21 @@ function openToolCard(ev){
   term.appendChild(d);TOOL_CARDS.set(id,d);
   term.scrollTop=term.scrollHeight;
 }
+function inferToolSummary(name,output){
+  // Build a one-line summary like "2 files · 6 KB" for fs_read, "search · 14 hits" etc.
+  if(!output)return '';
+  const s=typeof output==='string'?output:JSON.stringify(output);
+  const kb=Math.round(s.length/1024);
+  const sizeStr=kb>=1?`${kb} KB`:`${s.length} B`;
+  if(/^fs_read|^read|^fs_list|^glob/i.test(name||'')){
+    const fileCount=(s.match(/^[─#├└│]|^\s*[a-zA-Z0-9_.\-/\\]+\.\w+/gm)||[]).length;
+    return fileCount?`${fileCount} file${fileCount>1?'s':''} · ${sizeStr}`:sizeStr;
+  }
+  if(/^search|^web/i.test(name||'')){
+    const lines=s.split('\n').length;return `${lines} hits · ${sizeStr}`;
+  }
+  return sizeStr;
+}
 function closeToolCard(ev){
   const id=ev.id||ev.tool_use_id||ev.run||'';
   let d=TOOL_CARDS.get(id);
@@ -1863,8 +1992,10 @@ function closeToolCard(ev){
   const isErr=ev.is_error||ev.error;
   d.classList.remove('running');d.classList.add(isErr?'error':'done');
   const st=d.querySelector('[data-status]');
-  if(st){st.textContent=isErr?'✗ error':'✓ done';st.style.color=isErr?'var(--rem)':'var(--add)';}
-  const out=(ev.output!==undefined)?ev.output:(ev.text||'');
+  const outRaw=(ev.output!==undefined)?ev.output:(ev.text||'');
+  const summary=isErr?'✗ error':(inferToolSummary(d.querySelector('.nm')?.textContent,outRaw)||'✓ done');
+  if(st){st.textContent=summary;st.style.color=isErr?'var(--rem)':'var(--add)';}
+  const out=outRaw;
   if(out){
     const det=d.querySelector('.det')||(()=>{const x=document.createElement('div');x.className='det';d.appendChild(x);return x;})();
     const outStr=typeof out==='string'?out:JSON.stringify(out,null,2);
@@ -2083,12 +2214,17 @@ async function bootIntro(){
   if(term.childElementCount>0)return;
   // Fetch providers and models for the home screen
   let providerSummary='loading…';
+  let activeCount=0,totalProviders=0,totalModels=0;
   try{
-    const mr=await fetch('/models');const md=await mr.json();
+    const [mr,cr]=await Promise.all([fetch('/models'),fetch('/config')]);
+    const md=await mr.json();const cfg=await cr.json();
     const ps=md.providers||[];
-    const total=ps.reduce((s,p)=>s+p.models.length,0);
-    providerSummary=`${ps.length} providers · ${total} models available`;
+    totalProviders=ps.length;
+    totalModels=ps.reduce((s,p)=>s+p.models.length,0);
+    activeCount=(cfg.providers||[]).filter(p=>p.has_credential||p.configured).length;
+    providerSummary=`${totalProviders} providers · ${totalModels} models · <b style="color:var(--add)">${activeCount}</b> with key`;
   }catch{providerSummary='provider catalog unavailable';}
+  const bootTime=new Date().toLocaleTimeString('en-US',{hour12:false});
 
   const home=document.createElement('div');
   home.className='home-panel';
@@ -2096,15 +2232,15 @@ async function bootIntro(){
     <section class="home-left">
       <svg class="hero-logo" viewBox="0 0 240 240" aria-label="Sparrow logo"><use href="#sparrow"/></svg>
       <div>
-        <div class="home-title">cockpit ready</div>
-        <div class="home-sub"><b>SPARROW</b><br>one cli · grows with you</div>
+        <div class="home-title">Welcome back, <b style="color:var(--brand)">${escHtml(navigator.userAgent.includes('Windows')?'Captain':'friend')}</b></div>
+        <div class="home-sub"><b>SPARROW</b> · one cli · grows with you · booted at <span style="color:var(--fg)">${bootTime}</span></div>
         <div class="home-path" id="homePath">—</div>
       </div>
     </section>
     <section class="home-right">
       <div class="home-block">
         <h3>Route cockpit</h3>
-        <p>${escHtml(providerSummary)} · automatic fallback · cost and token tracking live.</p>
+        <p>${providerSummary} · automatic fallback · cost and token tracking live.</p>
       </div>
       <div class="home-block">
         <h3>Model picker</h3>
@@ -2509,25 +2645,130 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElement
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('modelPickerDrop').style.display!=='none')document.getElementById('modelPickerDrop').style.display='none';});
 
 let providers=[];
+let _modelsRegistry={};
 async function loadConfig(){
   try{
-    const r=await fetch('/config');const j=await r.json();
+    const [cr,mr]=await Promise.all([fetch('/config'),fetch('/models')]);
+    const j=await cr.json();const md=await mr.json();
     if(!j.ok)return;
     providers=j.providers||[];
+    // Build a registry of {provider_id: {model_name: {context_window,cost_in,cost_out,recommended}}}
+    _modelsRegistry={};
+    (md.providers||[]).forEach(p=>{_modelsRegistry[p.id]={};p.models.forEach(m=>{_modelsRegistry[p.id][m.name]=m;});});
+
     if(j.autonomy){$('autonomySelect').value=j.autonomy.toLowerCase();}
     if(j.sandbox){$('sandboxSelect').value=j.sandbox;}
     await loadPermissions();
     setAuto(($('autonomySelect').value||'trusted').toLowerCase());
-    const sel=$('provSelect');sel.innerHTML='<option value="">— choose provider —</option>'+providers.map(p=>`<option value="${escAttr(p.name)}">${esc(p.label||p.name)} (${esc(p.adapter)}) ${p.has_credential?'✓':p.configured?'•':''}</option>`).join('');
-    sel.onchange=()=>selectProvider(sel.value);
+
+    // Legacy hidden select
+    const sel=$('provSelect');if(sel)sel.innerHTML='<option value="">— choose provider —</option>'+providers.map(p=>`<option value="${escAttr(p.name)}">${esc(p.label||p.name)}</option>`).join('');
     const badge=$('credBadge');
-    if(providers.length>0){
-      const found=providers.filter(p=>p.has_credential).length;
-      badge.textContent=found+'/'+providers.length+' keys';
-      badge.className='badge '+(found>0?'found':'missing');
+    const keyCount=providers.filter(p=>p.has_credential).length;
+    if(badge){badge.textContent=keyCount+'/'+providers.length+' keys';badge.className='badge '+(keyCount>0?'found':'missing');}
+
+    // Render full provider list
+    renderProviderList();
+    // Counters
+    const totalModels=providers.reduce((s,p)=>s+(p.models||[]).length,0);
+    if($('cfgProvCount'))$('cfgProvCount').textContent=providers.length;
+    if($('cfgKeyCount'))$('cfgKeyCount').textContent=keyCount;
+    if($('cfgModelCount'))$('cfgModelCount').textContent=totalModels;
+    // Default route select
+    const drs=$('defaultRouteSelect');
+    if(drs){
+      drs.innerHTML='<option value="">— auto (cheapest capable) —</option>'+
+        providers.flatMap(p=>(p.models||[]).map(m=>`<option value="${escAttr(p.name+':'+m)}">${esc(p.label||p.name)} · ${esc(m)}${p.has_credential?'':' ⚠ no key'}</option>`)).join('');
+      if(selectedModel)drs.value=selectedModel;
     }
-  }catch(e){}
+    // Current model display
+    if($('cfgCurrentModel'))$('cfgCurrentModel').textContent=selectedModel||'auto-route';
+  }catch(e){console.error('loadConfig failed',e);}
 }
+
+function renderProviderList(){
+  const host=document.getElementById('providerList');if(!host)return;
+  host.innerHTML=providers.map(p=>{
+    const reg=_modelsRegistry[p.name]||{};
+    const models=(p.models||[]).map(m=>{
+      const info=reg[m]||{};
+      const isDefault=selectedModel===p.name+':'+m;
+      const star=info.recommended?'<span class="mstar" title="recommended">★</span>':'';
+      const ctx=info.context_window?fmtCtxShort(info.context_window):'';
+      const cost=info.cost_in!==undefined?(info.cost_in===0?'free':'$'+info.cost_in+'/M'):'';
+      return `<div class="mrow${isDefault?' is-default':''}">
+        <span class="mname">${escHtml(m)}</span>
+        ${star}
+        ${ctx?'<span class="mctx">'+escHtml(ctx)+'</span>':''}
+        ${cost?'<span class="mcost">'+escHtml(cost)+'</span>':''}
+        <button class="mset" onclick="setModelDefault('${escHtml(p.name+':'+m)}')">${isDefault?'✓ default':'set default'}</button>
+      </div>`;
+    }).join('');
+    const envHint=p.api_key_env?`<span class="envhint">env: <b>${escHtml(p.api_key_env)}</b></span>`:'';
+    return `<details class="cfg-provider${p.has_credential?' has-key':''}" data-prov="${escHtml(p.name)}">
+      <summary>
+        <span class="led"></span>
+        <span class="lbl">${escHtml(p.label||p.name)}</span>
+        <span class="adp">${escHtml(p.adapter||'')}</span>
+        <span class="count">${(p.models||[]).length} model${(p.models||[]).length!==1?'s':''}${p.has_credential?' · key ✓':''}</span>
+        <span class="chev">▸</span>
+      </summary>
+      <div class="body">
+        ${p.notes?'<div class="notes">'+escHtml(p.notes)+'</div>':''}
+        <div class="models">${models||'<div style="color:var(--dimmer);font-size:10.5px;padding:6px">no models declared</div>'}</div>
+        <div class="keyrow">
+          ${envHint}
+          <input type="password" id="key-${escHtml(p.name)}" placeholder="${p.has_credential?'key configured · paste to override':'paste API key'}">
+          <button onclick="saveProviderKey('${escHtml(p.name)}')">save key</button>
+        </div>
+      </div>
+    </details>`;
+  }).join('');
+}
+
+function filterProviders(q){
+  const norm=q.toLowerCase().trim();
+  document.querySelectorAll('.cfg-provider').forEach(d=>{
+    const txt=d.textContent.toLowerCase();
+    d.style.display=(!norm||txt.includes(norm))?'':'none';
+    if(norm&&txt.includes(norm))d.setAttribute('open','');
+  });
+}
+
+function setModelDefault(id){
+  setModelOverride(id,_modelsRegistry[id.split(':')[0]]?.[id.split(':').slice(1).join(':')]?.context_window?fmtCtxShort(_modelsRegistry[id.split(':')[0]][id.split(':').slice(1).join(':')].context_window):'');
+  renderProviderList();
+  if($('cfgCurrentModel'))$('cfgCurrentModel').textContent=id;
+  const drs=$('defaultRouteSelect');if(drs)drs.value=id;
+}
+
+async function saveProviderKey(name){
+  const p=providers.find(p=>p.name===name);if(!p)return;
+  const inp=document.getElementById('key-'+name);const key=inp.value.trim();
+  if(!key){alert('paste a key first');return;}
+  const body={
+    name,adapter:p.adapter||'openai-compatible',base_url:p.base_url||null,
+    models:p.models||[],
+    api_key_env:p.api_key_env||null,
+    api_key:key,
+    autonomy:$('autonomySelect').value,
+    sandbox:$('sandboxSelect').value,
+  };
+  try{
+    const r=await fetch('/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const j=await r.json();
+    if(j.ok){inp.value='';await loadConfig();}
+    else alert('save failed: '+j.message);
+  }catch(e){alert('save failed: '+e.message);}
+}
+
+// Tab switching
+document.addEventListener('click',e=>{
+  const tab=e.target.closest('.cfg-tab');if(!tab)return;
+  const name=tab.dataset.cfgTab;
+  document.querySelectorAll('.cfg-tab').forEach(t=>t.classList.toggle('active',t===tab));
+  document.querySelectorAll('[data-cfg-pane]').forEach(p=>{p.style.display=p.dataset.cfgPane===name?'':'none';});
+});
 
 async function loadPermissions(){
   try{
