@@ -2,6 +2,44 @@
 
 All notable changes to Sparrow will be documented in this file.
 
+## [0.3.3] — 2026-06-03
+
+Public-release hardening pass. Fixes every issue from hands-on testing and
+ships a 60-second animated keynote.
+
+### Fixed (critical)
+- **Context truly persists now.** The engine emits the assistant response as
+  `ThinkingDelta`, not `Message`, so the previous capture never fired. The
+  WebView command loop now accumulates streamed deltas and flushes one
+  assistant turn into a persistent history on `RunFinished`. Context survives
+  model switches AND separate prompts.
+- **Sessions persist across restarts.** The conversation is saved to the
+  SQLite `SessionStore` under id `webview` and re-hydrated on launch — it
+  appears in the `/sessions` panel and reloads next time.
+- **Counters animate live and never stick at zero** (direct `textContent`
+  write + easing layer; the rAF-only path failed in background tabs).
+- **All models are visible.** `/models` merges live-discovered models with the
+  curated registry — NVIDIA jumps from 6 to 82 models in the picker/config.
+
+### Added
+- **Stop button** next to Run aborts the active task (`POST /stop`).
+- **Mid-run injection**: typing while a task runs injects the text into the
+  live run's context instead of starting a new run.
+- **Collapsible code cards**: assistant code output is split out of the stream
+  into `<details>` blocks with language label, line count, and copy button.
+- **Auto-collapsing run summary** that re-expands on click.
+- **60-second animated keynote** at `sparrow-keynote-60s.html` — startup-style
+  scenes, live terminal demo, feature montage, brand end-frame.
+
+### Polished UI
+- Fixed vertical char-by-char text wrapping (`overflow-wrap` instead of the
+  deprecated `word-break:break-word`).
+- Drawer shows only the clicked panel, not all metrics stacked.
+- Context bar fills with a green → amber → coral → red gradient.
+- Animated pulsing green dot on the active session.
+- Removed the duplicated dollar figure; budget shows `unlimited` when unset.
+- Removed the misaligned fixed "live" tag (the chrome bar already has one).
+
 ## [0.3.2] — 2026-06-03
 
 ### Fixed (critical bugs from user report)
