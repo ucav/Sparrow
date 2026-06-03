@@ -3691,10 +3691,30 @@ async fn handle_webview(
 
     // Persistent conversational context shared across runs — fixes the bug where
     // every model switch dropped prior turns. Capped to last 40 messages.
+    // Backed by the SQLite SessionStore under a stable id so context AND the
+    // session list survive a restart.
+    let session_db_path = dirs::state_dir()
+        .or_else(dirs::data_local_dir)
+        .or_else(dirs::data_dir)
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("sparrow")
+        .join("sessions.db");
+    const WEBVIEW_SESSION_ID: &str = "webview";
+    let session_store =
+        sparrow::runtime::session::SessionStore::open(&session_db_path).ok();
+    // Hydrate prior context from the persisted webview session.
+    let initial_history: Vec<sparrow::provider::Msg> = session_store
+        .as_ref()
+        .and_then(|s| s.load(WEBVIEW_SESSION_ID))
+        .and_then(|sess| serde_json::from_str(&sess.messages_json).ok())
+        .unwrap_or_default();
     let conv_history: Arc<std::sync::Mutex<Vec<sparrow::provider::Msg>>> =
-        Arc::new(std::sync::Mutex::new(Vec::new()));
+        Arc::new(std::sync::Mutex::new(initial_history));
     let conv_for_runs = conv_history.clone();
     let conv_for_capture = conv_history.clone();
+    let session_store = session_store.map(Arc::new);
+    let session_for_capture = session_store.clone();
+    let session_for_loop = session_store.clone();
 
     let config_for_runs = shared_config.clone();
     let memory_for_runs = memory.clone();
@@ -3716,6 +3736,10 @@ async fn handle_webview(
             if task == "__reset_conversation__" {
                 let mut guard = conv_for_runs.lock().expect("conv lock poisoned");
                 guard.clear();
+                drop(guard);
+                if let Some(store) = &session_for_loop {
+                    let _ = store.save("webview", &[], Some("WebView console"));
+                }
                 continue;
             }
             // Sentinel: abort the active run.
@@ -3802,6 +3826,7 @@ async fn handle_webview(
             let forward_tx = events_for_runs.clone();
             let recorder = recorder_for_runs.clone();
             let conv_capture = conv_for_capture.clone();
+            let session_capture = session_for_capture.clone();
             let forward = tokio::spawn(async move {
                 // Accumulate the assistant's streamed text for this run. The engine
                 // emits the final response as ThinkingDelta events (not a Message),
@@ -3831,18 +3856,26 @@ async fn handle_webview(
                     if let sparrow::event::Event::RunFinished { run, .. } = &event {
                         // Flush the accumulated assistant turn into the shared history.
                         let trimmed = assistant_buf.trim();
-                        if !trimmed.is_empty() {
+                        let snapshot = {
                             let mut guard = conv_capture.lock().expect("conv lock poisoned");
-                            guard.push(sparrow::provider::Msg {
-                                role: "assistant".into(),
-                                content: vec![sparrow::provider::ContentBlock::Text {
-                                    text: trimmed.to_string(),
-                                }],
-                            });
-                            if guard.len() > 40 {
-                                let drop = guard.len() - 40;
-                                guard.drain(..drop);
+                            if !trimmed.is_empty() {
+                                guard.push(sparrow::provider::Msg {
+                                    role: "assistant".into(),
+                                    content: vec![sparrow::provider::ContentBlock::Text {
+                                        text: trimmed.to_string(),
+                                    }],
+                                });
+                                if guard.len() > 40 {
+                                    let drop = guard.len() - 40;
+                                    guard.drain(..drop);
+                                }
                             }
+                            guard.clone()
+                        };
+                        // Persist the full conversation so it survives a restart and
+                        // shows up in the /sessions panel.
+                        if let Some(store) = &session_capture {
+                            let _ = store.save("webview", &snapshot, Some("WebView console"));
                         }
                         let _ = recorder.finalize(&run.0);
                     }
