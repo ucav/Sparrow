@@ -210,12 +210,24 @@ struct ProviderView {
 }
 
 #[derive(serde::Serialize)]
+struct BudgetView {
+    session_usd: f64,
+    daily_usd: f64,
+}
+
+#[derive(serde::Serialize)]
 struct ConfigResponse {
     ok: bool,
     message: String,
     autonomy: String,
     sandbox: String,
     providers: Vec<ProviderView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    budget: Option<BudgetView>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    workdir: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    skills_count: Option<usize>,
 }
 
 #[derive(serde::Serialize)]
@@ -622,6 +634,9 @@ async fn get_config(
         return axum::extract::Json(ConfigResponse {
             ok: false,
             message: "config unavailable".into(),
+            budget: None,
+            workdir: None,
+            skills_count: None,
             autonomy: String::new(),
             sandbox: String::new(),
             providers: vec![],
@@ -725,6 +740,12 @@ async fn get_config(
         autonomy: format!("{:?}", cfg.defaults.autonomy),
         sandbox: cfg.defaults.sandbox,
         providers,
+        budget: Some(BudgetView {
+            session_usd: cfg.budget.session_usd,
+            daily_usd: cfg.budget.daily_usd,
+        }),
+        workdir: std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string()),
+        skills_count: None,
     })
 }
 

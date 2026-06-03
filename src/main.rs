@@ -3689,6 +3689,13 @@ async fn handle_webview(
     let shared_config = Arc::new(RwLock::new(config.clone()));
     let approvals = Arc::new(sparrow::console::WebApprovalBroker::new());
 
+    // Persistent conversational context shared across runs — fixes the bug where
+    // every model switch dropped prior turns. Capped to last 40 messages.
+    let conv_history: Arc<std::sync::Mutex<Vec<sparrow::provider::Msg>>> =
+        Arc::new(std::sync::Mutex::new(Vec::new()));
+    let conv_for_runs = conv_history.clone();
+    let conv_for_capture = conv_history.clone();
+
     let config_for_runs = shared_config.clone();
     let memory_for_runs = memory.clone();
     let skills_for_runs = skills.clone();
@@ -3710,13 +3717,34 @@ async fn handle_webview(
                 .with_memory(memory_for_runs.clone())
                 .with_skills(skills_for_runs.clone())
                 .with_approval_handler(approvals_for_runs.clone());
+            // Pull the persisted conversation history so a model switch never
+            // drops prior turns. The Vec is cloned so the engine owns it for
+            // the duration of the run; new turns get captured by the forwarder.
+            let prior_context: Vec<sparrow::provider::Msg> = {
+                let guard = conv_for_runs.lock().expect("conv lock poisoned");
+                guard.clone()
+            };
+            // Push the user turn we are about to drive into the persisted log.
+            {
+                let mut guard = conv_for_runs.lock().expect("conv lock poisoned");
+                guard.push(sparrow::provider::Msg {
+                    role: "user".into(),
+                    content: vec![sparrow::provider::ContentBlock::Text { text: task.clone() }],
+                });
+                // Cap at last 40 turns (~ generous; engine compaction handles tokens).
+                if guard.len() > 40 {
+                    let drop = guard.len() - 40;
+                    guard.drain(..drop);
+                }
+            }
             let task_obj = sparrow::engine::Task {
                 description: task,
-                context: vec![],
+                context: prior_context,
             };
             let (run_tx, mut run_rx) = tokio::sync::mpsc::unbounded_channel();
             let forward_tx = events_for_runs.clone();
             let recorder = recorder_for_runs.clone();
+            let conv_capture = conv_for_capture.clone();
             let forward = tokio::spawn(async move {
                 while let Some(event) = run_rx.recv().await {
                     if let sparrow::event::Event::RunStarted { run, agent, .. } = &event {
@@ -3731,6 +3759,20 @@ async fn handle_webview(
                                 agent: agent.clone(),
                             },
                         );
+                    }
+                    // Capture assistant Message events so the next run sees them.
+                    if let sparrow::event::Event::Message { role, text, .. } = &event {
+                        if role == "assistant" && !text.is_empty() {
+                            let mut guard = conv_capture.lock().expect("conv lock poisoned");
+                            guard.push(sparrow::provider::Msg {
+                                role: "assistant".into(),
+                                content: vec![sparrow::provider::ContentBlock::Text { text: text.clone() }],
+                            });
+                            if guard.len() > 40 {
+                                let drop = guard.len() - 40;
+                                guard.drain(..drop);
+                            }
+                        }
                     }
                     recorder.record(&event);
                     if let sparrow::event::Event::RunFinished { run, .. } = &event {
