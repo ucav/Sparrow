@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sparrow — 60s keynote</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0e0b08;--panel:#16120d;--line:#2c251c;--dim:#897d6c;--dimmer:#5c5346;--fg:#ece2cf;
+    --brand:#f2a93c;--coral:#f0674a;--agent:#4ec9b0;--planner:#6fa6e6;--gold:#f2c94c;--add:#74c258;--rem:#d96a63;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden}
+  body{font-family:'IBM Plex Mono',ui-monospace,monospace;color:var(--fg);
+    background:radial-gradient(1200px 800px at 70% -10%,rgba(242,169,60,.12),transparent 60%),
+      radial-gradient(900px 600px at 12% 112%,rgba(240,103,74,.09),transparent 55%),var(--bg);
+    display:grid;place-items:center;letter-spacing:.2px}
+  body::after{content:"";position:fixed;inset:0;pointer-events:none;opacity:.045;z-index:99;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+
+  .stage{position:relative;width:min(1100px,96vw);aspect-ratio:16/9;border:1px solid var(--line);border-radius:18px;
+    background:linear-gradient(180deg,#15110b,#100d09);overflow:hidden;
+    box-shadow:0 50px 140px -40px rgba(0,0,0,.9),inset 0 1px 0 rgba(255,255,255,.03)}
+
+  /* embers */
+  .ember{position:absolute;bottom:-10px;width:3px;height:3px;border-radius:50%;background:var(--brand);opacity:0;filter:blur(.4px);
+    animation:drift linear infinite}
+  @keyframes drift{0%{transform:translateY(0)}10%{opacity:.5}90%{opacity:.3}100%{transform:translateY(-700px) translateX(40px);opacity:0}}
+
+  .scene{position:absolute;inset:0;display:grid;place-items:center;opacity:0;padding:6%;text-align:center}
+  .scene.show{opacity:1}
+
+  h1{font-weight:700;letter-spacing:10px;font-size:clamp(28px,6vw,64px);
+    background:linear-gradient(90deg,var(--brand),var(--coral),var(--brand));background-size:220% 100%;
+    -webkit-background-clip:text;background-clip:text;color:transparent;animation:shimmer 3s linear infinite}
+  @keyframes shimmer{to{background-position:220% 0}}
+  .big{font-size:clamp(24px,4.6vw,46px);font-weight:600;line-height:1.25}
+  .mid{font-size:clamp(17px,2.6vw,26px);font-weight:500;line-height:1.4}
+  .sub{font-size:clamp(13px,1.7vw,18px);color:var(--dim);line-height:1.5;margin-top:14px}
+  .accent{color:var(--brand)}.coral{color:var(--coral)}.agent{color:var(--agent)}.add{color:var(--add)}.rem{color:var(--rem)}.gold{color:var(--gold)}.dim{color:var(--dim)}
+
+  /* logo */
+  .logo{width:clamp(120px,18vw,190px);height:clamp(120px,18vw,190px);
+    filter:drop-shadow(0 16px 26px rgba(0,0,0,.45)) drop-shadow(0 0 34px rgba(242,169,60,.22));animation:bob 3.4s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(0) rotate(-1.5deg)}50%{transform:translateY(-10px) rotate(1.5deg)}}
+  .logo-eye-open{transform-box:fill-box;transform-origin:center;animation:blink 4.2s infinite}
+  @keyframes blink{0%,93%,100%{transform:scaleY(1)}96.5%{transform:scaleY(.08)}}
+  .logo-tool{transform-box:fill-box;transform-origin:bottom center;animation:tap 2.4s ease-in-out infinite}
+  @keyframes tap{0%,100%{rotate:26deg}50%{rotate:34deg}}
+
+  /* terminal mock */
+  .term{width:min(780px,90%);text-align:left;background:#0b0906;border:1px solid var(--line);border-radius:12px;overflow:hidden;
+    box-shadow:0 30px 80px -30px rgba(0,0,0,.8);font-size:clamp(11px,1.5vw,15px)}
+  .term .bar{display:flex;align-items:center;gap:7px;padding:9px 13px;border-bottom:1px solid var(--line);background:#14110b}
+  .term .bar .d{width:11px;height:11px;border-radius:50%}
+  .term .bar .r{background:#e15a52}.term .bar .y{background:#e0a93a}.term .bar .g{background:#62b85a}
+  .term .bar .t{margin-left:8px;color:var(--dimmer);font-size:.82em}
+  .term .body{padding:16px 18px;min-height:200px;line-height:1.75}
+  .term .prompt{color:var(--brand)}
+  .term .typed::after{content:"";display:inline-block;width:8px;height:1.05em;background:var(--agent);margin-left:2px;vertical-align:-2px;animation:cur .9s steps(1) infinite}
+  @keyframes cur{50%{opacity:0}}
+  .term .ln{opacity:0;animation:rise .35s ease forwards}
+  @keyframes rise{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  .route .hop{color:var(--planner)}.route .arr{color:var(--brand);margin:0 5px}
+  .pill{display:inline-flex;align-items:center;gap:6px;padding:2px 10px;border-radius:999px;font-size:.82em;font-weight:600}
+  .pill .led{width:6px;height:6px;border-radius:50%;background:var(--add);box-shadow:0 0 8px var(--add);animation:pulse 1.2s infinite}
+  @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+
+  /* feature cards */
+  .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;width:min(880px,94%)}
+  .card{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:18px 16px;text-align:left;
+    opacity:0;transform:translateY(10px);animation:cardin .5s ease forwards}
+  .card .ic{font-size:24px;margin-bottom:8px}
+  .card h3{font-size:clamp(12px,1.5vw,15px);color:var(--brand);margin-bottom:5px;letter-spacing:.5px}
+  .card p{font-size:clamp(10px,1.25vw,12.5px);color:var(--dim);line-height:1.45}
+  @keyframes cardin{to{opacity:1;transform:none}}
+
+  /* counters */
+  .counter{font-variant-numeric:tabular-nums;font-weight:700}
+  .scare{color:var(--rem)}
+
+  .endhook{font-size:clamp(15px,2.1vw,22px);color:var(--dim);margin-top:10px}
+  .endhook b{color:var(--brand)}
+  .ghub{margin-top:18px;font-size:clamp(12px,1.6vw,16px);color:var(--agent)}
+
+  /* progress + controls */
+  .progress{position:absolute;left:0;bottom:0;height:3px;background:linear-gradient(90deg,var(--brand),var(--coral));width:0;z-index:50}
+  .controls{position:fixed;bottom:18px;display:flex;gap:10px;z-index:60}
+  .controls button{font-family:inherit;font-size:12px;color:var(--brand);background:color-mix(in srgb,var(--brand) 10%,transparent);
+    border:1px solid color-mix(in srgb,var(--brand) 40%,transparent);padding:7px 16px;border-radius:8px;cursor:pointer;transition:.15s}
+  .controls button:hover{background:color-mix(in srgb,var(--brand) 22%,transparent)}
+  .scene-num{position:absolute;top:14px;right:18px;font-size:10px;color:var(--dimmer);letter-spacing:2px;z-index:40}
+
+  @media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important}}
+</style>
+</head>
+<body>
+
+<!-- Sparrow SVG symbol -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <linearGradient id="body" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f8bf57"/><stop offset="1" stop-color="#ef9b2f"/></linearGradient>
+  <linearGradient id="wing" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e8901f"/><stop offset="1" stop-color="#d2761d"/></linearGradient>
+  <linearGradient id="belly" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fde6bd"/><stop offset="1" stop-color="#f7d089"/></linearGradient>
+  <linearGradient id="steel" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#cdc6ba"/><stop offset="1" stop-color="#8f877a"/></linearGradient>
+  <symbol id="sparrow" viewBox="0 0 240 240">
+    <path d="M150 150 q58 6 60 52 q-46 -2 -64 -28 z" fill="url(#wing)"/>
+    <path d="M120 50 C168 50 182 92 182 132 C182 184 154 204 120 204 C86 204 58 184 58 132 C58 92 72 50 120 50 Z" fill="url(#body)" stroke="#7a4f1c" stroke-width="3.5"/>
+    <path d="M112 52 q-4 -22 8 -28 q3 12 0 27 z" fill="url(#wing)" stroke="#7a4f1c" stroke-width="2.4"/>
+    <path d="M122 50 q6 -20 18 -20 q-2 12 -12 24 z" fill="url(#wing)" stroke="#7a4f1c" stroke-width="2.4"/>
+    <ellipse cx="118" cy="150" rx="40" ry="46" fill="url(#belly)"/>
+    <path d="M70 110 C58 132 60 168 86 182 C92 156 88 128 84 112 Z" fill="url(#wing)" stroke="#7a4f1c" stroke-width="3"/>
+    <path d="M104 124 L130 121 L113 142 Z" fill="#f1862a" stroke="#7a4f1c" stroke-width="2.4" stroke-linejoin="round"/>
+    <ellipse cx="92" cy="138" rx="9" ry="6" fill="#f0674a" opacity=".45"/>
+    <g class="logo-eye-open"><circle cx="100" cy="106" r="17" fill="#fff" stroke="#7a4f1c" stroke-width="2.6"/><circle cx="103" cy="108" r="8.5" fill="#2a1c0e"/><circle cx="99" cy="103" r="3.4" fill="#fff"/></g>
+    <path d="M86 86 C110 74 150 80 168 100" fill="none" stroke="#221910" stroke-width="6" stroke-linecap="round"/>
+    <ellipse cx="146" cy="108" rx="20" ry="17" fill="#221910"/><ellipse cx="146" cy="106" rx="20" ry="15" fill="#2c2114"/>
+    <circle cx="150" cy="138" r="7" fill="none" stroke="#f2c94c" stroke-width="3.4"/>
+    <path d="M138 150 C166 150 178 168 168 192 C150 188 138 172 134 156 Z" fill="url(#wing)" stroke="#7a4f1c" stroke-width="3"/>
+    <g transform="translate(156,176)"><g class="logo-tool" transform="rotate(28)">
+      <rect x="-5" y="-44" width="10" height="46" rx="5" fill="url(#steel)" stroke="#5f584d" stroke-width="2"/>
+      <path d="M-11 -44 L11 -44 L11 -58 L4.5 -58 L4.5 -50 L-4.5 -50 L-4.5 -58 L-11 -58 Z" fill="url(#steel)" stroke="#5f584d" stroke-width="2" stroke-linejoin="round"/>
+      <rect x="-2" y="-40" width="2.6" height="34" rx="1.3" fill="#fff" opacity=".35"/></g></g>
+    <g stroke="#e07e26" stroke-width="5" stroke-linecap="round" fill="none">
+      <path d="M108 200 L108 214 M101 218 L108 214 L115 218 M108 214 L108 220"/>
+      <path d="M132 200 L132 214 M125 218 L132 214 L139 218 M132 214 L132 220"/></g>
+  </symbol>
+</defs></svg>
+
+<div class="stage" id="stage">
+  <div class="scene-num" id="sceneNum">01 / 07</div>
+
+  <!-- 1 — cold open hook -->
+  <section class="scene" data-scene="0">
+    <div>
+      <div class="big">Your AI agent just spent <span class="scare counter" id="burnCounter">$0.00</span></div>
+      <div class="big" style="margin-top:8px">on a <span class="coral">one-line typo fix.</span></div>
+      <div class="sub">It picked the most expensive model. Of course it did. 🙃</div>
+    </div>
+  </section>
+
+  <!-- 2 — logo reveal -->
+  <section class="scene" data-scene="1">
+    <div>
+      <svg class="logo"><use href="#sparrow"/></svg>
+      <h1 style="margin-top:18px">SPARROW</h1>
+      <div class="sub">one cli · grows with you</div>
+    </div>
+  </section>
+
+  <!-- 3 — the idea -->
+  <section class="scene" data-scene="2">
+    <div>
+      <div class="big">Route every task to the<br><span class="accent">cheapest model that can do it.</span></div>
+      <div class="sub">Local Ollama first. Cloud only when it's worth it.<br>You stay in control — every run is budgeted.</div>
+    </div>
+  </section>
+
+  <!-- 4 — live demo -->
+  <section class="scene" data-scene="3">
+    <div class="term">
+      <div class="bar"><span class="d r"></span><span class="d y"></span><span class="d g"></span><span class="t">sparrow · live</span></div>
+      <div class="body" id="demoBody">
+        <div><span class="prompt">›</span> <span class="typed" id="demoCmd"></span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 — features montage -->
+  <section class="scene" data-scene="4">
+    <div class="cards" id="featureCards">
+      <div class="card" style="animation-delay:.0s"><div class="ic">🧭</div><h3>Smart routing</h3><p>35 providers · 80+ models. Budget-aware fallback chains.</p></div>
+      <div class="card" style="animation-delay:.12s"><div class="ic">⏪</div><h3>Rewind anything</h3><p>Git-backed checkpoints before every mutation. One command to undo.</p></div>
+      <div class="card" style="animation-delay:.24s"><div class="ic">🎬</div><h3>Replay runs</h3><p>Every run is recorded and replayable. No more "what happened?"</p></div>
+      <div class="card" style="animation-delay:.36s"><div class="ic">🪺</div><h3>Agent swarm</h3><p>Planner → Coder → Verifier. Each on the right model.</p></div>
+      <div class="card" style="animation-delay:.48s"><div class="ic">🧠</div><h3>It learns</h3><p>Memory + skills grow with you. Patterns, not copied prompts.</p></div>
+      <div class="card" style="animation-delay:.6s"><div class="ic">🦀</div><h3>One Rust binary</h3><p>Local-first. No cloud lock-in. Runs on your machine.</p></div>
+    </div>
+  </section>
+
+  <!-- 6 — promise -->
+  <section class="scene" data-scene="5">
+    <div>
+      <div class="big">Every run is</div>
+      <div class="big" style="margin-top:6px"><span class="add">visible</span> · <span class="planner">replayable</span> · <span class="gold">budgeted</span> · <span class="coral">checkpointed</span></div>
+      <div class="sub">The cockpit shows the route, the cost, the diff — as it happens.</div>
+    </div>
+  </section>
+
+  <!-- 7 — end frame -->
+  <section class="scene" data-scene="6">
+    <div>
+      <svg class="logo" style="width:130px;height:130px"><use href="#sparrow"/></svg>
+      <h1 style="margin-top:14px;font-size:clamp(26px,5vw,52px)">SPARROW</h1>
+      <div class="endhook"><b>Route smarter.</b> Rewind anything.</div>
+      <div class="ghub">★ github.com/ucav/Sparrow · <span class="dim">cargo run -- console</span></div>
+    </div>
+  </section>
+
+  <div class="progress" id="progress"></div>
+</div>
+
+<div class="controls">
+  <button id="replayBtn">↻ replay</button>
+  <button id="pauseBtn">❚❚ pause</button>
+</div>
+
+<script>
+// embers
+const stage=document.getElementById('stage');
+for(let i=0;i<24;i++){const e=document.createElement('div');e.className='ember';
+  e.style.left=(Math.random()*100)+'%';e.style.animationDuration=(7+Math.random()*7)+'s';
+  e.style.animationDelay=(Math.random()*8)+'s';
+  e.style.background=Math.random()>.5?'var(--brand)':'var(--coral)';
+  stage.appendChild(e);}
+
+// Scene timeline (start times in ms over a 60s show)
+const TIMELINE=[
+  {scene:0,at:0},      // hook
+  {scene:1,at:7000},   // logo
+  {scene:2,at:14000},  // idea
+  {scene:3,at:22000},  // demo
+  {scene:4,at:40000},  // features
+  {scene:5,at:50000},  // promise
+  {scene:6,at:56000},  // end
+];
+const TOTAL=60000;
+const scenes=[...document.querySelectorAll('.scene')];
+const sceneNum=document.getElementById('sceneNum');
+const progress=document.getElementById('progress');
+
+let startTs=0,paused=false,pausedAt=0,rafId=null,demoStarted=false,burnDone=false;
+
+function showScene(idx){
+  scenes.forEach((s,i)=>s.classList.toggle('show',i===idx));
+  sceneNum.textContent=String(idx+1).padStart(2,'0')+' / 07';
+  if(idx===3&&!demoStarted){demoStarted=true;runDemo();}
+}
+
+// scary burn counter on scene 0
+function animateBurn(){
+  if(burnDone)return;burnDone=true;
+  const el=document.getElementById('burnCounter');let v=0;const target=47.13;
+  const iv=setInterval(()=>{v+=Math.random()*4.2;if(v>=target){v=target;clearInterval(iv);}
+    el.textContent='$'+v.toFixed(2);},45);
+}
+
+// typewriter demo
+function type(el,text,speed,done){let i=0;(function step(){if(i<=text.length){el.textContent=text.slice(0,i++);setTimeout(step,speed);}else if(done)done();})();}
+function addLn(html,delay){return new Promise(res=>{setTimeout(()=>{
+  const d=document.createElement('div');d.className='ln';d.innerHTML=html;
+  document.getElementById('demoBody').appendChild(d);res();},delay);});}
+
+async function runDemo(){
+  const cmd=document.getElementById('demoCmd');
+  type(cmd,"sparrow run \"fix the failing auth test\"",55,async()=>{
+    cmd.classList.remove('typed');
+    await addLn('<span class="dim">○ router</span> feature/medium · need: tools, code',500);
+    await addLn('<span class="route">↳ route: <span class="hop">ollama:qwen</span><span class="arr">→</span><span class="hop">nvidia:nemotron</span></span>',700);
+    await addLn('<span class="dim">⚒ fs_read</span> auth/session.rs · <span class="add">2 files · 6 KB</span>',700);
+    await addLn('<span class="accent">● checkpoint</span> <span class="dim">pre-edit auth/session.rs</span>',650);
+    await addLn('<span class="agent">✎ diff applied</span> <span class="add">+1</span> <span class="rem">−1</span> · is_revoked() guard',750);
+    await addLn('<span class="add">✓ tests pass</span> · <span class="pill"><span class="led"></span>done</span>',750);
+    await addLn('<span class="dim">cost</span> <span class="add counter">$0.0003</span> · <span class="dim">14 265 tok</span> · <span class="dim">8.2s</span> · <span class="gold">local model did 80%</span>',750);
+  });
+}
+
+function tick(ts){
+  if(!startTs)startTs=ts;
+  const elapsed=ts-startTs;
+  progress.style.width=Math.min(100,elapsed/TOTAL*100)+'%';
+  // pick current scene
+  let cur=0;for(let i=0;i<TIMELINE.length;i++){if(elapsed>=TIMELINE[i].at)cur=TIMELINE[i].scene;}
+  showScene(cur);
+  if(cur===0)animateBurn();
+  if(elapsed<TOTAL&&!paused){rafId=requestAnimationFrame(tick);}
+}
+
+function play(){startTs=0;demoStarted=false;burnDone=false;paused=false;
+  document.getElementById('demoBody').innerHTML='<div><span class="prompt">›</span> <span class="typed" id="demoCmd"></span></div>';
+  cancelAnimationFrame(rafId);rafId=requestAnimationFrame(tick);}
+
+document.getElementById('replayBtn').onclick=play;
+document.getElementById('pauseBtn').onclick=function(){
+  paused=!paused;this.textContent=paused?'▶ play':'❚❚ pause';
+  if(!paused){startTs=performance.now()- (pausedAt||0);rafId=requestAnimationFrame(tick);}
+  else{pausedAt=performance.now()-startTs;cancelAnimationFrame(rafId);}
+};
+
+play();
+</script>
+</body>
+</html>
