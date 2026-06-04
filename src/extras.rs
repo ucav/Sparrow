@@ -223,7 +223,7 @@ impl OAuthFlow {
     /// Accepts the endpoints and scope from the provider registry — no hardcoded list.
     pub async fn start_device_flow(
         device_endpoint: &str,
-        token_endpoint_hint: &str,  // unused here, kept for symmetry
+        token_endpoint_hint: &str, // unused here, kept for symmetry
         client_id: &str,
         scope: &str,
     ) -> anyhow::Result<(String, String, String)> {
@@ -246,10 +246,7 @@ impl OAuthFlow {
         let device_code = resp["device_code"].as_str().unwrap_or("").to_string();
 
         if device_code.is_empty() {
-            anyhow::bail!(
-                "Device flow start failed — provider response: {}",
-                resp.to_string()
-            );
+            anyhow::bail!("Device flow start failed — provider response: {}", resp);
         }
 
         Ok((verification_uri, user_code, device_code))

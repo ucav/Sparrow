@@ -731,7 +731,10 @@ impl Memory for SqliteMemory {
 
         // LIKE fallback. Escape % and _ in the user pattern so they don't act
         // as wildcards. Use ESCAPE '\' so the literal characters survive.
-        let escaped = q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+        let escaped = q
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
         let like_pattern = format!("%{}%", escaped);
         let Ok(mut stmt) = conn.prepare(
             "SELECT id, key, value, created_at, updated_at FROM facts \

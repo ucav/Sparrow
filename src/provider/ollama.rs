@@ -172,93 +172,92 @@ impl Brain for OllamaAdapter {
         // NDJSON across chunk boundaries needs the same line buffer the SSE
         // providers use (see provider/sse_buffer.rs) — without it a JSON object
         // split between two TCP chunks gets dropped silently.
-        let event_stream = stream.scan(
-            super::sse_buffer::LineBuffer::new(),
-            |line_buf, chunk| {
-            let result: Option<futures::stream::Iter<std::vec::IntoIter<BrainEvent>>> = (|| {
-            let events: Vec<BrainEvent> = match chunk {
-                Ok(bytes) => {
-                    let lines = line_buf.push(&bytes);
-                    let mut parsed = Vec::new();
-                    for line in lines {
-                        let line = line.trim();
-                        if line.is_empty() {
-                            continue;
-                        }
-                        let event: serde_json::Value = match serde_json::from_str(line) {
-                            Ok(v) => v,
-                            Err(_) => continue,
-                        };
-
-                        // Ollama NDJSON: {"message":{"content":"..."}} or {"message":{"tool_calls":[...]}}
-                        if let Some(msg) = event.get("message") {
-                            // Text delta (Ollama streams full message each line, not deltas)
-                            if let Some(content) = msg.get("content").and_then(|v| v.as_str()) {
-                                if !content.is_empty() {
-                                    parsed.push(BrainEvent::TextDelta(content.to_string()));
-                                }
+        let event_stream = stream
+            .scan(super::sse_buffer::LineBuffer::new(), |line_buf, chunk| {
+                let events: Vec<BrainEvent> = match chunk {
+                    Ok(bytes) => {
+                        let lines = line_buf.push(&bytes);
+                        let mut parsed = Vec::new();
+                        for line in lines {
+                            let line = line.trim();
+                            if line.is_empty() {
+                                continue;
                             }
-                            // Tool calls
-                            if let Some(tc_array) = msg.get("tool_calls").and_then(|v| v.as_array())
-                            {
-                                for tc in tc_array {
-                                    if let Some(func) = tc.get("function") {
-                                        let name =
-                                            func.get("name").and_then(|v| v.as_str()).unwrap_or("");
-                                        let args = func.get("arguments");
-                                        // Ollama sends tool_calls as objects; we emit start+end
-                                        let id = format!("tc_{}", name);
-                                        parsed.push(BrainEvent::ToolUseStart {
-                                            id: id.clone(),
-                                            name: name.to_string(),
-                                        });
-                                        if let Some(args) = args {
-                                            parsed.push(BrainEvent::ToolUseDelta {
+                            let event: serde_json::Value = match serde_json::from_str(line) {
+                                Ok(v) => v,
+                                Err(_) => continue,
+                            };
+
+                            // Ollama NDJSON: {"message":{"content":"..."}} or {"message":{"tool_calls":[...]}}
+                            if let Some(msg) = event.get("message") {
+                                // Text delta (Ollama streams full message each line, not deltas)
+                                if let Some(content) = msg.get("content").and_then(|v| v.as_str()) {
+                                    if !content.is_empty() {
+                                        parsed.push(BrainEvent::TextDelta(content.to_string()));
+                                    }
+                                }
+                                // Tool calls
+                                if let Some(tc_array) =
+                                    msg.get("tool_calls").and_then(|v| v.as_array())
+                                {
+                                    for tc in tc_array {
+                                        if let Some(func) = tc.get("function") {
+                                            let name = func
+                                                .get("name")
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("");
+                                            let args = func.get("arguments");
+                                            // Ollama sends tool_calls as objects; we emit start+end
+                                            let id = format!("tc_{}", name);
+                                            parsed.push(BrainEvent::ToolUseStart {
                                                 id: id.clone(),
-                                                json: args.to_string(),
+                                                name: name.to_string(),
                                             });
+                                            if let Some(args) = args {
+                                                parsed.push(BrainEvent::ToolUseDelta {
+                                                    id: id.clone(),
+                                                    json: args.to_string(),
+                                                });
+                                            }
+                                            parsed.push(BrainEvent::ToolUseEnd { id });
                                         }
-                                        parsed.push(BrainEvent::ToolUseEnd { id });
                                     }
                                 }
                             }
-                        }
 
-                        // Usage
-                        if let (Some(prompt), Some(completion)) = (
-                            event.get("prompt_eval_count").and_then(|v| v.as_u64()),
-                            event.get("eval_count").and_then(|v| v.as_u64()),
-                        ) {
-                            parsed.push(BrainEvent::Usage(crate::event::TokenUsage {
-                                input: prompt,
-                                output: completion,
-                            }));
-                        }
+                            // Usage
+                            if let (Some(prompt), Some(completion)) = (
+                                event.get("prompt_eval_count").and_then(|v| v.as_u64()),
+                                event.get("eval_count").and_then(|v| v.as_u64()),
+                            ) {
+                                parsed.push(BrainEvent::Usage(crate::event::TokenUsage {
+                                    input: prompt,
+                                    output: completion,
+                                }));
+                            }
 
-                        // Done
-                        if event.get("done").and_then(|v| v.as_bool()).unwrap_or(false) {
-                            let reason = event
-                                .get("done_reason")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("stop");
-                            let stop = match reason {
-                                "stop" => crate::event::StopReason::EndTurn,
-                                "length" => crate::event::StopReason::MaxTokens,
-                                "tool_calls" => crate::event::StopReason::ToolUse,
-                                s => crate::event::StopReason::StopSequence(s.to_string()),
-                            };
-                            parsed.push(BrainEvent::Done(stop));
+                            // Done
+                            if event.get("done").and_then(|v| v.as_bool()).unwrap_or(false) {
+                                let reason = event
+                                    .get("done_reason")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("stop");
+                                let stop = match reason {
+                                    "stop" => crate::event::StopReason::EndTurn,
+                                    "length" => crate::event::StopReason::MaxTokens,
+                                    "tool_calls" => crate::event::StopReason::ToolUse,
+                                    s => crate::event::StopReason::StopSequence(s.to_string()),
+                                };
+                                parsed.push(BrainEvent::Done(stop));
+                            }
                         }
+                        parsed
                     }
-                    parsed
-                }
-                Err(e) => vec![BrainEvent::Error(format!("Ollama stream error: {}", e))],
-            };
-            Some(stream::iter(events))
-            })();
-            async move { result }
-        })
-        .flatten();
+                    Err(e) => vec![BrainEvent::Error(format!("Ollama stream error: {}", e))],
+                };
+                async move { Some(stream::iter(events)) }
+            })
+            .flatten();
 
         Ok(Box::pin(event_stream))
     }

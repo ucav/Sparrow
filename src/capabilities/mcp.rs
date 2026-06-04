@@ -86,9 +86,14 @@ struct McpToolWrapper {
 
 enum McpBackend {
     /// Long-lived child process talking JSON-RPC over stdio.
-    Stdio { request_tx: mpsc::Sender<McpRequest> },
+    Stdio {
+        request_tx: mpsc::Sender<McpRequest>,
+    },
     /// One POST per call against a JSON-RPC HTTP endpoint.
-    Http { url: String, client: reqwest::Client },
+    Http {
+        url: String,
+        client: reqwest::Client,
+    },
 }
 
 struct McpRequest {
@@ -508,5 +513,8 @@ async fn read_jsonrpc_response<R: tokio::io::AsyncBufRead + Unpin>(
             None => continue,    // notification
         }
     }
-    anyhow::bail!("MCP server did not respond to id={} within 64 frames", expected_id)
+    anyhow::bail!(
+        "MCP server did not respond to id={} within 64 frames",
+        expected_id
+    )
 }

@@ -578,9 +578,9 @@ impl Curator {
         }
 
         let has_concrete_output = [
-            "diff", "fn ", "struct ", "impl ", "test", "fixed", "refactor",
-            "added", "updated", "created", "modified", "patch", "write", "edit",
-            "return", "async", "pub ", "let ", "const ", "mod ",
+            "diff", "fn ", "struct ", "impl ", "test", "fixed", "refactor", "added", "updated",
+            "created", "modified", "patch", "write", "edit", "return", "async", "pub ", "let ",
+            "const ", "mod ",
         ]
         .iter()
         .any(|needle| outcome_lower.contains(needle));

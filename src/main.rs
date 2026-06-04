@@ -18,7 +18,6 @@ use sparrow::capabilities::{FsSkillLibrary, SkillLibrary};
 use sparrow::cli::{Cli, Commands};
 use sparrow::config::{ConfigStore, FsConfigStore, ProviderConfig};
 use sparrow::console::WebViewServer;
-use std::io::Write;
 use sparrow::extras::{ChatSession, ReExecuter};
 use sparrow::gateway::discord::DiscordTransport;
 use sparrow::gateway::slack::SlackTransport;
@@ -31,6 +30,7 @@ use sparrow::runtime::recorder::{FsRecorder, Recorder, Replayer, RunInputs};
 use sparrow::runtime::scheduler::{Job, MemoryScheduler, Scheduler};
 use sparrow::runtime::{Runtime, SparrowRuntime};
 use sparrow::tui::Tui;
+use std::io::Write;
 use std::sync::Arc;
 
 #[tokio::main]
@@ -532,7 +532,11 @@ async fn main() -> anyhow::Result<()> {
                     println!("Routing configuration:");
                     println!(
                         "  auto_discover : {}",
-                        if config.routing.auto_discover { "on" } else { "off" }
+                        if config.routing.auto_discover {
+                            "on"
+                        } else {
+                            "off"
+                        }
                     );
                     match &config.routing.preferred_provider {
                         Some(p) => println!("  preferred_provider : {} (all tiers pinned)", p),
@@ -560,9 +564,7 @@ async fn main() -> anyhow::Result<()> {
                         config_store.save(&updated)?;
                         println!("Auto-routing pinned to provider: {}", provider);
                         println!("All task tiers will prefer this provider.");
-                        println!(
-                            "Run 'sparrow route clear' to restore per-tier policy."
-                        );
+                        println!("Run 'sparrow route clear' to restore per-tier policy.");
                     }
                 }
                 sparrow::cli::RouteAction::Clear => {
@@ -700,7 +702,10 @@ async fn main() -> anyhow::Result<()> {
         },
         Some(Commands::Rewind { id }) => {
             // Safety: `git reset --hard` discards uncommitted changes. Ask for confirmation.
-            eprint!("⚠ Rewind to checkpoint `{}`? This will `git reset --hard` [y/N] ", id);
+            eprint!(
+                "⚠ Rewind to checkpoint `{}`? This will `git reset --hard` [y/N] ",
+                id
+            );
             let _ = std::io::stdout().flush();
             let mut input = String::new();
             if std::io::stdin().read_line(&mut input).is_ok()
@@ -1679,7 +1684,8 @@ async fn handle_auth_login(
         AuthFlow::ApiKey => {
             anyhow::bail!(
                 "Provider '{}' uses API-key auth, not OAuth.\nUse 'sparrow auth add {}' instead.",
-                provider, provider
+                provider,
+                provider
             )
         }
     };
@@ -1693,7 +1699,10 @@ async fn handle_auth_login(
             )
         })?;
 
-    println!("Starting OAuth device flow for {} ({})...", def.label, provider);
+    println!(
+        "Starting OAuth device flow for {} ({})...",
+        def.label, provider
+    );
     let (verification_uri, user_code, device_code) =
         OAuthFlow::start_device_flow(&device_ep, &token_ep, &cid, &scope).await?;
     println!("\n  1. Open: {}", verification_uri);
@@ -3719,10 +3728,12 @@ fn redacted_config_snapshot(config: &sparrow::config::Config) -> serde_json::Val
         if v.matches('.').count() == 2 && v.len() >= 30 {
             let parts: Vec<&str> = v.split('.').collect();
             if parts.len() == 3
-                && parts
-                    .iter()
-                    .all(|p| p.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'))
-                && v.starts_with("eyJ") // JWT header always decodes to {"...
+                && parts.iter().all(|p| {
+                    p.chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+                })
+                && v.starts_with("eyJ")
+            // JWT header always decodes to {"...
             {
                 return true;
             }
@@ -3909,8 +3920,7 @@ async fn handle_webview(
         .join("sparrow")
         .join("sessions.db");
     const WEBVIEW_SESSION_ID: &str = "webview";
-    let session_store =
-        sparrow::runtime::session::SessionStore::open(&session_db_path).ok();
+    let session_store = sparrow::runtime::session::SessionStore::open(&session_db_path).ok();
     // Hydrate prior context from the persisted webview session.
     let initial_history: Vec<sparrow::provider::Msg> = session_store
         .as_ref()
@@ -3960,8 +3970,7 @@ async fn handle_webview(
                             serde_json::from_str(&session.messages_json).unwrap_or_default();
                         let turn_count = parsed.len();
                         {
-                            let mut guard =
-                                conv_for_runs.lock().expect("conv lock poisoned");
+                            let mut guard = conv_for_runs.lock().expect("conv lock poisoned");
                             *guard = parsed;
                         }
                         let _ = events_for_runs.send(sparrow::event::Event::Message {
@@ -3997,7 +4006,10 @@ async fn handle_webview(
                             status: "aborted".into(),
                             diffs: vec![],
                             cost_usd: 0.0,
-                            tokens: sparrow::event::TokenUsage { input: 0, output: 0 },
+                            tokens: sparrow::event::TokenUsage {
+                                input: 0,
+                                output: 0,
+                            },
                         },
                     });
                 }
@@ -4153,14 +4165,22 @@ async fn handle_webview(
     println!("WebView console: {}", url);
     println!("Press Ctrl+C to stop.\n");
 
-    // Auto-open the browser (STATUS2.md Q1 decision).
+    // Auto-open the browser for the local WebView cockpit.
     // Fire-and-forget — the server keeps running regardless.
     #[cfg(target_os = "windows")]
-    { let _ = std::process::Command::new("cmd").args(["/c","start",&url]).spawn(); }
+    {
+        let _ = std::process::Command::new("cmd")
+            .args(["/c", "start", &url])
+            .spawn();
+    }
     #[cfg(target_os = "linux")]
-    { let _ = std::process::Command::new("xdg-open").arg(&url).spawn(); }
+    {
+        let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+    }
     #[cfg(target_os = "macos")]
-    { let _ = std::process::Command::new("open").arg(&url).spawn(); }
+    {
+        let _ = std::process::Command::new("open").arg(&url).spawn();
+    }
 
     let server = WebViewServer::new(
         addr,

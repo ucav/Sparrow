@@ -74,7 +74,10 @@ impl Tool for ImageGen {
 
         let endpoint = format!("{}/images/generations", self.base_url.trim_end_matches('/'));
         if let Err(why) = crate::tools::search_and_web::validate_public_url(&endpoint) {
-            return Ok(ToolResult::error(format!("Refused IMAGE_API_BASE ({}): {}", why, endpoint)));
+            return Ok(ToolResult::error(format!(
+                "Refused IMAGE_API_BASE ({}): {}",
+                why, endpoint
+            )));
         }
         let client = reqwest::Client::new();
         let resp = client
@@ -173,7 +176,10 @@ impl Tool for Tts {
 
         let endpoint = format!("{}/audio/speech", self.base_url.trim_end_matches('/'));
         if let Err(why) = crate::tools::search_and_web::validate_public_url(&endpoint) {
-            return Ok(ToolResult::error(format!("Refused TTS_API_BASE ({}): {}", why, endpoint)));
+            return Ok(ToolResult::error(format!(
+                "Refused TTS_API_BASE ({}): {}",
+                why, endpoint
+            )));
         }
         let client = reqwest::Client::new();
         let resp = client
@@ -279,9 +285,15 @@ impl Tool for Transcribe {
             }
         }
 
-        let endpoint = format!("{}/audio/transcriptions", self.base_url.trim_end_matches('/'));
+        let endpoint = format!(
+            "{}/audio/transcriptions",
+            self.base_url.trim_end_matches('/')
+        );
         if let Err(why) = crate::tools::search_and_web::validate_public_url(&endpoint) {
-            return Ok(ToolResult::error(format!("Refused TRANSCRIBE_API_BASE ({}): {}", why, endpoint)));
+            return Ok(ToolResult::error(format!(
+                "Refused TRANSCRIBE_API_BASE ({}): {}",
+                why, endpoint
+            )));
         }
         let client = reqwest::Client::new();
         let resp = client

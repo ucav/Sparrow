@@ -388,7 +388,10 @@ Output format:
         let mut plan = String::new();
         let caps = brain.caps();
         let mut cost = 0.0_f64;
-        let mut tokens = TokenUsage { input: 0, output: 0 };
+        let mut tokens = TokenUsage {
+            input: 0,
+            output: 0,
+        };
 
         while let Some(ev) = futures::StreamExt::next(&mut stream).await {
             match ev {
@@ -506,7 +509,10 @@ Your job: implement the SPEC exactly. Use tools to read existing files and write
         let mut diffs = Vec::new();
         let caps = brain.caps();
         let mut cost = 0.0_f64;
-        let mut tokens = TokenUsage { input: 0, output: 0 };
+        let mut tokens = TokenUsage {
+            input: 0,
+            output: 0,
+        };
 
         for _turn in 0..8 {
             let req = BrainRequest {
@@ -805,7 +811,10 @@ or:
         let mut verdict_text = String::new();
         let caps = brain.caps();
         let mut cost = 0.0_f64;
-        let mut tokens = TokenUsage { input: 0, output: 0 };
+        let mut tokens = TokenUsage {
+            input: 0,
+            output: 0,
+        };
 
         while let Some(ev) = futures::StreamExt::next(&mut stream).await {
             match ev {
@@ -825,7 +834,9 @@ or:
 
         // Case-insensitive PASS/REWORK detection. "PASS" wins only if no rework signal.
         let upper = verdict_text.to_uppercase();
-        let has_rework = upper.contains("REWORK") || upper.contains("NEEDS REWORK") || verdict_text.contains("✗");
+        let has_rework = upper.contains("REWORK")
+            || upper.contains("NEEDS REWORK")
+            || verdict_text.contains("✗");
         let has_pass = (upper.contains("PASS") || verdict_text.contains("✓")) && !has_rework;
 
         let verdict = if has_rework {
@@ -836,7 +847,9 @@ or:
                 .collect();
 
             if findings.is_empty() {
-                Verdict::Rework { findings: vec![verdict_text.clone()] }
+                Verdict::Rework {
+                    findings: vec![verdict_text.clone()],
+                }
             } else {
                 Verdict::Rework { findings }
             }
@@ -844,7 +857,9 @@ or:
             Verdict::Pass
         } else {
             // No clear verdict — treat as rework with the raw text to be safe.
-            Verdict::Rework { findings: vec![format!("Verifier verdict unclear: {}", verdict_text)] }
+            Verdict::Rework {
+                findings: vec![format!("Verifier verdict unclear: {}", verdict_text)],
+            }
         };
 
         let _ = event_tx.send(Event::AgentStatus {
@@ -898,7 +913,10 @@ impl Orchestrator for DefaultOrchestrator {
         };
 
         let mut total_cost: f64 = 0.0;
-        let mut total_tokens = TokenUsage { input: 0, output: 0 };
+        let mut total_tokens = TokenUsage {
+            input: 0,
+            output: 0,
+        };
 
         // ▸ PHASE 1: PLANNING
         let _ = event_tx.send(Event::AgentSpawned {
@@ -913,7 +931,10 @@ impl Orchestrator for DefaultOrchestrator {
         total_cost += planner_cost;
         total_tokens.input = total_tokens.input.saturating_add(planner_tokens.input);
         total_tokens.output = total_tokens.output.saturating_add(planner_tokens.output);
-        let _ = event_tx.send(Event::CostUpdate { run: run_id.clone(), usd: total_cost });
+        let _ = event_tx.send(Event::CostUpdate {
+            run: run_id.clone(),
+            usd: total_cost,
+        });
 
         // Post plan to shared memory
         let _ = self.memory.upsert_doc(crate::memory::WorkingDoc {
@@ -956,7 +977,10 @@ impl Orchestrator for DefaultOrchestrator {
             total_cost += coder_cost;
             total_tokens.input = total_tokens.input.saturating_add(coder_tokens.input);
             total_tokens.output = total_tokens.output.saturating_add(coder_tokens.output);
-            let _ = event_tx.send(Event::CostUpdate { run: run_id.clone(), usd: total_cost });
+            let _ = event_tx.send(Event::CostUpdate {
+                run: run_id.clone(),
+                usd: total_cost,
+            });
 
             // Release any locks from previous attempt
             if attempt > 0 {
@@ -1015,7 +1039,10 @@ impl Orchestrator for DefaultOrchestrator {
             total_cost += verifier_cost;
             total_tokens.input = total_tokens.input.saturating_add(verifier_tokens.input);
             total_tokens.output = total_tokens.output.saturating_add(verifier_tokens.output);
-            let _ = event_tx.send(Event::CostUpdate { run: run_id.clone(), usd: total_cost });
+            let _ = event_tx.send(Event::CostUpdate {
+                run: run_id.clone(),
+                usd: total_cost,
+            });
 
             match verdict {
                 Verdict::Pass => {

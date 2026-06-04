@@ -233,11 +233,7 @@ pub(crate) fn validate_public_url(url: &str) -> Result<(), &'static str> {
     let lc = host.to_ascii_lowercase();
     if matches!(
         lc.as_str(),
-        "localhost"
-            | "ip6-localhost"
-            | "ip6-loopback"
-            | "metadata.google.internal"
-            | "metadata"
+        "localhost" | "ip6-localhost" | "ip6-loopback" | "metadata.google.internal" | "metadata"
     ) || lc.ends_with(".localhost")
         || lc.ends_with(".local")
         || lc.ends_with(".internal")

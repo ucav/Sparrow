@@ -28,6 +28,13 @@ transcripts/
 
 # Codex / local assistant artifacts
 .codex-remote-attachments/
+.claude/
+.sparrow/handoff/
+STATUS*.md
+status*.md
+plan-status*.md
+mercredi.md
+tool_test.txt
 skills/local-temperature/
 get_twitter_followers.py
 
