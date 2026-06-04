@@ -1,7 +1,9 @@
 use secrecy::ExposeSecret;
 use std::collections::HashMap;
 use std::net::SocketAddr;
+use std::process::Stdio;
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 
 use crate::auth::{AuthStore, Credential};
@@ -107,6 +109,7 @@ impl WebViewServer {
             .route("/", get(|| async { Html(console_html().into_owned()) }))
             .route("/run", post(run_task))
             .route("/plan", post(plan_task))
+            .route("/cli", post(run_cli_command))
             .route("/commands", get(get_commands))
             .route("/memory", get(get_memory))
             .route("/plugins", get(get_plugins))
@@ -220,6 +223,20 @@ struct CommandsResponse {
     ok: bool,
     message: String,
     commands: Vec<CommandView>,
+}
+
+#[derive(serde::Deserialize)]
+struct CliCommandRequest {
+    command: String,
+}
+
+#[derive(serde::Serialize)]
+struct CliCommandResponse {
+    ok: bool,
+    message: String,
+    status: Option<i32>,
+    stdout: String,
+    stderr: String,
 }
 
 #[derive(serde::Deserialize)]
@@ -407,6 +424,189 @@ async fn plan_task(
         message: "planned".into(),
         plan: Some(plan),
     })
+}
+
+async fn run_cli_command(
+    axum::extract::Json(req): axum::extract::Json<CliCommandRequest>,
+) -> axum::extract::Json<CliCommandResponse> {
+    let args = match webview_cli_args(&req.command) {
+        Ok(args) => args,
+        Err(message) => {
+            return axum::extract::Json(CliCommandResponse {
+                ok: false,
+                message,
+                status: None,
+                stdout: String::new(),
+                stderr: String::new(),
+            });
+        }
+    };
+
+    if let Some(message) = blocked_webview_cli_command(&args) {
+        return axum::extract::Json(CliCommandResponse {
+            ok: false,
+            message,
+            status: None,
+            stdout: String::new(),
+            stderr: String::new(),
+        });
+    }
+
+    let exe = match std::env::current_exe() {
+        Ok(exe) => exe,
+        Err(e) => {
+            return axum::extract::Json(CliCommandResponse {
+                ok: false,
+                message: format!("cannot locate Sparrow executable: {e}"),
+                status: None,
+                stdout: String::new(),
+                stderr: String::new(),
+            });
+        }
+    };
+
+    let child = match tokio::process::Command::new(exe)
+        .args(&args)
+        .env("SPARROW_WEBVIEW_CLI", "1")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(e) => {
+            return axum::extract::Json(CliCommandResponse {
+                ok: false,
+                message: format!("failed to launch Sparrow command: {e}"),
+                status: None,
+                stdout: String::new(),
+                stderr: String::new(),
+            });
+        }
+    };
+
+    let output = match tokio::time::timeout(Duration::from_secs(45), child.wait_with_output()).await
+    {
+        Ok(Ok(output)) => output,
+        Ok(Err(e)) => {
+            return axum::extract::Json(CliCommandResponse {
+                ok: false,
+                message: format!("Sparrow command failed to finish: {e}"),
+                status: None,
+                stdout: String::new(),
+                stderr: String::new(),
+            });
+        }
+        Err(_) => {
+            return axum::extract::Json(CliCommandResponse {
+                ok: false,
+                message: "Sparrow command timed out after 45s".into(),
+                status: None,
+                stdout: String::new(),
+                stderr: String::new(),
+            });
+        }
+    };
+
+    let status = output.status.code();
+    let stdout = String::from_utf8_lossy(&output.stdout)
+        .trim_end()
+        .to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr)
+        .trim_end()
+        .to_string();
+    axum::extract::Json(CliCommandResponse {
+        ok: output.status.success(),
+        message: if output.status.success() {
+            "command completed".into()
+        } else {
+            format!("command exited with {}", status.unwrap_or(-1))
+        },
+        status,
+        stdout,
+        stderr,
+    })
+}
+
+fn webview_cli_args(command: &str) -> Result<Vec<String>, String> {
+    let command = command.trim().trim_start_matches('/').trim();
+    if command.is_empty() {
+        return Err("empty command".into());
+    }
+    let mut args = split_webview_command(command)?;
+    if args.is_empty() {
+        return Err("empty command".into());
+    }
+    match args[0].as_str() {
+        "models" => args[0] = "model".into(),
+        "routing" => args[0] = "route".into(),
+        _ => {}
+    }
+    if args[0] == "model" && args.len() == 1 {
+        args.push("--list".into());
+    }
+    if args[0] == "run" && args.len() > 2 {
+        let task = args[1..].join(" ");
+        args.truncate(1);
+        args.push(task);
+    }
+    if args[0] == "plan" && args.len() > 2 {
+        let task = args[1..].join(" ");
+        args.truncate(1);
+        args.push(task);
+    }
+    if args[0] == "swarm" && args.len() > 2 {
+        let task = args[1..].join(" ");
+        args.truncate(1);
+        args.push(task);
+    }
+    Ok(args)
+}
+
+fn blocked_webview_cli_command(args: &[String]) -> Option<String> {
+    let first = args.first().map(String::as_str)?;
+    if matches!(first, "console" | "tui" | "chat" | "daemon") {
+        return Some(format!(
+            "`/{first}` opens an interactive process; launch it from a terminal instead."
+        ));
+    }
+    if first == "gateway" && args.get(1).map(String::as_str) == Some("start") {
+        return Some("`/gateway start` starts a daemon; launch it from a terminal instead.".into());
+    }
+    None
+}
+
+fn split_webview_command(input: &str) -> Result<Vec<String>, String> {
+    let mut args = Vec::new();
+    let mut current = String::new();
+    let mut chars = input.chars().peekable();
+    let mut quote: Option<char> = None;
+    while let Some(ch) = chars.next() {
+        match (quote, ch) {
+            (Some(q), c) if c == q => quote = None,
+            (Some(_), '\\') => {
+                if let Some(next) = chars.next() {
+                    current.push(next);
+                }
+            }
+            (Some(_), c) => current.push(c),
+            (None, '\'' | '"') => quote = Some(ch),
+            (None, c) if c.is_whitespace() => {
+                if !current.is_empty() {
+                    args.push(std::mem::take(&mut current));
+                }
+            }
+            (None, c) => current.push(c),
+        }
+    }
+    if let Some(q) = quote {
+        return Err(format!("unterminated {q} quote"));
+    }
+    if !current.is_empty() {
+        args.push(current);
+    }
+    Ok(args)
 }
 
 async fn get_commands(
@@ -1565,5 +1765,46 @@ async fn handle_ws(
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn webview_cli_args_maps_model_alias() {
+        assert_eq!(
+            webview_cli_args("/models").unwrap(),
+            vec!["model".to_string(), "--list".to_string()]
+        );
+    }
+
+    #[test]
+    fn webview_cli_args_keeps_quoted_arguments() {
+        assert_eq!(
+            webview_cli_args("/auth add \"open router\"").unwrap(),
+            vec![
+                "auth".to_string(),
+                "add".to_string(),
+                "open router".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn webview_cli_args_joins_run_task() {
+        assert_eq!(
+            webview_cli_args("/run analyse le repo github").unwrap(),
+            vec!["run".to_string(), "analyse le repo github".to_string()]
+        );
+    }
+
+    #[test]
+    fn webview_cli_blocks_interactive_commands() {
+        let args = webview_cli_args("/console --port 9339").unwrap();
+        assert!(blocked_webview_cli_command(&args).is_some());
+        let args = webview_cli_args("/gateway start").unwrap();
+        assert!(blocked_webview_cli_command(&args).is_some());
     }
 }
