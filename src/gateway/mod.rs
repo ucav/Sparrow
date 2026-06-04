@@ -416,9 +416,13 @@ impl MessageRouter {
         tokio::spawn(async move {
             let mut buffer = String::new();
             let mut full_reply = String::new();
+            let mut reasoning_reply = String::new();
             while let Some(event) = task_rx.recv().await {
                 if let Event::ThinkingDelta { text, .. } = &event {
                     full_reply.push_str(text);
+                }
+                if let Event::ReasoningDelta { text, .. } = &event {
+                    reasoning_reply.push_str(text);
                 }
                 match &event {
                     Event::ThinkingDelta { text, .. } => {
@@ -514,9 +518,16 @@ impl MessageRouter {
                     }],
                 });
                 if !full_reply.trim().is_empty() {
+                    let mut content = Vec::new();
+                    if !reasoning_reply.trim().is_empty() {
+                        content.push(crate::provider::ContentBlock::Reasoning {
+                            text: reasoning_reply,
+                        });
+                    }
+                    content.push(crate::provider::ContentBlock::Text { text: full_reply });
                     updated.push(crate::provider::Msg {
                         role: "assistant".into(),
-                        content: vec![crate::provider::ContentBlock::Text { text: full_reply }],
+                        content,
                     });
                 }
                 // Cap session history to the last 40 messages to bound growth.
@@ -544,6 +555,7 @@ pub fn format_event(event: &Event) -> Option<String> {
             outcome.diffs.len()
         )),
         Event::ThinkingDelta { text, .. } => Some(text.clone()),
+        Event::ReasoningDelta { .. } => None,
         Event::ModelSwitched {
             from, to, reason, ..
         } => {

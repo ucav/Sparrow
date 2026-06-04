@@ -1081,6 +1081,9 @@ impl Engine {
         registry.register(Arc::new(crate::tools::code_nav::Symbols));
         if let Some(mem) = &self.memory {
             registry.register(Arc::new(crate::tools::memory::MemoryTool::new(mem.clone())));
+            registry.register(Arc::new(
+                crate::tools::knowledge_graph::KnowledgeGraphTool::new(mem.clone()),
+            ));
         }
         {
             // Subagent delegation: child engine built from the same router/config.
@@ -1557,6 +1560,10 @@ impl Engine {
                                 // text, this is opaque thinking content the provider
                                 // wants echoed back.
                                 reasoning_buf.push_str(&rtext);
+                                let _ = event_tx.send(Event::ReasoningDelta {
+                                    run: run_id.clone(),
+                                    text: rtext,
+                                });
                             }
                             BrainEvent::ToolUseStart { id, name } => {
                                 current_tool_name = name.clone();

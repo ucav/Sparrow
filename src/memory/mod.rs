@@ -268,6 +268,53 @@ pub struct MemoryStats {
     pub user_limit: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GraphNode {
+    pub id: String,
+    pub label: String,
+    pub kind: String,
+    #[serde(default)]
+    pub properties: serde_json::Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GraphEdge {
+    pub id: String,
+    pub from_id: String,
+    pub to_id: String,
+    pub relation: String,
+    pub weight: f64,
+    #[serde(default)]
+    pub properties: serde_json::Value,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct KnowledgeGraph {
+    pub nodes: Vec<GraphNode>,
+    pub edges: Vec<GraphEdge>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum GraphDirection {
+    Incoming,
+    Outgoing,
+    Both,
+}
+
+impl GraphDirection {
+    pub fn parse(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "incoming" | "in" => Self::Incoming,
+            "outgoing" | "out" => Self::Outgoing,
+            _ => Self::Both,
+        }
+    }
+}
+
 pub fn validate_memory_text(label: &str, text: &str, limit: usize) -> anyhow::Result<()> {
     let chars = text.chars().count();
     if chars > limit {
@@ -352,6 +399,35 @@ pub trait Memory: Send + Sync {
     }
     fn cache_discovered_models(&self, provider_id: &str, models: &[String]) -> anyhow::Result<()>;
     fn get_discovered_models(&self, provider_id: &str) -> Vec<String>;
+    fn upsert_graph_node(&self, _node: GraphNode) -> anyhow::Result<()> {
+        anyhow::bail!("knowledge graph is not supported by this memory backend")
+    }
+    fn upsert_graph_edge(&self, _edge: GraphEdge) -> anyhow::Result<()> {
+        anyhow::bail!("knowledge graph is not supported by this memory backend")
+    }
+    fn graph_node(&self, _id: &str) -> Option<GraphNode> {
+        None
+    }
+    fn graph_neighbors(
+        &self,
+        _id: &str,
+        _direction: GraphDirection,
+        _limit: usize,
+    ) -> Vec<(GraphEdge, GraphNode)> {
+        Vec::new()
+    }
+    fn search_graph(&self, _query: &str, _limit: usize) -> Vec<GraphNode> {
+        Vec::new()
+    }
+    fn graph_export(&self) -> KnowledgeGraph {
+        KnowledgeGraph::default()
+    }
+    fn delete_graph_node(&self, _id: &str) -> anyhow::Result<()> {
+        anyhow::bail!("knowledge graph is not supported by this memory backend")
+    }
+    fn delete_graph_edge(&self, _id: &str) -> anyhow::Result<()> {
+        anyhow::bail!("knowledge graph is not supported by this memory backend")
+    }
 }
 
 pub trait MemoryProvider: Send + Sync {
@@ -512,6 +588,31 @@ impl SqliteMemory {
                 content TEXT NOT NULL,
                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
+            CREATE TABLE IF NOT EXISTS kg_nodes (
+                id TEXT PRIMARY KEY,
+                label TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                properties_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE IF NOT EXISTS kg_edges (
+                id TEXT PRIMARY KEY,
+                from_id TEXT NOT NULL,
+                to_id TEXT NOT NULL,
+                relation TEXT NOT NULL,
+                weight REAL NOT NULL DEFAULT 1.0,
+                properties_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY(from_id) REFERENCES kg_nodes(id) ON DELETE CASCADE,
+                FOREIGN KEY(to_id) REFERENCES kg_nodes(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS kg_nodes_label_idx ON kg_nodes(label);
+            CREATE INDEX IF NOT EXISTS kg_nodes_kind_idx ON kg_nodes(kind);
+            CREATE INDEX IF NOT EXISTS kg_edges_from_idx ON kg_edges(from_id);
+            CREATE INDEX IF NOT EXISTS kg_edges_to_idx ON kg_edges(to_id);
+            CREATE INDEX IF NOT EXISTS kg_edges_relation_idx ON kg_edges(relation);
             -- FTS5 full-text search for memory recall (M1)
             CREATE VIRTUAL TABLE IF NOT EXISTS facts_fts USING fts5(
                 key, value, content='facts', content_rowid='rowid'
@@ -531,6 +632,32 @@ impl SqliteMemory {
         )?;
         Ok(())
     }
+}
+
+fn graph_node_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<GraphNode> {
+    let properties_json: String = row.get(3)?;
+    Ok(GraphNode {
+        id: row.get(0)?,
+        label: row.get(1)?,
+        kind: row.get(2)?,
+        properties: serde_json::from_str(&properties_json).unwrap_or(serde_json::Value::Null),
+        created_at: row.get(4)?,
+        updated_at: row.get(5)?,
+    })
+}
+
+fn graph_edge_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<GraphEdge> {
+    let properties_json: String = row.get(5)?;
+    Ok(GraphEdge {
+        id: row.get(0)?,
+        from_id: row.get(1)?,
+        to_id: row.get(2)?,
+        relation: row.get(3)?,
+        weight: row.get(4)?,
+        properties: serde_json::from_str(&properties_json).unwrap_or(serde_json::Value::Null),
+        created_at: row.get(6)?,
+        updated_at: row.get(7)?,
+    })
 }
 
 impl Memory for SqliteMemory {
@@ -905,5 +1032,236 @@ impl Memory for SqliteMemory {
             return Vec::new();
         };
         rows.filter_map(|row| row.ok()).collect()
+    }
+
+    fn upsert_graph_node(&self, node: GraphNode) -> anyhow::Result<()> {
+        validate_memory_text("graph node id", &node.id, 160)?;
+        validate_memory_text("graph node label", &node.label, 512)?;
+        validate_memory_text("graph node kind", &node.kind, 80)?;
+        validate_memory_text("graph node properties", &node.properties.to_string(), 4000)?;
+        let redaction = RedactionFilter::new();
+        let safe_id = redaction.redact_str(&node.id);
+        let safe_label = redaction.redact_str(&node.label);
+        let safe_kind = redaction.redact_str(&node.kind);
+        let safe_properties = serde_json::to_string(&node.properties)?;
+        let safe_properties = redaction.redact_str(&safe_properties);
+        let now = chrono::Utc::now().to_rfc3339();
+        let created_at = if node.created_at.trim().is_empty() {
+            now.clone()
+        } else {
+            node.created_at
+        };
+        let updated_at = if node.updated_at.trim().is_empty() {
+            now
+        } else {
+            node.updated_at
+        };
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO kg_nodes (id, label, kind, properties_json, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(id) DO UPDATE SET
+                label = excluded.label,
+                kind = excluded.kind,
+                properties_json = excluded.properties_json,
+                updated_at = excluded.updated_at",
+            params![
+                safe_id,
+                safe_label,
+                safe_kind,
+                safe_properties,
+                created_at,
+                updated_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn upsert_graph_edge(&self, edge: GraphEdge) -> anyhow::Result<()> {
+        validate_memory_text("graph edge id", &edge.id, 160)?;
+        validate_memory_text("graph edge from_id", &edge.from_id, 160)?;
+        validate_memory_text("graph edge to_id", &edge.to_id, 160)?;
+        validate_memory_text("graph edge relation", &edge.relation, 120)?;
+        validate_memory_text("graph edge properties", &edge.properties.to_string(), 4000)?;
+        let redaction = RedactionFilter::new();
+        let safe_properties = serde_json::to_string(&edge.properties)?;
+        let safe_properties = redaction.redact_str(&safe_properties);
+        let now = chrono::Utc::now().to_rfc3339();
+        let created_at = if edge.created_at.trim().is_empty() {
+            now.clone()
+        } else {
+            edge.created_at
+        };
+        let updated_at = if edge.updated_at.trim().is_empty() {
+            now
+        } else {
+            edge.updated_at
+        };
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO kg_edges (id, from_id, to_id, relation, weight, properties_json, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(id) DO UPDATE SET
+                from_id = excluded.from_id,
+                to_id = excluded.to_id,
+                relation = excluded.relation,
+                weight = excluded.weight,
+                properties_json = excluded.properties_json,
+                updated_at = excluded.updated_at",
+            params![
+                redaction.redact_str(&edge.id),
+                redaction.redact_str(&edge.from_id),
+                redaction.redact_str(&edge.to_id),
+                redaction.redact_str(&edge.relation),
+                edge.weight,
+                safe_properties,
+                created_at,
+                updated_at
+            ],
+        )?;
+        Ok(())
+    }
+
+    fn graph_node(&self, id: &str) -> Option<GraphNode> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT id, label, kind, properties_json, created_at, updated_at
+             FROM kg_nodes WHERE id = ?1",
+            params![id],
+            graph_node_from_row,
+        )
+        .ok()
+    }
+
+    fn graph_neighbors(
+        &self,
+        id: &str,
+        direction: GraphDirection,
+        limit: usize,
+    ) -> Vec<(GraphEdge, GraphNode)> {
+        let conn = self.conn.lock().unwrap();
+        let limit = limit.clamp(1, 100) as i64;
+        let sql = match direction {
+            GraphDirection::Outgoing => {
+                "SELECT e.id, e.from_id, e.to_id, e.relation, e.weight, e.properties_json, e.created_at, e.updated_at,
+                        n.id, n.label, n.kind, n.properties_json, n.created_at, n.updated_at
+                 FROM kg_edges e
+                 JOIN kg_nodes n ON n.id = e.to_id
+                 WHERE e.from_id = ?1
+                 ORDER BY e.weight DESC, e.updated_at DESC
+                 LIMIT ?2"
+            }
+            GraphDirection::Incoming => {
+                "SELECT e.id, e.from_id, e.to_id, e.relation, e.weight, e.properties_json, e.created_at, e.updated_at,
+                        n.id, n.label, n.kind, n.properties_json, n.created_at, n.updated_at
+                 FROM kg_edges e
+                 JOIN kg_nodes n ON n.id = e.from_id
+                 WHERE e.to_id = ?1
+                 ORDER BY e.weight DESC, e.updated_at DESC
+                 LIMIT ?2"
+            }
+            GraphDirection::Both => {
+                "SELECT e.id, e.from_id, e.to_id, e.relation, e.weight, e.properties_json, e.created_at, e.updated_at,
+                        n.id, n.label, n.kind, n.properties_json, n.created_at, n.updated_at
+                 FROM kg_edges e
+                 JOIN kg_nodes n ON n.id = CASE WHEN e.from_id = ?1 THEN e.to_id ELSE e.from_id END
+                 WHERE e.from_id = ?1 OR e.to_id = ?1
+                 ORDER BY e.weight DESC, e.updated_at DESC
+                 LIMIT ?2"
+            }
+        };
+        let Ok(mut stmt) = conn.prepare(sql) else {
+            return Vec::new();
+        };
+        let Ok(rows) = stmt.query_map(params![id, limit], |row| {
+            let edge = graph_edge_from_row(row)?;
+            let properties_json: String = row.get(11)?;
+            let node = GraphNode {
+                id: row.get(8)?,
+                label: row.get(9)?,
+                kind: row.get(10)?,
+                properties: serde_json::from_str(&properties_json)
+                    .unwrap_or(serde_json::Value::Null),
+                created_at: row.get(12)?,
+                updated_at: row.get(13)?,
+            };
+            Ok((edge, node))
+        }) else {
+            return Vec::new();
+        };
+        rows.filter_map(|row| row.ok()).collect()
+    }
+
+    fn search_graph(&self, query: &str, limit: usize) -> Vec<GraphNode> {
+        let query = query.trim();
+        if query.is_empty() {
+            return Vec::new();
+        }
+        let escaped = query
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
+        let pattern = format!("%{}%", escaped);
+        let conn = self.conn.lock().unwrap();
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT id, label, kind, properties_json, created_at, updated_at
+             FROM kg_nodes
+             WHERE id LIKE ?1 ESCAPE '\\'
+                OR label LIKE ?1 ESCAPE '\\'
+                OR kind LIKE ?1 ESCAPE '\\'
+                OR properties_json LIKE ?1 ESCAPE '\\'
+             ORDER BY updated_at DESC
+             LIMIT ?2",
+        ) else {
+            return Vec::new();
+        };
+        let Ok(rows) = stmt.query_map(
+            params![pattern, limit.clamp(1, 100) as i64],
+            graph_node_from_row,
+        ) else {
+            return Vec::new();
+        };
+        rows.filter_map(|row| row.ok()).collect()
+    }
+
+    fn graph_export(&self) -> KnowledgeGraph {
+        let conn = self.conn.lock().unwrap();
+        let nodes = conn
+            .prepare(
+                "SELECT id, label, kind, properties_json, created_at, updated_at
+                 FROM kg_nodes ORDER BY kind, label",
+            )
+            .and_then(|mut stmt| {
+                let rows = stmt.query_map([], graph_node_from_row)?;
+                Ok(rows.filter_map(|row| row.ok()).collect::<Vec<_>>())
+            })
+            .unwrap_or_default();
+        let edges = conn
+            .prepare(
+                "SELECT id, from_id, to_id, relation, weight, properties_json, created_at, updated_at
+                 FROM kg_edges ORDER BY relation, from_id, to_id",
+            )
+            .and_then(|mut stmt| {
+                let rows = stmt.query_map([], graph_edge_from_row)?;
+                Ok(rows.filter_map(|row| row.ok()).collect::<Vec<_>>())
+            })
+            .unwrap_or_default();
+        KnowledgeGraph { nodes, edges }
+    }
+
+    fn delete_graph_node(&self, id: &str) -> anyhow::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM kg_edges WHERE from_id = ?1 OR to_id = ?1",
+            params![id],
+        )?;
+        conn.execute("DELETE FROM kg_nodes WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    fn delete_graph_edge(&self, id: &str) -> anyhow::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM kg_edges WHERE id = ?1", params![id])?;
+        Ok(())
     }
 }

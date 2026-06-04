@@ -534,4 +534,29 @@ mod tests {
             "data:image/png;base64,iVBORw0KGgo="
         );
     }
+
+    #[test]
+    fn openai_chat_body_reinjects_assistant_reasoning_content() {
+        let req = BrainRequest {
+            messages: vec![Msg {
+                role: "assistant".into(),
+                content: vec![
+                    ContentBlock::Reasoning {
+                        text: "opaque provider reasoning".into(),
+                    },
+                    ContentBlock::Text {
+                        text: "visible answer".into(),
+                    },
+                ],
+            }],
+            ..BrainRequest::default()
+        };
+
+        let body = build_chat_body("deepseek-test", &req);
+        assert_eq!(body["messages"][0]["content"], "visible answer");
+        assert_eq!(
+            body["messages"][0]["reasoning_content"],
+            "opaque provider reasoning"
+        );
+    }
 }

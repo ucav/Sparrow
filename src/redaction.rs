@@ -81,6 +81,9 @@ impl RedactionFilter {
             Event::ThinkingDelta { text, .. } => {
                 *text = self.redact_str(text);
             }
+            Event::ReasoningDelta { text, .. } => {
+                *text = self.redact_str(text);
+            }
             Event::Message { text, .. } => {
                 *text = self.redact_str(text);
             }

@@ -49,6 +49,12 @@ All planned Sparrow commands.
 | `sparrow memory docs` | Alpha | Print stored bounded memory docs |
 | `sparrow memory search "<query>" --limit <n>` | Alpha | Search saved session turns |
 | `sparrow memory scroll <session> --around <n>` | Alpha | Show neighboring session turns around a hit |
+| `sparrow memory graph upsert-node <id> <label> --kind <kind>` | Alpha | Add or update a persistent graph node |
+| `sparrow memory graph upsert-edge <from> <relation> <to>` | Alpha | Add or update a typed graph relationship |
+| `sparrow memory graph neighbors <id> --direction both` | Alpha | Inspect graph neighbors |
+| `sparrow memory graph search "<query>"` | Alpha | Search graph nodes |
+| `sparrow memory graph export` | Alpha | Print graph JSON |
+| `sparrow memory graph sync-neo4j` | Alpha | Sync the local graph to optional Neo4j via HTTP |
 
 ## Slash Commands
 

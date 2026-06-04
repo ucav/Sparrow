@@ -38,6 +38,36 @@ Sparrow has four memory tiers, all persisted in SQLite.
 - Stored in `facts` table with FTS5 recall and LIKE fallback
 - Duplicate keys are rejected unless the caller explicitly replaces the same fact id
 
+## Knowledge Graph
+
+Sparrow also keeps a persistent graph in the same SQLite database:
+
+- `kg_nodes` stores entities such as users, projects, files, decisions, features,
+  agents, docs, and long-lived tasks.
+- `kg_edges` stores typed relationships such as `works_on`, `depends_on`,
+  `decided`, `mentions`, `owns`, or `blocked_by`.
+- Nodes and edges have JSON `properties` so agents can keep structured metadata
+  without creating new tables.
+- Graph writes are redacted and injection-checked like facts.
+- The graph survives process restarts because it is stored in the Sparrow state
+  DB, not in memory.
+
+Agents can use the `knowledge_graph` tool to `upsert_node`, `upsert_edge`,
+`search`, inspect `neighbors`, `export`, delete graph items, or run
+`sync_neo4j`.
+
+Neo4j is optional. If a local Neo4j server is available, set:
+
+```bash
+NEO4J_URL=http://127.0.0.1:7474/db/neo4j/tx/commit
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=...
+```
+
+Then run `sparrow memory graph sync-neo4j` or let the `knowledge_graph` tool call
+`sync_neo4j`. Sparrow uses Neo4j's transactional HTTP API with parameterized
+Cypher statements.
+
 ## Bounded Memory Docs
 
 Sparrow keeps two bounded Markdown-style documents in SQLite:
@@ -67,6 +97,12 @@ sparrow memory consolidate
 sparrow memory docs
 sparrow memory search "<query>" --limit 10
 sparrow memory scroll <session> --around 4 --before 3 --after 3
+sparrow memory graph upsert-node user:abdou Abdou --kind user
+sparrow memory graph upsert-node project:sparrow Sparrow --kind project
+sparrow memory graph upsert-edge user:abdou works_on project:sparrow
+sparrow memory graph neighbors user:abdou --direction outgoing
+sparrow memory graph search sparrow
+sparrow memory graph export
 ```
 
 ## WebView

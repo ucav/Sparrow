@@ -32,6 +32,8 @@ The project focuses on a narrow product promise: a Rust-native local cockpit whe
 
 - **Syntax-highlighted code cards**: fenced code is rendered in compact collapsible cards with language labels, line counts, copy actions, and local editor-style highlighting.
 - **Prompt caching controls**: Anthropic Messages and OpenAI-compatible/Responses requests now carry cache controls for stable Sparrow prefixes.
+- **Reasoning-state continuity**: DeepSeek/Qwen/Moonshot-style `reasoning_content` is captured, persisted, and re-injected without showing it as visible assistant text.
+- **Persistent knowledge graph**: SQLite memory now stores typed graph nodes/edges with a `knowledge_graph` tool and optional Neo4j sync.
 - **Safer plan flow**: WebView `/plan` has explicit run, edit, and reject actions before execution.
 - **Per-hunk diff review UI**: diff cards and the side panel group patches by hunk with accept/reject review states.
 - **No metric spam**: high-frequency token/cost events update live meters without flooding the transcript.
@@ -49,7 +51,7 @@ The project focuses on a narrow product promise: a Rust-native local cockpit whe
 | **WebView cockpit** | Live route/token/cost/context at `http://127.0.0.1:9339/` with drawer panels, slash palette, and agent picker |
 | **Terminal-native** | Animated TUI cockpit, `sparrow run`, `sparrow chat`, `--json` output, replay, memory, gateway |
 | **Rollback safety** | Auto-checkpoint before any mutating action; `sparrow rewind <id>` to restore |
-| **Persistent context** | SQLite memory, SOUL-style `.agent.md` files, guarded skill registry, full transcripts |
+| **Persistent context** | SQLite facts + knowledge graph, SOUL-style `.agent.md` files, guarded skill registry, full transcripts |
 | **Gateway** | Telegram, Discord, Slack, WebSocket API — wired with honest errors, not silent failures |
 
 ---
@@ -64,7 +66,7 @@ Sparrow is **alpha software** with a green cross-platform CI baseline. The kerne
 | Area | Status | Evidence |
 |---|:---:|---|
 | CI / Rust build | ✅ Stable | Ubuntu · macOS · Windows; `fmt`, `clippy -D warnings`, `check`, release builds |
-| Test suite | ✅ Stable | 209 tests pass (`cargo test --target-dir target\codex-v035`) |
+| Test suite | ✅ Stable | Full `cargo test` green on current master |
 | Security audit | ✅ Stable | `rustsec/audit-check` on all three platforms |
 | Engine loop | ✅ Stable | Event stream, task classification, fallback execution, auto-checkpoint, auto-compaction |
 | WebView console | ✅ Stable | Full cockpit — rail/drawer, typed event stream, compact highlighted code cards, themes, composer, approval modal |
@@ -80,7 +82,7 @@ Sparrow is **alpha software** with a green cross-platform CI baseline. The kerne
 | GitHub Action | ✅ Stable | `action.yml`, sample workflow, `sparrow github review/status/logs`, `--dry-run` |
 | Context / compaction | ✅ Stable | `ContextMeter`, engine auto-trigger at 120k chars, durable `HandoffDoc` |
 | Gateway | ✅ Stable | `/status` roundtrip on port 9338; run registry with real abort |
-| Replay / memory | ✅ Stable | Recorder, checkpoint, rewind, SQLite facts, bounded `MEMORY.md`, session search |
+| Replay / memory | ✅ Stable | Recorder, checkpoint, rewind, SQLite facts, knowledge graph, optional Neo4j sync, bounded `MEMORY.md`, session search |
 | Provider routing | 🔶 Alpha | Ollama + NVIDIA tested locally; 92 NVIDIA models discovered |
 | First-run setup | 🔶 Alpha | Conversational setup agent + interactive fallback |
 | Telegram / Discord / Slack | 🔸 Partial | Transport implementations exist; E2E token validation pending |
@@ -191,6 +193,7 @@ sparrow replay <run-id>            # replay a past run
 sparrow checkpoint list
 sparrow rewind <checkpoint-id>     # restore workspace
 sparrow memory list
+sparrow memory graph search routing
 sparrow security audit
 sparrow doctor
 ```
