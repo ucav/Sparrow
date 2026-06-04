@@ -1544,6 +1544,9 @@ async fn handle_ws(
             result = event_rx.recv() => {
                 match result {
                     Ok(event) => {
+                        if !event.is_public() {
+                            continue;
+                        }
                         if let Ok(json) = serde_json::to_string(&event) {
                             use axum::extract::ws::Message;
                             if socket.send(Message::Text(json.into())).await.is_err() {
