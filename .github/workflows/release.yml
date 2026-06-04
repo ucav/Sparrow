@@ -30,6 +30,13 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build
         run: cargo build --release --target ${{ matrix.target }}
+      - name: Rename binary (prevent cross-platform name collision)
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          for f in sparrow sparrow.exe; do
+            [ -f "$f" ] && mv "$f" "${{ matrix.artifact }}${f##sparrow}" || true
+          done
       - name: Generate checksums
         shell: bash
         run: |
