@@ -108,7 +108,7 @@ fn base64_encode(data: &[u8]) -> String {
     result
 }
 
-// ─── Image generation tool (stub) ───────────────────────────────────────────────
+// ─── Backward-compatible media aliases ──────────────────────────────────────────
 
 pub struct ImageGeneration;
 
@@ -118,7 +118,7 @@ impl Tool for ImageGeneration {
         "image_gen"
     }
     fn description(&self) -> &str {
-        "Generate an image from a text prompt using the configured image model"
+        "Alias for image_generate: generate an image from a text prompt and save it into the workspace"
     }
     fn schema(&self) -> serde_json::Value {
         serde_json::json!({
@@ -133,20 +133,10 @@ impl Tool for ImageGeneration {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Network
     }
-    async fn call(&self, args: serde_json::Value, _ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
-        let prompt = args["prompt"].as_str().unwrap_or("");
-        let size = args["size"].as_str().unwrap_or("1024x1024");
-
-        Ok(ToolResult::text(format!(
-            "Image generation requested: '{}' ({})\n\
-             Configure an image generation provider (DALL-E, Stable Diffusion, etc.) \
-             or use an MCP server for image generation.",
-            prompt, size
-        )))
+    async fn call(&self, args: serde_json::Value, ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
+        crate::tools::media::ImageGen::new().call(args, ctx).await
     }
 }
-
-// ─── Text-to-speech tool (stub) ─────────────────────────────────────────────────
 
 pub struct TextToSpeech;
 
@@ -156,7 +146,7 @@ impl Tool for TextToSpeech {
         "tts"
     }
     fn description(&self) -> &str {
-        "Convert text to speech and return audio"
+        "Alias for text_to_speech: synthesize speech from text and save an audio file into the workspace"
     }
     fn schema(&self) -> serde_json::Value {
         serde_json::json!({
@@ -171,17 +161,8 @@ impl Tool for TextToSpeech {
     fn risk(&self) -> RiskLevel {
         RiskLevel::Network
     }
-    async fn call(&self, args: serde_json::Value, _ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
-        let text = args["text"].as_str().unwrap_or("");
-        let voice = args["voice"].as_str().unwrap_or("default");
-
-        Ok(ToolResult::text(format!(
-            "TTS requested: '{}' (voice: {})\n\
-             Configure TTS provider (OpenAI TTS, ElevenLabs, etc.) \
-             or use an MCP server for speech synthesis.",
-            &text[..text.len().min(100)],
-            voice
-        )))
+    async fn call(&self, args: serde_json::Value, ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
+        crate::tools::media::Tts::new().call(args, ctx).await
     }
 }
 

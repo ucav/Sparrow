@@ -1,6 +1,7 @@
 use sparrow::console::{MAX_ATTACHMENT_BYTES, classify_attachment};
+use sparrow::tools::extras::{ImageGeneration, TextToSpeech};
 use sparrow::tools::media::{ImageGen, Transcribe, Tts};
-use sparrow::tools::{Tool, ToolCtx};
+use sparrow::tools::{Tool, ToolCtx, known_tool_metadata};
 
 fn ctx() -> ToolCtx {
     let tmp = tempfile::tempdir().expect("tmp");
@@ -55,6 +56,33 @@ async fn tts_without_key_is_clear_error() {
 }
 
 #[tokio::test]
+async fn legacy_media_aliases_delegate_to_real_tools() {
+    unset("IMAGE_API_KEY");
+    unset("TTS_API_KEY");
+    unset("OPENAI_API_KEY");
+
+    let image = ImageGeneration
+        .call(serde_json::json!({"prompt": "sparrow"}), &ctx())
+        .await
+        .expect("image alias");
+    assert!(
+        format!("{:?}", image).contains("No image API key"),
+        "image alias should surface the real image tool error, got {:?}",
+        image
+    );
+
+    let tts = TextToSpeech
+        .call(serde_json::json!({"text": "hello"}), &ctx())
+        .await
+        .expect("tts alias");
+    assert!(
+        format!("{:?}", tts).contains("No TTS API key"),
+        "tts alias should surface the real TTS tool error, got {:?}",
+        tts
+    );
+}
+
+#[tokio::test]
 async fn transcribe_without_key_is_clear_error() {
     unset("TRANSCRIBE_API_KEY");
     unset("OPENAI_API_KEY");
@@ -90,4 +118,17 @@ fn classify_attachment_handles_known_types() {
 fn attachment_size_limit_is_10mb() {
     // Just an explicit sanity check so the value isn't silently changed.
     assert_eq!(MAX_ATTACHMENT_BYTES, 10 * 1024 * 1024);
+}
+
+#[test]
+fn known_tool_metadata_lists_real_media_tools() {
+    let names: Vec<_> = known_tool_metadata(None)
+        .into_iter()
+        .map(|tool| tool.name)
+        .collect();
+    assert!(names.contains(&"image_generate".to_string()));
+    assert!(names.contains(&"text_to_speech".to_string()));
+    assert!(names.contains(&"transcribe".to_string()));
+    assert!(!names.contains(&"image_gen".to_string()));
+    assert!(!names.contains(&"tts".to_string()));
 }
