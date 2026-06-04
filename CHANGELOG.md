@@ -7,10 +7,17 @@ All notable changes to Sparrow will be documented in this file.
 Public polish pass for the WebView cockpit and repository surface.
 
 ### Added
+- Prompt caching request controls for Anthropic Messages and
+  OpenAI-compatible/Responses providers. Anthropic stable system prompts receive
+  `cache_control`; OpenAI-compatible requests receive `prompt_cache_key` and
+  `prompt_cache_retention`.
+- WebView plan mode now has explicit accept, edit, and reject actions.
+- Diff cards and the side diff panel now render patches as per-hunk review
+  blocks with accept/reject states.
 - Local syntax highlighting for streamed code cards, covering common languages
   without a CDN dependency.
 - Regression tests that lock code-card styling, metric-spam behavior, and
-  WebView typography.
+  WebView typography, plan actions, provider cache payloads, and hunked diffs.
 
 ### Fixed
 - `CostUpdate` events no longer print one transcript line per streamed metric

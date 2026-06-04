@@ -44,6 +44,52 @@ impl OpenAIResponsesAdapter {
     }
 }
 
+fn build_responses_body(model: &str, req: &BrainRequest) -> serde_json::Value {
+    // Convert to Responses API format
+    let mut input: Vec<serde_json::Value> = Vec::new();
+
+    if let Some(sys) = &req.system {
+        input.push(json!({
+            "role": "system",
+            "content": sys,
+        }));
+    }
+
+    for msg in &req.messages {
+        let content: String = msg
+            .content
+            .iter()
+            .filter_map(|b| match b {
+                super::ContentBlock::Text { text } => Some(text.clone()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        input.push(json!({
+            "role": msg.role,
+            "content": content,
+        }));
+    }
+
+    let mut body = json!({
+        "model": model,
+        "input": input,
+        "stream": true,
+        "temperature": req.temperature,
+        "max_output_tokens": req.max_tokens,
+    });
+
+    if req.cache.enabled {
+        if let Some(key) = &req.cache.key {
+            body["prompt_cache_key"] = json!(key);
+        }
+        body["prompt_cache_retention"] = json!(req.cache.ttl.openai_retention());
+    }
+
+    body
+}
+
 #[async_trait]
 impl Brain for OpenAIResponsesAdapter {
     fn id(&self) -> &str {
@@ -55,40 +101,7 @@ impl Brain for OpenAIResponsesAdapter {
     }
 
     async fn complete(&self, req: BrainRequest) -> anyhow::Result<BrainStream> {
-        // Convert to Responses API format
-        let mut input: Vec<serde_json::Value> = Vec::new();
-
-        if let Some(sys) = &req.system {
-            input.push(json!({
-                "role": "system",
-                "content": sys,
-            }));
-        }
-
-        for msg in &req.messages {
-            let content: String = msg
-                .content
-                .iter()
-                .filter_map(|b| match b {
-                    super::ContentBlock::Text { text } => Some(text.clone()),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-
-            input.push(json!({
-                "role": msg.role,
-                "content": content,
-            }));
-        }
-
-        let body = json!({
-            "model": self.model,
-            "input": input,
-            "stream": true,
-            "temperature": req.temperature,
-            "max_output_tokens": req.max_tokens,
-        });
+        let body = build_responses_body(&self.model, &req);
 
         let response = self
             .client
@@ -227,5 +240,34 @@ impl Brain for BedrockAdapter {
              Use anthropic:* or openai:* directly, or pin a different provider in your config.",
             self.model_id
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::provider::{ContentBlock, Msg, PromptCacheConfig, PromptCacheTtl};
+
+    #[test]
+    fn responses_body_adds_prompt_cache_controls() {
+        let req = BrainRequest {
+            system: Some("stable sparrow system".into()),
+            messages: vec![Msg {
+                role: "user".into(),
+                content: vec![ContentBlock::Text {
+                    text: "dynamic task".into(),
+                }],
+            }],
+            cache: PromptCacheConfig {
+                enabled: true,
+                ttl: PromptCacheTtl::OneHour,
+                key: Some("sparrow-repo-abc".into()),
+            },
+            ..BrainRequest::default()
+        };
+
+        let body = build_responses_body("gpt-test", &req);
+        assert_eq!(body["prompt_cache_key"], "sparrow-repo-abc");
+        assert_eq!(body["prompt_cache_retention"], "in_memory");
     }
 }

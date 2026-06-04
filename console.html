@@ -459,6 +459,17 @@
   .diff-card .ctx{color:var(--dim)}
   .diff-card .pls{color:var(--add);background:color-mix(in srgb,var(--add) 9%,transparent);border-left-color:var(--add)!important}
   .diff-card .mns{color:var(--rem);background:color-mix(in srgb,var(--rem) 9%,transparent);border-left-color:var(--rem)!important}
+  .diff-card .hunk{border-top:1px solid var(--line)}
+  .diff-card .hunk:first-child{border-top:0}
+  .diff-card .hunk-head{display:flex;align-items:center;gap:8px;padding:5px 10px;background:color-mix(in srgb,var(--panel2) 70%,transparent);color:var(--dimmer);font-size:10px}
+  .diff-card .hunk-head .meta{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .diff-card .hunk-actions{display:flex;gap:5px}
+  .diff-card .hunk-actions button{font-family:inherit;font-size:9px;padding:2px 7px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--dim);cursor:pointer}
+  .diff-card .hunk-actions button.accept{color:var(--add);border-color:color-mix(in srgb,var(--add) 45%,transparent)}
+  .diff-card .hunk-actions button.reject{color:var(--rem);border-color:color-mix(in srgb,var(--rem) 45%,transparent)}
+  .diff-card .hunk[data-state="accepted"] .hunk-head{background:color-mix(in srgb,var(--add) 10%,var(--panel2))}
+  .diff-card .hunk[data-state="rejected"] .hunk-head{background:color-mix(in srgb,var(--rem) 10%,var(--panel2))}
+  .diff-card .hunk[data-state="rejected"] .dl{opacity:.45}
 
   /* collapsible code cards (assistant fenced output) */
   .code-card,.code-block{margin:7px 0 8px 10px;border:1px solid color-mix(in srgb,var(--line-hot) 82%,transparent);
@@ -2333,26 +2344,66 @@ function closeToolCard(ev){
   }
   TOOL_CARDS.delete(id);
 }
+function parseDiffHunks(patch){
+  const lines=String(patch||'').split(/\r?\n/);
+  const hunks=[];let current=null;
+  lines.forEach(line=>{
+    if(/^@@/.test(line)){
+      current={header:line,lines:[]};
+      hunks.push(current);
+      return;
+    }
+    if(!current){
+      current={header:'@@',lines:[]};
+      hunks.push(current);
+    }
+    current.lines.push(line);
+  });
+  return hunks.length?hunks:[{header:'@@',lines:[]}];
+}
+function diffLineHtml(line,lineState){
+  let kls='ctx';
+  if(/^\+/.test(line)){kls='pls';lineState.lineNum++;}
+  else if(/^-/.test(line)){kls='mns';}
+  else if(line.length){lineState.lineNum++;}
+  return '<span class="dl '+kls+'"><span class="num">'+(kls==='mns'?'':lineState.lineNum)+'</span>'+esc(line)+'</span>';
+}
+function renderHunkedDiff(patch,opts){
+  const options=opts||{};
+  const hunkControls=options.controls!==false;
+  const lineState={lineNum:0};
+  return parseDiffHunks(patch).map((hunk,idx)=>{
+    const lines=hunk.lines.map(line=>diffLineHtml(line,lineState)).join('\n');
+    const controls=hunkControls
+      ? `<span class="hunk-actions"><button class="accept" data-hunk-action="accept" data-hunk="${idx}">accept</button><button class="reject" data-hunk-action="reject" data-hunk="${idx}">reject</button></span>`
+      : '';
+    return `<div class="hunk" data-hunk="${idx}" data-state="pending"><div class="hunk-head"><span class="meta">${esc(hunk.header||'@@')}</span>${controls}</div>${lines}</div>`;
+  }).join('');
+}
+function bindHunkControls(root){
+  root.querySelectorAll('[data-hunk-action]').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const hunk=btn.closest('.hunk');
+      if(!hunk)return;
+      const action=btn.dataset.hunkAction;
+      hunk.dataset.state=action==='accept'?'accepted':'rejected';
+      btn.closest('.hunk-actions')?.querySelectorAll('button').forEach(b=>b.disabled=true);
+    });
+  });
+}
 function openDiffPanel(ev){
   const path=ev.file||ev.path||'<unknown>';
   const patch=ev.patch||ev.diff||'';
   let pl=0,mn=0;
   patch.split(/\r?\n/).forEach(l=>{if(/^\+[^+]/.test(l))pl++;else if(/^-[^-]/.test(l))mn++;});
-  let lineNum=0;
-  const dl=patch.split(/\r?\n/).map(l=>{
-    if(/^@@/.test(l))return '<span class="dl ctx" style="padding:0 10px;display:block;color:var(--dimmer);background:rgba(255,255,255,.03)">'+esc(l)+'</span>';
-    let kls='ctx',col='var(--dim)',bg='transparent',border='transparent';
-    if(/^\+/.test(l)){kls='pls';col='var(--add)';bg='color-mix(in srgb,var(--add) 8%,transparent)';border='var(--add)';lineNum++;}
-    else if(/^-/.test(l)){kls='mns';col='var(--rem)';bg='color-mix(in srgb,var(--rem) 8%,transparent)';border='var(--rem)';}
-    else if(l.length){lineNum++;}
-    return `<span style="display:block;padding:0 10px;background:${bg};border-left:2px solid ${border}"><span style="display:inline-block;width:28px;color:var(--dimmer);user-select:none;font-size:10px">${kls==='mns'?'':lineNum||''}</span><span style="color:${col}">${esc(l)}</span></span>`;
-  }).join('');
   const dpPath=document.getElementById('dpPath');
   dpPath.textContent=path;
   dpPath.style.cursor='pointer';dpPath.title='Click to view full file';
   dpPath.onclick=()=>loadFileInPanel(path);
   document.getElementById('dpStats').textContent=`+${pl} −${mn}`;
-  document.getElementById('dpBody').innerHTML=`<div style="font-family:inherit">${dl}</div>`;
+  const body=document.getElementById('dpBody');
+  body.innerHTML=`<div class="diff-card" style="border:0;border-radius:0;margin:0;background:transparent"><pre>${renderHunkedDiff(patch,{controls:true})}</pre></div>`;
+  bindHunkControls(body);
   document.getElementById('diffPanel').classList.add('open');
 }
 function closeDiffPanel(){document.getElementById('diffPanel').classList.remove('open');}
@@ -2379,16 +2430,9 @@ function renderDiffCard(ev){
   const applied=(ev.type==='DiffApplied');
   // Count +/- lines from the patch.
   let pl=0,mn=0;patch.split(/\r?\n/).forEach(l=>{if(/^\+[^+]/.test(l)||l.startsWith('+ '))pl++;else if(/^-[^-]/.test(l)||l.startsWith('- '))mn++;});
-  let lineNum=0;const dl=patch.split(/\r?\n/).map(l=>{
-    if(/^@@/.test(l))return '<span class="dl ctx" style="color:var(--dimmer)">'+esc(l)+'</span>';
-    let kls='ctx';
-    if(/^\+/.test(l)){kls='pls';lineNum++;}
-    else if(/^-/.test(l)){kls='mns';}
-    else if(l.length){lineNum++;}
-    return '<span class="dl '+kls+'"><span class="num">'+(kls==='mns'?'':lineNum)+'</span>'+esc(l)+'</span>';
-  }).join('\n');
   const card=document.createElement('div');card.className='diff-card';
-  card.innerHTML='<div class="h">◇ <span class="p">'+esc(path)+'</span><span class="m"><span class="pl">+'+pl+'</span> <span class="mn">−'+mn+'</span> · '+(applied?'<span style="color:var(--add)">applied</span>':'proposed')+'</span></div><pre>'+dl+'</pre>';
+  card.innerHTML='<div class="h">◇ <span class="p">'+esc(path)+'</span><span class="m"><span class="pl">+'+pl+'</span> <span class="mn">−'+mn+'</span> · '+(applied?'<span style="color:var(--add)">applied</span>':'proposed')+'</span></div><pre>'+renderHunkedDiff(patch,{controls:true})+'</pre>';
+  bindHunkControls(card);
   term.appendChild(card);
   term.scrollTop=term.scrollHeight;
   if(applied)chirp(1500,.06);
@@ -3575,9 +3619,10 @@ function renderPlan(plan,task){
     line('<span class="warn">Risks</span>');
     plan.risks.forEach(r=>line(`<span class="muted">- ${esc(r)}</span>`));
   }
-  const actions=line(`<span class="approval-actions" data-plan-task="${escAttr(task)}"><button class="approve" data-plan-action="run">run plan</button><button class="deny" data-plan-action="edit">edit</button></span>`);
+  const actions=line(`<span class="approval-actions" data-plan-task="${escAttr(task)}"><button class="approve" data-plan-action="run">run plan</button><button data-plan-action="edit">edit</button><button class="deny" data-plan-action="reject">reject</button></span>`);
   actions.querySelector('[data-plan-action="run"]').addEventListener('click',()=>acceptPlan(task));
   actions.querySelector('[data-plan-action="edit"]').addEventListener('click',()=>editPlan(task));
+  actions.querySelector('[data-plan-action="reject"]').addEventListener('click',()=>rejectPlan(task));
 }
 
 function acceptPlan(task){
@@ -3589,6 +3634,10 @@ function editPlan(task){
   $('taskInput').value=task;
   $('taskInput').focus();
   updateContextMeter();
+}
+
+function rejectPlan(task){
+  line(`<span class="muted">↳ plan rejected · ${esc(task||'no task')}</span>`);
 }
 
 function showApprovalModal(ev){

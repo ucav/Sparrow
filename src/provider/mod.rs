@@ -107,6 +107,60 @@ pub struct ToolSpec {
     pub input_schema: serde_json::Value,
 }
 
+// ─── Prompt cache policy ───────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PromptCacheTtl {
+    FiveMinutes,
+    OneHour,
+}
+
+impl PromptCacheTtl {
+    pub fn anthropic_ttl(&self) -> &'static str {
+        match self {
+            Self::FiveMinutes => "5m",
+            Self::OneHour => "1h",
+        }
+    }
+
+    pub fn openai_retention(&self) -> &'static str {
+        // OpenAI exposes `in_memory` (typically 5-10 minutes, up to one hour)
+        // and `24h`; there is no exact 1h request parameter.
+        "in_memory"
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PromptCacheConfig {
+    pub enabled: bool,
+    pub ttl: PromptCacheTtl,
+    pub key: Option<String>,
+}
+
+impl PromptCacheConfig {
+    pub fn enabled(key: Option<String>) -> Self {
+        Self {
+            enabled: true,
+            ttl: PromptCacheTtl::OneHour,
+            key: key.into(),
+        }
+    }
+
+    pub fn disabled() -> Self {
+        Self {
+            enabled: false,
+            ttl: PromptCacheTtl::FiveMinutes,
+            key: None,
+        }
+    }
+}
+
+impl Default for PromptCacheConfig {
+    fn default() -> Self {
+        Self::enabled(None)
+    }
+}
+
 // ─── Brain request ──────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -117,6 +171,7 @@ pub struct BrainRequest {
     pub max_tokens: u32,
     pub temperature: f32,
     pub stop: Vec<String>,
+    pub cache: PromptCacheConfig,
 }
 
 impl Default for BrainRequest {
@@ -128,6 +183,7 @@ impl Default for BrainRequest {
             max_tokens: 4096,
             temperature: 0.0,
             stop: vec![],
+            cache: PromptCacheConfig::default(),
         }
     }
 }

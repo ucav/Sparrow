@@ -313,6 +313,42 @@ fn console_html_has_typed_event_renderers() {
 }
 
 #[test]
+fn console_html_plan_mode_has_explicit_accept_edit_reject() {
+    let html =
+        std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");
+    for marker in [
+        "function renderPlan",
+        "data-plan-action=\"run\"",
+        "data-plan-action=\"edit\"",
+        "data-plan-action=\"reject\"",
+        "function rejectPlan",
+        "plan rejected",
+    ] {
+        assert!(html.contains(marker), "plan mode must expose `{}`", marker);
+    }
+}
+
+#[test]
+fn console_html_diff_view_exposes_per_hunk_controls() {
+    let html =
+        std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");
+    for marker in [
+        "function parseDiffHunks",
+        "function renderHunkedDiff",
+        "function bindHunkControls",
+        "data-hunk-action=\"accept\"",
+        "data-hunk-action=\"reject\"",
+        "data-state=\"pending\"",
+    ] {
+        assert!(
+            html.contains(marker),
+            "diff view must expose per-hunk marker `{}`",
+            marker
+        );
+    }
+}
+
+#[test]
 fn console_html_styles_streamed_code_cards() {
     let html =
         std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");

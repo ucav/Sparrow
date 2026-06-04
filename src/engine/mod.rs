@@ -17,7 +17,9 @@ use crate::extras::Distiller;
 use crate::hooks::{HookEvent, HookRegistry};
 use crate::memory::{Fact, Memory, MemoryDoc, MemoryDocKind};
 use crate::permissions::PermissionContext;
-use crate::provider::{Brain, BrainEvent, BrainRequest, ContentBlock, Msg, ToolSpec};
+use crate::provider::{
+    Brain, BrainEvent, BrainRequest, ContentBlock, Msg, PromptCacheConfig, ToolSpec,
+};
 use crate::reasoning::ReasoningEngine;
 use crate::redaction::RedactionFilter;
 use crate::router::{BudgetState, Router, TaskTier};
@@ -137,6 +139,20 @@ pub fn summarize_model_chain(chain_ids: &[String], limit: usize) -> String {
         visible.push(format!("+{} autres fallbacks", chain_ids.len() - limit));
     }
     visible.join(" -> ")
+}
+
+fn prompt_cache_key(scope: &str, workspace_root: &std::path::Path, tools: &[ToolSpec]) -> String {
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    scope.hash(&mut hasher);
+    workspace_root.display().to_string().hash(&mut hasher);
+    for tool in tools {
+        tool.name.hash(&mut hasher);
+        tool.description.hash(&mut hasher);
+        tool.input_schema.to_string().hash(&mut hasher);
+    }
+    format!("sparrow-{}-{:016x}", scope, hasher.finish())
 }
 
 // ─── System prompt / SOUL ───────────────────────────────────────────────────────
@@ -411,6 +427,7 @@ impl Engine {
             max_tokens: 6,
             temperature: 0.0,
             stop: vec![],
+            cache: PromptCacheConfig::disabled(),
         };
         let mut stream = brain.complete(req).await.ok()?;
         let mut out = String::new();
@@ -584,6 +601,7 @@ impl Engine {
             max_tokens: 300,
             temperature: 0.0,
             stop: vec![],
+            cache: PromptCacheConfig::disabled(),
         };
         let mut stream = brain.complete(req).await.ok()?;
         let mut out = String::new();
@@ -1258,6 +1276,11 @@ impl Engine {
                     max_tokens: caps.max_output as u32,
                     temperature: 0.0,
                     stop: vec![],
+                    cache: PromptCacheConfig::enabled(Some(prompt_cache_key(
+                        "engine",
+                        &workspace.root,
+                        &tool_specs,
+                    ))),
                 };
                 let est = estimate_request_tokens(&req_for_estimate);
                 let threshold = (caps.context_window as f64 * 0.75) as u64;
@@ -1325,6 +1348,11 @@ impl Engine {
                 max_tokens: caps.max_output as u32,
                 temperature: 0.0,
                 stop: vec![],
+                cache: PromptCacheConfig::enabled(Some(prompt_cache_key(
+                    "engine",
+                    &workspace.root,
+                    &tool_specs,
+                ))),
             };
 
             let estimated_input = estimate_request_tokens(&req);

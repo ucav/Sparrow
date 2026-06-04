@@ -48,6 +48,157 @@ impl OpenAICompatAdapter {
     }
 }
 
+fn build_chat_body(model: &str, req: &BrainRequest) -> serde_json::Value {
+    let mut messages: Vec<serde_json::Value> = Vec::new();
+
+    // Add system message
+    if let Some(sys) = &req.system {
+        messages.push(json!({
+            "role": "system",
+            "content": sys,
+        }));
+    }
+
+    // Convert messages
+    for msg in &req.messages {
+        if msg.role == "system" {
+            messages.push(json!({
+                "role": "system",
+                "content": msg.content.iter()
+                    .filter_map(|b| match b {
+                        ContentBlock::Text { text } => Some(text.clone()),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            }));
+            continue;
+        }
+
+        let mut content: Vec<serde_json::Value> = Vec::new();
+        let mut tool_calls: Vec<serde_json::Value> = Vec::new();
+        let mut reasoning_buf = String::new();
+        let mut emitted_tool_result = false;
+
+        for block in &msg.content {
+            match block {
+                ContentBlock::Text { text } => {
+                    content.push(json!({"type": "text", "text": text}));
+                }
+                ContentBlock::Reasoning { text } => {
+                    // DeepSeek / Moonshot / Qwen "thinking mode" require the
+                    // model's previous reasoning_content to be echoed back
+                    // on the next turn or the API rejects with 400. We aggregate
+                    // all reasoning blocks of this message and ship them as a
+                    // single `reasoning_content` field.
+                    if !reasoning_buf.is_empty() {
+                        reasoning_buf.push('\n');
+                    }
+                    reasoning_buf.push_str(text);
+                }
+                ContentBlock::ToolUse { id, name, input } => {
+                    tool_calls.push(json!({
+                        "id": id,
+                        "type": "function",
+                        "function": {
+                            "name": name,
+                            "arguments": serde_json::to_string(input).unwrap_or_default(),
+                        }
+                    }));
+                }
+                ContentBlock::ToolResult {
+                    tool_use_id,
+                    content: tool_content,
+                    ..
+                } => {
+                    let text = tool_content
+                        .iter()
+                        .filter_map(|b| match b {
+                            ContentBlock::Text { text } => Some(text.clone()),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    messages.push(json!({
+                        "role": "tool",
+                        "tool_call_id": tool_use_id,
+                        "content": text,
+                    }));
+                    emitted_tool_result = true;
+                    continue; // tool results are separate messages
+                }
+                _ => {}
+            }
+        }
+
+        if emitted_tool_result && content.is_empty() && tool_calls.is_empty() {
+            continue;
+        }
+
+        let mut msg_json = json!({ "role": msg.role });
+
+        if !tool_calls.is_empty() {
+            msg_json["tool_calls"] = json!(tool_calls);
+        }
+        if !content.is_empty() {
+            if content.len() == 1 && content[0]["type"] == "text" {
+                msg_json["content"] = json!(content[0]["text"]);
+            } else {
+                msg_json["content"] = json!(content);
+            }
+        }
+        if !reasoning_buf.is_empty() && msg.role == "assistant" {
+            msg_json["reasoning_content"] = json!(reasoning_buf);
+        }
+
+        messages.push(msg_json);
+    }
+
+    // Build tools
+    let tools: Vec<serde_json::Value> = req
+        .tools
+        .iter()
+        .map(|t| {
+            json!({
+                "type": "function",
+                "function": {
+                    "name": t.name,
+                    "description": t.description,
+                    "parameters": t.input_schema,
+                }
+            })
+        })
+        .collect();
+
+    let mut body = json!({
+        "model": model,
+        "messages": messages,
+        "stream": true,
+        "stream_options": {
+            "include_usage": true
+        },
+        "temperature": req.temperature,
+    });
+
+    if req.max_tokens > 0 {
+        body["max_tokens"] = json!(req.max_tokens);
+    }
+    if !tools.is_empty() {
+        body["tools"] = json!(tools);
+    }
+    if !req.stop.is_empty() {
+        body["stop"] = json!(req.stop);
+    }
+    if req.cache.enabled {
+        if let Some(key) = &req.cache.key {
+            body["prompt_cache_key"] = json!(key);
+        }
+        body["prompt_cache_retention"] = json!(req.cache.ttl.openai_retention());
+    }
+
+    body
+}
+
 #[async_trait]
 impl Brain for OpenAICompatAdapter {
     fn id(&self) -> &str {
@@ -59,146 +210,7 @@ impl Brain for OpenAICompatAdapter {
     }
 
     async fn complete(&self, req: BrainRequest) -> anyhow::Result<BrainStream> {
-        let mut messages: Vec<serde_json::Value> = Vec::new();
-
-        // Add system message
-        if let Some(sys) = &req.system {
-            messages.push(json!({
-                "role": "system",
-                "content": sys,
-            }));
-        }
-
-        // Convert messages
-        for msg in &req.messages {
-            if msg.role == "system" {
-                messages.push(json!({
-                    "role": "system",
-                    "content": msg.content.iter()
-                        .filter_map(|b| match b {
-                            ContentBlock::Text { text } => Some(text.clone()),
-                            _ => None,
-                        })
-                        .collect::<Vec<_>>()
-                        .join("\n"),
-                }));
-                continue;
-            }
-
-            let mut content: Vec<serde_json::Value> = Vec::new();
-            let mut tool_calls: Vec<serde_json::Value> = Vec::new();
-            let mut reasoning_buf = String::new();
-            let mut emitted_tool_result = false;
-
-            for block in &msg.content {
-                match block {
-                    ContentBlock::Text { text } => {
-                        content.push(json!({"type": "text", "text": text}));
-                    }
-                    ContentBlock::Reasoning { text } => {
-                        // DeepSeek / Moonshot / Qwen "thinking mode" require the
-                        // model's previous reasoning_content to be echoed back
-                        // on the next turn or the API rejects with 400. We aggregate
-                        // all reasoning blocks of this message and ship them as a
-                        // single `reasoning_content` field.
-                        if !reasoning_buf.is_empty() {
-                            reasoning_buf.push('\n');
-                        }
-                        reasoning_buf.push_str(text);
-                    }
-                    ContentBlock::ToolUse { id, name, input } => {
-                        tool_calls.push(json!({
-                            "id": id,
-                            "type": "function",
-                            "function": {
-                                "name": name,
-                                "arguments": serde_json::to_string(input).unwrap_or_default(),
-                            }
-                        }));
-                    }
-                    ContentBlock::ToolResult {
-                        tool_use_id,
-                        content: tool_content,
-                        ..
-                    } => {
-                        let text = tool_content
-                            .iter()
-                            .filter_map(|b| match b {
-                                ContentBlock::Text { text } => Some(text.clone()),
-                                _ => None,
-                            })
-                            .collect::<Vec<_>>()
-                            .join("\n");
-                        messages.push(json!({
-                            "role": "tool",
-                            "tool_call_id": tool_use_id,
-                            "content": text,
-                        }));
-                        emitted_tool_result = true;
-                        continue; // tool results are separate messages
-                    }
-                    _ => {}
-                }
-            }
-
-            if emitted_tool_result && content.is_empty() && tool_calls.is_empty() {
-                continue;
-            }
-
-            let mut msg_json = json!({ "role": msg.role });
-
-            if !tool_calls.is_empty() {
-                msg_json["tool_calls"] = json!(tool_calls);
-            }
-            if !content.is_empty() {
-                if content.len() == 1 && content[0]["type"] == "text" {
-                    msg_json["content"] = json!(content[0]["text"]);
-                } else {
-                    msg_json["content"] = json!(content);
-                }
-            }
-            if !reasoning_buf.is_empty() && msg.role == "assistant" {
-                msg_json["reasoning_content"] = json!(reasoning_buf);
-            }
-
-            messages.push(msg_json);
-        }
-
-        // Build tools
-        let tools: Vec<serde_json::Value> = req
-            .tools
-            .iter()
-            .map(|t| {
-                json!({
-                    "type": "function",
-                    "function": {
-                        "name": t.name,
-                        "description": t.description,
-                        "parameters": t.input_schema,
-                    }
-                })
-            })
-            .collect();
-
-        let mut body = json!({
-            "model": self.model,
-            "messages": messages,
-            "stream": true,
-            "stream_options": {
-                "include_usage": true
-            },
-            "temperature": req.temperature,
-        });
-
-        if req.max_tokens > 0 {
-            body["max_tokens"] = json!(req.max_tokens);
-        }
-        if !tools.is_empty() {
-            body["tools"] = json!(tools);
-        }
-        if !req.stop.is_empty() {
-            body["stop"] = json!(req.stop);
-        }
+        let body = build_chat_body(&self.model, &req);
 
         let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
 
@@ -447,5 +459,34 @@ impl Brain for OpenAICompatAdapter {
             .flatten();
 
         Ok(Box::pin(event_stream))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::provider::{Msg, PromptCacheConfig, PromptCacheTtl};
+
+    #[test]
+    fn openai_chat_body_adds_prompt_cache_controls() {
+        let req = BrainRequest {
+            system: Some("stable sparrow system".into()),
+            messages: vec![Msg {
+                role: "user".into(),
+                content: vec![ContentBlock::Text {
+                    text: "dynamic task".into(),
+                }],
+            }],
+            cache: PromptCacheConfig {
+                enabled: true,
+                ttl: PromptCacheTtl::OneHour,
+                key: Some("sparrow-repo-abc".into()),
+            },
+            ..BrainRequest::default()
+        };
+
+        let body = build_chat_body("gpt-test", &req);
+        assert_eq!(body["prompt_cache_key"], "sparrow-repo-abc");
+        assert_eq!(body["prompt_cache_retention"], "in_memory");
     }
 }

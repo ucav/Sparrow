@@ -68,6 +68,133 @@ impl AnthropicAdapter {
     }
 }
 
+fn cache_control_value(req: &BrainRequest) -> serde_json::Value {
+    json!({
+        "type": "ephemeral",
+        "ttl": req.cache.ttl.anthropic_ttl(),
+    })
+}
+
+fn text_block(text: &str, cache_control: Option<serde_json::Value>) -> serde_json::Value {
+    let mut block = json!({"type": "text", "text": text});
+    if let Some(cache_control) = cache_control {
+        block["cache_control"] = cache_control;
+    }
+    block
+}
+
+fn build_messages_body(model: &str, req: &BrainRequest) -> serde_json::Value {
+    let system: Option<String> = req.system.clone();
+    let mut messages = Vec::new();
+
+    // Build Anthropic-formatted messages from our Msg vec
+    for msg in &req.messages {
+        let mut content: Vec<serde_json::Value> = Vec::new();
+
+        for block in &msg.content {
+            match block {
+                ContentBlock::Text { text } => {
+                    content.push(text_block(text, None));
+                }
+                ContentBlock::Image { source } => match source {
+                    super::ImageSource::Base64 { media_type, data } => {
+                        content.push(json!({
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": media_type,
+                                "data": data,
+                            }
+                        }));
+                    }
+                    super::ImageSource::Url { url } => {
+                        content.push(json!({
+                            "type": "image",
+                            "source": {
+                                "type": "url",
+                                "url": url,
+                            }
+                        }));
+                    }
+                },
+                ContentBlock::ToolResult {
+                    tool_use_id,
+                    content: tool_content,
+                    is_error,
+                } => {
+                    let inner: Vec<serde_json::Value> = tool_content
+                        .iter()
+                        .map(|b| match b {
+                            ContentBlock::Text { text } => text_block(text, None),
+                            _ => json!({"type": "text", "text": format!("{:?}", b)}),
+                        })
+                        .collect();
+                    let mut val = json!({
+                        "type": "tool_result",
+                        "tool_use_id": tool_use_id,
+                        "content": inner,
+                    });
+                    if let Some(true) = is_error {
+                        val["is_error"] = json!(true);
+                    }
+                    content.push(val);
+                }
+                ContentBlock::ToolUse { .. } => {}
+                // Anthropic doesn't use the openai-style `reasoning_content`
+                // field; thinking content is handled via the separate
+                // `thinking` API parameter. Drop reasoning blocks here so
+                // they don't leak as text — they're transcript-only.
+                ContentBlock::Reasoning { .. } => {}
+            }
+        }
+
+        messages.push(json!({
+            "role": msg.role,
+            "content": content,
+        }));
+    }
+
+    // Build tools
+    let tools: Vec<serde_json::Value> = if req.tools.is_empty() {
+        vec![]
+    } else {
+        req.tools
+            .iter()
+            .map(|t| {
+                json!({
+                    "name": t.name,
+                    "description": t.description,
+                    "input_schema": t.input_schema,
+                })
+            })
+            .collect()
+    };
+
+    let mut body = json!({
+        "model": model,
+        "max_tokens": req.max_tokens,
+        "temperature": req.temperature,
+        "messages": messages,
+        "stream": true,
+    });
+
+    if let Some(sys) = &system {
+        body["system"] = if req.cache.enabled {
+            json!([text_block(sys, Some(cache_control_value(req)))])
+        } else {
+            json!(sys)
+        };
+    }
+    if !tools.is_empty() {
+        body["tools"] = json!(tools);
+    }
+    if !req.stop.is_empty() {
+        body["stop_sequences"] = json!(req.stop);
+    }
+
+    body
+}
+
 #[async_trait]
 impl Brain for AnthropicAdapter {
     fn id(&self) -> &str {
@@ -79,111 +206,7 @@ impl Brain for AnthropicAdapter {
     }
 
     async fn complete(&self, req: BrainRequest) -> anyhow::Result<BrainStream> {
-        let system: Option<String> = req.system;
-        let mut messages = Vec::new();
-
-        // Build Anthropic-formatted messages from our Msg vec
-        for msg in &req.messages {
-            let mut content: Vec<serde_json::Value> = Vec::new();
-
-            for block in &msg.content {
-                match block {
-                    ContentBlock::Text { text } => {
-                        content.push(json!({"type": "text", "text": text}));
-                    }
-                    ContentBlock::Image { source } => match source {
-                        super::ImageSource::Base64 { media_type, data } => {
-                            content.push(json!({
-                                "type": "image",
-                                "source": {
-                                    "type": "base64",
-                                    "media_type": media_type,
-                                    "data": data,
-                                }
-                            }));
-                        }
-                        super::ImageSource::Url { url } => {
-                            content.push(json!({
-                                "type": "image",
-                                "source": {
-                                    "type": "url",
-                                    "url": url,
-                                }
-                            }));
-                        }
-                    },
-                    ContentBlock::ToolResult {
-                        tool_use_id,
-                        content: tool_content,
-                        is_error,
-                    } => {
-                        let inner: Vec<serde_json::Value> = tool_content
-                            .iter()
-                            .map(|b| match b {
-                                ContentBlock::Text { text } => {
-                                    json!({"type": "text", "text": text})
-                                }
-                                _ => json!({"type": "text", "text": format!("{:?}", b)}),
-                            })
-                            .collect();
-                        let mut val = json!({
-                            "type": "tool_result",
-                            "tool_use_id": tool_use_id,
-                            "content": inner,
-                        });
-                        if let Some(true) = is_error {
-                            val["is_error"] = json!(true);
-                        }
-                        content.push(val);
-                    }
-                    ContentBlock::ToolUse { .. } => {}
-                    // Anthropic doesn't use the openai-style `reasoning_content`
-                    // field; thinking content is handled via the separate
-                    // `thinking` API parameter. Drop reasoning blocks here so
-                    // they don't leak as text — they're transcript-only.
-                    ContentBlock::Reasoning { .. } => {}
-                }
-            }
-
-            messages.push(json!({
-                "role": msg.role,
-                "content": content,
-            }));
-        }
-
-        // Build tools
-        let tools: Vec<serde_json::Value> = if req.tools.is_empty() {
-            vec![]
-        } else {
-            req.tools
-                .iter()
-                .map(|t| {
-                    json!({
-                        "name": t.name,
-                        "description": t.description,
-                        "input_schema": t.input_schema,
-                    })
-                })
-                .collect()
-        };
-
-        let mut body = json!({
-            "model": self.model,
-            "max_tokens": req.max_tokens,
-            "temperature": req.temperature,
-            "messages": messages,
-            "stream": true,
-        });
-
-        if let Some(sys) = &system {
-            body["system"] = json!(sys);
-        }
-        if !tools.is_empty() {
-            body["tools"] = json!(tools);
-        }
-        if !req.stop.is_empty() {
-            body["stop_sequences"] = json!(req.stop);
-        }
+        let body = build_messages_body(&self.model, &req);
 
         let response = self
             .client
@@ -328,5 +351,37 @@ impl Brain for AnthropicAdapter {
             .flatten();
 
         Ok(Box::pin(event_stream))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::provider::{Msg, PromptCacheConfig, PromptCacheTtl};
+
+    #[test]
+    fn anthropic_system_prompt_gets_cache_control() {
+        let req = BrainRequest {
+            system: Some("stable sparrow system".into()),
+            messages: vec![Msg {
+                role: "user".into(),
+                content: vec![ContentBlock::Text {
+                    text: "dynamic task".into(),
+                }],
+            }],
+            cache: PromptCacheConfig {
+                enabled: true,
+                ttl: PromptCacheTtl::OneHour,
+                key: Some("repo-key".into()),
+            },
+            ..BrainRequest::default()
+        };
+
+        let body = build_messages_body("claude-test", &req);
+        assert_eq!(
+            body["system"][0]["cache_control"],
+            json!({"type":"ephemeral","ttl":"1h"})
+        );
+        assert!(body["messages"][0]["content"][0]["cache_control"].is_null());
     }
 }
