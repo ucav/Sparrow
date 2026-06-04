@@ -147,8 +147,9 @@ pub const KNOWN_TOOLS: &[(&str, RiskLevel)] = &[
     ("git", RiskLevel::Exec),
     ("todo", RiskLevel::ReadOnly),
     ("exec", RiskLevel::Exec),
-    ("image_gen", RiskLevel::Network),
-    ("tts", RiskLevel::Network),
+    ("image_generate", RiskLevel::Network),
+    ("text_to_speech", RiskLevel::Network),
+    ("transcribe", RiskLevel::Network),
     ("python_rpc", RiskLevel::Exec),
     ("glob", RiskLevel::ReadOnly),
     ("symbols", RiskLevel::ReadOnly),
@@ -180,7 +181,10 @@ pub fn metadata_for(name: &str, risk: RiskLevel) -> ToolMetadata {
         "terminal"
     } else if lower == "exec" || lower == "git" {
         "terminal"
-    } else if matches!(lower.as_str(), "image_gen" | "tts") {
+    } else if matches!(
+        lower.as_str(),
+        "image_gen" | "image_generate" | "tts" | "text_to_speech" | "transcribe"
+    ) {
         "media"
     } else if lower == "memory" || lower == "knowledge_graph" {
         "memory"
