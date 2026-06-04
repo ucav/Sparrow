@@ -257,7 +257,7 @@
   .drw-row:hover{border-color:var(--line-hot)}
   .drw-row.cur{border-color:color-mix(in srgb,var(--brand) 55%,var(--line));background:color-mix(in srgb,var(--brand) 10%,var(--panel))}
   .drw-row .ttl{font-size:11.5px;color:var(--fg);font-weight:500;display:flex;align-items:center;gap:6px;
-    overflow-wrap:anywhere;word-break:break-word}
+    overflow-wrap:break-word;word-break:normal;white-space:normal;min-width:0;text-overflow:ellipsis}
   .drw-row .ttl .led{width:6px;height:6px;border-radius:50%;background:var(--add);box-shadow:0 0 6px var(--add)}
   .drw-row .meta{font-size:10px;color:var(--dim);display:flex;gap:8px;flex-wrap:wrap}
   .drw-row .meta b{color:var(--fg);font-weight:500}
@@ -2448,16 +2448,156 @@ function ensureStreamRoot(){
 }
 
 function openProseSpan(){
+  // Wrap each prose section in a container that gets a hover-revealed copy
+  // button — the user asked for the same copy affordance as on code blocks.
+  const wrap=document.createElement('span');wrap.className='prose-wrap';
+  wrap.style.cssText='display:inline-block;position:relative;width:100%';
   const span=document.createElement('span');
-  span.className='cmd streaming';
+  span.className='cmd streaming md-prose';
   span.style.whiteSpace='pre-wrap';
-  STREAM_BUF.appendChild(span);
+  wrap.appendChild(span);
+  const copyBtn=document.createElement('button');
+  copyBtn.className='prose-copy';
+  copyBtn.type='button';
+  copyBtn.title='Copy this response';
+  copyBtn.textContent='⧉ copy';
+  copyBtn.style.cssText='position:absolute;top:-2px;right:-2px;font-family:inherit;font-size:9.5px;padding:1px 7px;border-radius:5px;cursor:pointer;color:var(--dimmer);background:color-mix(in srgb,var(--panel) 88%,transparent);border:1px solid var(--line);opacity:0;transition:.15s';
+  copyBtn.addEventListener('click',()=>{
+    navigator.clipboard.writeText(STREAM_STATE?.proseRaw||span.textContent||'');
+    copyBtn.textContent='copied ✓';copyBtn.style.color='var(--add)';
+    setTimeout(()=>{copyBtn.textContent='⧉ copy';copyBtn.style.color='';},1400);
+  });
+  wrap.appendChild(copyBtn);
+  wrap.addEventListener('mouseenter',()=>{copyBtn.style.opacity='1';});
+  wrap.addEventListener('mouseleave',()=>{copyBtn.style.opacity='0';});
+  STREAM_BUF.appendChild(wrap);
   STREAM_STATE.el=span;
   STREAM_STATE.cardEl=null;
   STREAM_STATE.mode='prose';
+  STREAM_STATE.proseRaw='';
+}
+
+// ─── Inline markdown renderer (safe, no eval, no innerHTML of user data) ──
+// Lightweight subset: **bold**, *italic*, `inline code`, ## headers, lists,
+// > blockquotes, --- rules, [text](url) links, GitHub-style tables, emoji
+// shortcodes like :tada: → 🎉, and ☐/☑ checkboxes. Designed to be safe to
+// re-render on every streaming delta (idempotent, monotonic input).
+const _EMOJI_MAP={
+  ':tada:':'🎉',':bug:':'🐛',':check:':'✅',':white_check_mark:':'✅',
+  ':x:':'❌',':warning:':'⚠️',':rocket:':'🚀',':zap:':'⚡',':fire:':'🔥',
+  ':sparkles:':'✨',':bulb:':'💡',':wrench:':'🔧',':hammer:':'🔨',
+  ':lock:':'🔒',':unlock:':'🔓',':key:':'🔑',':book:':'📖',':pencil:':'✏️',
+  ':star:':'⭐',':heart:':'❤️',':100:':'💯',':eyes:':'👀',':rotating_light:':'🚨'
+};
+function _markdownify(src){
+  if(!src)return '';
+  let s=String(src);
+  // Escape HTML first so we operate on safe text.
+  s=s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  // Emoji shortcodes.
+  s=s.replace(/:([a-z_0-9]+):/gi,(m,k)=>_EMOJI_MAP[m.toLowerCase()]||m);
+  // Block-level: split into lines and identify headers, lists, blockquotes,
+  // rules, tables. Tables need a 2-pass scan (header | separator | rows).
+  const lines=s.split('\n');
+  const out=[];
+  let i=0;
+  while(i<lines.length){
+    const ln=lines[i];
+    // Horizontal rule
+    if(/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(ln)){
+      out.push('<hr class="md-hr">');i++;continue;
+    }
+    // ATX headers
+    const h=ln.match(/^(#{1,6})\s+(.*)$/);
+    if(h){
+      const lvl=h[1].length;
+      out.push(`<div class="md-h md-h${lvl}">${_inlineMd(h[2])}</div>`);
+      i++;continue;
+    }
+    // Blockquote
+    if(/^\s*&gt;\s?/.test(ln)){
+      const bq=[];while(i<lines.length && /^\s*&gt;\s?/.test(lines[i])){bq.push(lines[i].replace(/^\s*&gt;\s?/,''));i++;}
+      out.push(`<blockquote class="md-bq">${_inlineMd(bq.join('\n'))}</blockquote>`);
+      continue;
+    }
+    // GitHub table: header | --- | rows
+    if(/\|/.test(ln) && i+1<lines.length && /^\s*\|?\s*:?-{2,}/.test(lines[i+1])){
+      const headers=ln.replace(/^\s*\||\|\s*$/g,'').split('|').map(c=>c.trim());
+      i+=2;
+      const rows=[];
+      while(i<lines.length && /\|/.test(lines[i])){
+        rows.push(lines[i].replace(/^\s*\||\|\s*$/g,'').split('|').map(c=>c.trim()));
+        i++;
+      }
+      let t='<table class="md-tbl"><thead><tr>';
+      for(const h of headers)t+=`<th>${_inlineMd(h)}</th>`;
+      t+='</tr></thead><tbody>';
+      for(const r of rows){
+        t+='<tr>';
+        for(const c of r)t+=`<td>${_inlineMd(c)}</td>`;
+        t+='</tr>';
+      }
+      t+='</tbody></table>';
+      out.push(t);
+      continue;
+    }
+    // Unordered list
+    if(/^\s*[-*+]\s+/.test(ln)){
+      const items=[];
+      while(i<lines.length && /^\s*[-*+]\s+/.test(lines[i])){
+        items.push(lines[i].replace(/^\s*[-*+]\s+/,''));i++;
+      }
+      out.push(`<ul class="md-ul">${items.map(x=>`<li>${_inlineMd(x)}</li>`).join('')}</ul>`);
+      continue;
+    }
+    // Ordered list
+    if(/^\s*\d+\.\s+/.test(ln)){
+      const items=[];
+      while(i<lines.length && /^\s*\d+\.\s+/.test(lines[i])){
+        items.push(lines[i].replace(/^\s*\d+\.\s+/,''));i++;
+      }
+      out.push(`<ol class="md-ol">${items.map(x=>`<li>${_inlineMd(x)}</li>`).join('')}</ol>`);
+      continue;
+    }
+    // Plain text line (with inline md)
+    out.push(_inlineMd(ln));
+    i++;
+  }
+  return out.join('\n');
+}
+function _inlineMd(s){
+  if(!s)return '';
+  // Inline code (must come before bold/italic so ` won't be eaten)
+  s=s.replace(/`([^`\n]+)`/g,'<code class="md-ic">$1</code>');
+  // Bold-italic ***x***
+  s=s.replace(/\*\*\*([^*\n]+)\*\*\*/g,'<strong><em>$1</em></strong>');
+  // Bold **x** / __x__
+  s=s.replace(/\*\*([^*\n]+)\*\*/g,'<strong>$1</strong>');
+  s=s.replace(/__([^_\n]+)__/g,'<strong>$1</strong>');
+  // Italic *x* / _x_
+  s=s.replace(/(^|\W)\*([^*\n]+)\*/g,'$1<em>$2</em>');
+  s=s.replace(/(^|\W)_([^_\n]+)_/g,'$1<em>$2</em>');
+  // Strikethrough ~~x~~
+  s=s.replace(/~~([^~\n]+)~~/g,'<del>$1</del>');
+  // Links [text](url)
+  s=s.replace(/\[([^\]\n]+)\]\((https?:[^)\s]+)\)/g,'<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+  // Checkboxes - [ ] / - [x]
+  s=s.replace(/\[ \]/g,'<span class="md-cb">☐</span>');
+  s=s.replace(/\[x\]/gi,'<span class="md-cb done">☑</span>');
+  return s;
+}
+
+function _flushProseSync(){
+  // Render any pending proseRaw to the active prose span immediately
+  // (synchronous) so a mode switch doesn't strand unrendered markdown.
+  if(STREAM_STATE && STREAM_STATE.mode==='prose' && STREAM_STATE.el){
+    STREAM_STATE.el.innerHTML=_markdownify(STREAM_STATE.proseRaw||'');
+  }
 }
 
 function openCodeCard(){
+  // Flush whatever prose has accumulated so far before swapping the sink.
+  _flushProseSync();
   const d=document.createElement('details');
   d.className='code-card streaming-code';
   d.open=true; // open while streaming so the user sees code arrive live
@@ -2506,7 +2646,23 @@ function appendToActive(text){
     text=text.slice(nl+1);
     if(!text)return;
   }
-  STREAM_STATE.el.textContent+=text;
+  if(STREAM_STATE.mode==='code'){
+    // Code blocks render raw text (no markdown, no HTML escaping in <code>).
+    STREAM_STATE.el.textContent+=text;
+    return;
+  }
+  // Prose: accumulate raw text and re-render markdown to HTML. Throttled
+  // via rAF so high-frequency deltas don't trigger a layout per character.
+  STREAM_STATE.proseRaw=(STREAM_STATE.proseRaw||'')+text;
+  if(!STREAM_STATE._scheduled){
+    STREAM_STATE._scheduled=true;
+    requestAnimationFrame(()=>{
+      if(!STREAM_STATE)return;
+      STREAM_STATE._scheduled=false;
+      if(STREAM_STATE.mode!=='prose'||!STREAM_STATE.el)return;
+      STREAM_STATE.el.innerHTML=_markdownify(STREAM_STATE.proseRaw||'');
+    });
+  }
 }
 
 function streamDelta(text){
@@ -2551,10 +2707,13 @@ function streamDelta(text){
 
 function cryptoUid(){return Math.random().toString(36).slice(2,10)}
 
-// Finalize: just turn off the streaming highlight and reset state. The live
-// renderer already produced the right DOM — no post-processing needed.
+// Finalize: flush any pending markdown rendering, turn off the streaming
+// highlight and reset state.
 function finalizeStreamBlock(buf){
   if(!buf)return;
+  // Synchronous markdown flush so the user sees the rendered output
+  // immediately when a non-transparent event arrives (RunFinished, etc.).
+  _flushProseSync();
   buf.querySelectorAll('.streaming').forEach(s=>s.classList.remove('streaming'));
   const card=buf.querySelector('.streaming-code');
   if(card){
@@ -2632,6 +2791,41 @@ function verboseLine(text,cls){
   line(`<span class="muted" style="font-size:10px;opacity:.85">${cls?`<span class="${cls}">`:''}∙ ${esc(text)}${cls?'</span>':''}</span>`);
 }
 
+// Coalesce high-frequency token-estimate ticks into a single live row so the
+// chat isn't flooded with hundreds of "+0 in · +1 out" lines.
+let VERBOSE_TICK_ROW=null;
+let VERBOSE_TICK_TOTAL_IN=0;
+let VERBOSE_TICK_TOTAL_OUT=0;
+let VERBOSE_TICK_RAF=null;
+function pushVerboseTick(input,output){
+  if(!VERBOSE)return;
+  VERBOSE_TICK_TOTAL_IN+=input||0;
+  VERBOSE_TICK_TOTAL_OUT+=output||0;
+  if(VERBOSE_TICK_RAF)return;
+  VERBOSE_TICK_RAF=requestAnimationFrame(()=>{
+    VERBOSE_TICK_RAF=null;
+    if(!VERBOSE_TICK_ROW||!VERBOSE_TICK_ROW.isConnected){
+      VERBOSE_TICK_ROW=document.createElement('div');
+      VERBOSE_TICK_ROW.className='ln verbose-tick';
+      term.appendChild(VERBOSE_TICK_ROW);
+    }
+    VERBOSE_TICK_ROW.innerHTML=`∙ streamed estimate · <b>${VERBOSE_TICK_TOTAL_IN}</b> in · <b>${VERBOSE_TICK_TOTAL_OUT}</b> out`;
+    term.scrollTop=term.scrollHeight;
+  });
+}
+
+// Track the line that currently owns the agent caret/activity, so when a new
+// AgentStatus event fires we strip the spinner from the previous line.
+let LAST_AGENT_LINE=null;
+let LAST_ACTIVITY=null;
+function stripActiveDecorations(){
+  if(LAST_AGENT_LINE){
+    LAST_AGENT_LINE.querySelectorAll('.caret,.agent-activity,.sp').forEach(e=>e.remove());
+    LAST_AGENT_LINE=null;
+  }
+  if(LAST_ACTIVITY){LAST_ACTIVITY.remove();LAST_ACTIVITY=null;}
+}
+
 function handleEvent(ev){
   // End the streaming line only for events that actually change the visual
   // flow. Metric ticks + status/route/message pass through transparently.
@@ -2650,8 +2844,15 @@ function handleEvent(ev){
         line(BIRD,'bird');
         line('<span class="tagline" style="color:var(--dim);font-size:12px;letter-spacing:1px;margin-bottom:6px"><b style="background:linear-gradient(90deg,var(--brand),var(--coral));-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:700;letter-spacing:2px">SPARROW</b> — one cli · grows with you</span>');
       }
-      line(`<span class="acc">▸ started:</span> <span class="cmd">${esc(ev.task||'analyse de la requête')}</span>${turnCount>1?` <span style="color:var(--add);font-size:10px;margin-left:8px">● context retained · turn #${turnCount}</span>`:''}`);
-      resetRunMetrics();resetSwarm();runStartMs=Date.now();runDiffsApplied=0;runCheckpoints=0;runCheckpointIds=[];CHECKPOINT_TIMELINE=null;setSwarm('planner','thinking','classifying request and selecting route');ensureTokenMeter();break;
+      // The frontend already echoed `sparrow > <task>` when the user submitted
+      // (runTask line()). Re-printing `▸ started: <task>` here was a noisy
+      // double-render. Show a compact "started" indicator only.
+      line(`<span class="acc">▸ started</span>${turnCount>1?` <span style="color:var(--add);font-size:10px;margin-left:8px">● context retained · turn #${turnCount}</span>`:''}`);
+      resetRunMetrics();resetSwarm();runStartMs=Date.now();runDiffsApplied=0;runCheckpoints=0;runCheckpointIds=[];CHECKPOINT_TIMELINE=null;
+      // Clear any stale verbose-tick row so the new run starts with a fresh counter.
+      VERBOSE_TICK_ROW=null; VERBOSE_TICK_TOTAL_IN=0; VERBOSE_TICK_TOTAL_OUT=0;
+      LAST_AGENT_LINE=null;
+      setSwarm('planner','thinking','classifying request and selecting route');ensureTokenMeter();break;
     }
     case 'RouteSelected':{
       const chain=summarizeChain(ev.chain);
@@ -2699,7 +2900,11 @@ function handleEvent(ev){
       }
       break;
     case 'DiffProposed':renderDiffCard(ev);break;
-    case 'DiffApplied':renderDiffCard(ev);openDiffPanel(ev);runDiffsApplied++;break;
+    // DiffApplied no longer auto-pops the side panel — the user complained
+    // an artefact panel was appearing when clicking a session (because
+    // unrelated diff events were leaking through). The card stays inline;
+    // click the file name in the card to open the side viewer.
+    case 'DiffApplied':renderDiffCard(ev);runDiffsApplied++;break;
     case 'Compacted':renderCompactBanner(ev);break;
     case 'ApprovalRequested':
       line(`<span class="warn">◌ approval required · ${esc(ev.summary)}</span>`);
@@ -2712,9 +2917,16 @@ function handleEvent(ev){
       const note=ev.note||'';
       const verbedNote=isThinking&&!note.includes('·')?FLIGHT_VERBS[(_vi++)%FLIGHT_VERBS.length]+' · '+note:note;
       setSwarm(ev.role,ev.status,verbedNote);
+      // Strip carets/activity from the PREVIOUS active line so the spinner
+      // only animates on the agent that is currently working.
+      stripActiveDecorations();
       const dot=icon(ev.status);
       const roleCl=roleCls(ev.role);
-      line('<span class="'+roleCl+'">'+dot+'</span> <span class="'+roleCl+'" style="font-weight:500">'+esc(ev.role)+'</span>'+(isThinking?' <span class="sp">◌</span>':'')+' <span class="muted">'+esc(verbedNote)+(isThinking?'<span class="caret"></span>':'')+'</span>');
+      const newLine=line('<span class="'+roleCl+'">'+dot+'</span> <span class="'+roleCl+'" style="font-weight:500">'+esc(ev.role)+'</span>'+(isThinking?' <span class="sp">◌</span>':'')+' <span class="muted">'+esc(verbedNote)+'</span>'+(isThinking?'<span class="caret"></span>':'')+(isThinking?'<span class="agent-activity">'+esc(note||'working')+'</span>':''));
+      if(isThinking){
+        LAST_AGENT_LINE=newLine;
+        LAST_ACTIVITY=newLine.querySelector('.agent-activity');
+      }
       updateCrewLiveStatus(ev.role||ev.name,ev.status,verbedNote);
       break;
     }
@@ -2726,7 +2938,9 @@ function handleEvent(ev){
       break;
     case 'TokenUsageEstimated':
       addTokEstimate(ev.input,ev.output);
-      if(VERBOSE)verboseLine(`tokens estimated · +${ev.input||0} in · +${ev.output||0} out${ev.reason?' · '+ev.reason:''}`);
+      // Throttled live counter instead of a new line per delta (was flooding
+      // the chat with ~100 "+0 in · +1 out" lines per response).
+      pushVerboseTick(ev.input,ev.output);
       break;
     case 'TokenUsage':
       addTokActual(ev.input,ev.output);
@@ -2738,6 +2952,9 @@ function handleEvent(ev){
       if(ev.failed>0){line(`<span class="warn">⚠ tests ${ev.passed} passed · ${ev.failed} failed</span>`)}
       else{line(`<span class="ok">✓ tests ${ev.passed} passed</span>`)}break;
     case 'RunFinished':{
+      // Strip spinner/activity from the last-active agent line — the run is
+      // over so the caret shouldn't keep blinking on stale lines.
+      stripActiveDecorations();
       setSwarm('coder','done','response completed');
       setSwarm('verifier','done','run closed · metrics captured');
       const durMs=runStartMs?Date.now()-runStartMs:0;
@@ -2890,11 +3107,46 @@ document.addEventListener('DOMContentLoaded',()=>{
   const cab=document.getElementById('abortChromeBtn');
   if(cab)cab.addEventListener('click',stopRun);
 }
-// Inject the pulse keyframes once.
+// Inject the pulse keyframes + markdown styles once.
 (function injectAbortPulse(){
   if(document.getElementById('abort-pulse-kf'))return;
   const st=document.createElement('style');st.id='abort-pulse-kf';
-  st.textContent='@keyframes abort-pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--rem) 55%,transparent)}50%{box-shadow:0 0 0 6px color-mix(in srgb,var(--rem) 0%,transparent)}}';
+  st.textContent=`
+    @keyframes abort-pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--rem) 55%,transparent)}50%{box-shadow:0 0 0 6px color-mix(in srgb,var(--rem) 0%,transparent)}}
+    /* Inline markdown rendering — applied to streamed prose */
+    .md-prose .md-h{font-weight:700;letter-spacing:.4px;margin:6px 0 4px}
+    .md-prose .md-h1{font-size:16px;color:var(--brand)}
+    .md-prose .md-h2{font-size:14px;color:var(--coral)}
+    .md-prose .md-h3{font-size:13px;color:var(--planner)}
+    .md-prose .md-h4,.md-prose .md-h5,.md-prose .md-h6{font-size:12.5px;color:var(--agent)}
+    .md-prose strong{color:var(--fg);font-weight:700}
+    .md-prose em{color:var(--coral);font-style:italic}
+    .md-prose del{color:var(--dimmer);text-decoration:line-through}
+    .md-prose .md-ic{background:color-mix(in srgb,var(--brand) 10%,transparent);color:var(--brand);padding:1px 6px;border-radius:4px;font-family:inherit;font-size:.95em;border:1px solid color-mix(in srgb,var(--brand) 25%,transparent)}
+    .md-prose a{color:var(--planner);text-decoration:underline dotted;text-underline-offset:2px}
+    .md-prose a:hover{color:var(--coral)}
+    .md-prose .md-hr{border:0;height:1px;background:linear-gradient(90deg,transparent,var(--line-hot),transparent);margin:8px 0}
+    .md-prose .md-bq{margin:6px 0;padding:6px 10px;border-left:3px solid var(--brand);background:color-mix(in srgb,var(--brand) 5%,transparent);color:var(--dim);font-style:italic;border-radius:0 6px 6px 0}
+    .md-prose .md-ul,.md-prose .md-ol{margin:4px 0 4px 16px;padding:0}
+    .md-prose .md-ul li,.md-prose .md-ol li{margin:2px 0;color:var(--fg)}
+    .md-prose .md-ul li::marker{color:var(--brand)}
+    .md-prose .md-ol li::marker{color:var(--coral);font-weight:600}
+    .md-prose .md-cb{color:var(--brand);font-size:1.1em;margin-right:4px}
+    .md-prose .md-cb.done{color:var(--add)}
+    .md-prose .md-tbl{border-collapse:collapse;margin:6px 0;font-size:11.5px;border:1px solid var(--line-hot);border-radius:6px;overflow:hidden}
+    .md-prose .md-tbl th{background:color-mix(in srgb,var(--brand) 12%,var(--panel));color:var(--brand);font-weight:700;text-align:left;padding:5px 10px;border-bottom:1px solid var(--line-hot);font-size:10.5px;letter-spacing:.5px;text-transform:uppercase}
+    .md-prose .md-tbl td{padding:4px 10px;border-top:1px solid var(--line);color:var(--fg)}
+    .md-prose .md-tbl tr:nth-child(odd) td{background:color-mix(in srgb,var(--panel2) 70%,transparent)}
+    /* Verbose flood: collapse repeated streamed-output-estimate ticks into 1 live row */
+    .verbose-tick{font-size:10px;color:var(--dimmer);opacity:.7;letter-spacing:.3px;padding:1px 8px;border-left:2px solid var(--line);background:color-mix(in srgb,var(--planner) 4%,transparent)}
+    .verbose-tick b{color:var(--brand);font-variant-numeric:tabular-nums}
+    /* Live activity line near agent spinner */
+    .agent-activity{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:4px;background:color-mix(in srgb,var(--brand) 10%,transparent);color:var(--brand);font-size:10.5px;font-style:italic;animation:pulse-act 1.6s ease-in-out infinite}
+    @keyframes pulse-act{0%,100%{opacity:.85}50%{opacity:.45}}
+    /* Caret animation (spinner dot) — only on currently active line */
+    .caret{display:inline-block;margin-left:6px;animation:caret-bl 1s steps(1) infinite;color:var(--brand)}
+    .caret::after{content:"●"}
+    @keyframes caret-bl{0%,49%{opacity:1}50%,100%{opacity:0}}`;
   document.head.appendChild(st);
 })();
 async function stopRun(){
