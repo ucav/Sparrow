@@ -65,6 +65,95 @@ const BUILTINS: &[(&str, &str, &str)] = &[
         "Export transcript, events, and artifacts.",
         "Export current run/session.",
     ),
+    (
+        "run",
+        "Run an agentic task from the WebView.",
+        "Usage: /run <task>",
+    ),
+    (
+        "models",
+        "List configured providers and discovered models.",
+        "Usage: /models",
+    ),
+    (
+        "config",
+        "Open provider and routing configuration.",
+        "Usage: /config",
+    ),
+    (
+        "tools",
+        "List available toolsets and tool schemas.",
+        "Usage: /tools",
+    ),
+    (
+        "security",
+        "Show the current security and audit state.",
+        "Usage: /security",
+    ),
+    (
+        "status",
+        "Show active run, budget, and session status.",
+        "Usage: /status",
+    ),
+    (
+        "plugins",
+        "List installed Sparrow plugins.",
+        "Usage: /plugins",
+    ),
+    (
+        "skills",
+        "List or manage reusable Sparrow skills.",
+        "Usage: /skills list",
+    ),
+    (
+        "agents",
+        "List and mention configured agents.",
+        "Usage: /agents",
+    ),
+    (
+        "sessions",
+        "List or resume saved sessions.",
+        "Usage: /sessions",
+    ),
+    (
+        "routing",
+        "Inspect routing preferences and fallbacks.",
+        "Usage: /routing",
+    ),
+    ("auth", "Manage provider credentials.", "Usage: /auth list"),
+    (
+        "github",
+        "Run GitHub workflow helpers.",
+        "Usage: /github <action>",
+    ),
+    (
+        "checkpoint",
+        "List available rollback checkpoints.",
+        "Usage: /checkpoint list",
+    ),
+    (
+        "rewind",
+        "Rewind the workspace to a checkpoint.",
+        "Usage: /rewind <checkpoint-id>",
+    ),
+    (
+        "replay",
+        "Replay a previous Sparrow run transcript.",
+        "Usage: /replay <run-id>",
+    ),
+    ("mcp", "Manage MCP connectors.", "Usage: /mcp <action>"),
+    ("clear", "Clear the WebView transcript.", "Usage: /clear"),
+    (
+        "reset",
+        "Reset the current WebView conversation.",
+        "Usage: /reset",
+    ),
+    ("stop", "Stop the current run.", "Usage: /stop"),
+    (
+        "upload",
+        "Attach files to the next message.",
+        "Use the paperclip button or drag files into the WebView.",
+    ),
 ];
 
 pub fn builtin_commands() -> Vec<SlashCommand> {

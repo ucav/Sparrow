@@ -545,7 +545,7 @@
     z-index:1000;padding-top:14vh;display:none}
   .palette.open{display:flex;animation:fadein .2s ease both}
   @keyframes fadein{from{opacity:0}to{opacity:1}}
-  .palette .box{width:min(560px,90vw);background:var(--panel);border:1px solid var(--line-hot);
+  .palette .box{width:min(780px,94vw);background:var(--panel);border:1px solid var(--line-hot);
     border-radius:12px;box-shadow:0 30px 80px -20px rgba(0,0,0,.75);overflow:hidden;
     animation:popin .22s cubic-bezier(.2,.8,.2,1) both}
   @keyframes popin{from{opacity:0;transform:translateY(-8px) scale(.98)}to{opacity:1;transform:none}}
@@ -557,15 +557,16 @@
   .palette .res-list{max-height:50vh;overflow-y:auto;padding:6px 6px 10px}
   .palette .res-list::-webkit-scrollbar{width:6px}
   .palette .res-list::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--line-hot) 70%,var(--bg));border-radius:6px}
-  .palette .res{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:7px;cursor:pointer;font-size:12.5px}
+  .palette .res{display:grid;grid-template-columns:minmax(135px,190px) auto minmax(220px,1fr);align-items:center;gap:10px;padding:8px 12px;border-radius:7px;cursor:pointer;font-size:12.5px}
   .palette .res.sel,.palette .res:hover{background:color-mix(in srgb,var(--brand) 12%,transparent)}
-  .palette .res .nm{color:var(--fg);font-weight:500;min-width:140px;overflow-wrap:anywhere;word-break:break-word}
+  .palette .res .nm{color:var(--fg);font-weight:600;overflow-wrap:anywhere;word-break:break-word}
   .palette .res .src{color:var(--dimmer);font-size:9px;letter-spacing:.8px;text-transform:uppercase;
     padding:1px 6px;border-radius:4px;background:color-mix(in srgb,var(--line-hot) 60%,transparent)}
   .palette .res.builtin .src{background:color-mix(in srgb,var(--brand) 18%,transparent);color:var(--brand)}
   .palette .res.skill .src{background:color-mix(in srgb,var(--gold) 18%,transparent);color:var(--gold)}
   .palette .res.plugin .src{background:color-mix(in srgb,var(--agent) 18%,transparent);color:var(--agent)}
-  .palette .res .desc{color:var(--dim);flex:1;font-size:11px;overflow-wrap:anywhere;word-break:break-word}
+  .palette .res .desc{color:var(--dim);font-size:11px;line-height:1.35;overflow-wrap:anywhere;word-break:break-word}
+  @media(max-width:640px){.palette .res{grid-template-columns:1fr auto}.palette .res .desc{grid-column:1/-1}}
   .palette .pfoot{display:flex;gap:14px;padding:8px 16px;border-top:1px solid var(--line);
     font-size:10.5px;color:var(--dimmer);align-items:center}
   .palette .pfoot kbd{background:var(--panel2);border:1px solid var(--line);border-radius:4px;
@@ -2061,29 +2062,38 @@ document.addEventListener('click',e=>{
 function paletteOpen(){
   document.getElementById('palette').classList.add('open');
   const inp=document.getElementById('paletteInput');
-  inp.value='';PALETTE_SEL=0;
-  paletteFilter('');
+  const source=document.getElementById('taskInput')?.value||'';
+  inp.value=source.startsWith('/')?source:'';
+  PALETTE_SEL=0;
+  paletteFilter(inp.value);
   setTimeout(()=>inp.focus(),20);
 }
 function paletteClose(){document.getElementById('palette').classList.remove('open')}
 function paletteFilter(q){
   const norm=q.toLowerCase().replace(/^\//,'');
   const items=[];
+  PALETTE_SEL=0;
   // commands first
   PALETTE_CMDS.forEach(c=>{
-    const name=(c.name||'').toLowerCase();
-    if(!norm||name.includes(norm)||(c.description||'').toLowerCase().includes(norm)){
-      items.push({kind:c.source||'builtin',label:'/'+(c.name||''),desc:c.description||'',insert:'/'+(c.name||'')});
+    const display=String(c.name||'').startsWith('/')?String(c.name||''):'/'+String(c.name||'');
+    const raw=display.replace(/^\//,'');
+    const name=raw.toLowerCase();
+    const desc=(c.description||'').toLowerCase();
+    const source=(c.source||'').toLowerCase();
+    if(!norm||name.includes(norm)||desc.includes(norm)||source.includes(norm)){
+      const score=!norm?0:(name.startsWith(norm)?0:name.includes(norm)?1:desc.includes(norm)?2:3);
+      items.push({kind:c.source||'builtin',label:display,desc:c.description||'',insert:display+' ',score});
     }
   });
   // agents as @-mentions
   PALETTE_AGENTS.forEach(a=>{
     const name=(a.name||'').toLowerCase();
     if(!norm||name.includes(norm)||(a.role||'').toLowerCase().includes(norm)){
-      items.push({kind:'agent',label:'@'+(a.name||''),desc:a.description||a.role||'',insert:'@'+(a.name||'')+' '});
+      const score=!norm?4:(name.startsWith(norm)?4:name.includes(norm)?5:6);
+      items.push({kind:'agent',label:'@'+(a.name||''),desc:a.description||a.role||'',insert:'@'+(a.name||'')+' ',score});
     }
   });
-  PALETTE_FILTERED=items.slice(0,40);
+  PALETTE_FILTERED=items.sort((a,b)=>(a.score??9)-(b.score??9)||a.label.localeCompare(b.label)).slice(0,40);
   PALETTE_SEL=Math.min(PALETTE_SEL,Math.max(0,PALETTE_FILTERED.length-1));
   paletteRender();
 }
@@ -2101,10 +2111,11 @@ function paletteAccept(submit){
   const it=PALETTE_FILTERED[PALETTE_SEL];if(!it)return;
   const ti=document.getElementById('taskInput');
   // Insert at cursor or replace if input is empty / starts with a sigil.
-  if(!ti.value||/^[/@]\S*$/.test(ti.value))ti.value=it.insert;
+  if(!ti.value||/^[/@]\S*$/.test(ti.value.trim()))ti.value=it.insert;
   else ti.value=(ti.value.trimEnd()+' '+it.insert).trimStart();
   paletteClose();
   ti.focus();
+  composerInput();
   if(submit){const btn=document.getElementById('runBtn');if(btn)btn.click();}
 }
 document.getElementById('paletteInput').addEventListener('input',e=>{paletteFilter(e.target.value)});
@@ -3329,9 +3340,23 @@ autoResizeComposer();
 
 function composerInput(){
   HISTORY_IDX=null;
-  localStorage.setItem('sparrow-composer-draft',$('taskInput').value);
+  const value=$('taskInput').value;
+  localStorage.setItem('sparrow-composer-draft',value);
   autoResizeComposer();
   updateContextMeter();
+  const palette=document.getElementById('palette');
+  if(value.startsWith('/')&&!/\s/.test(value.trim())&&document.activeElement===$('taskInput')){
+    if(!palette.classList.contains('open')){
+      palette.classList.add('open');
+      const pinput=document.getElementById('paletteInput');
+      pinput.value=value;
+      PALETTE_SEL=0;
+      paletteFilter(value);
+      setTimeout(()=>pinput.focus(),0);
+    }
+  }else if(palette.classList.contains('open')&&document.activeElement===$('taskInput')){
+    paletteClose();
+  }
 }
 
 function restoreDraft(){
@@ -3548,8 +3573,10 @@ function attachmentPrompt(){
 
 async function runTask(){
   const task=$('taskInput').value.trim();if(!task&&!attachedFiles.length)return;
-  if(task.startsWith('/help')){await showCommands();$('taskInput').value='';updateContextMeter();return;}
-  if(task.startsWith('/plan')){await planTask(task.replace(/^\/plan\s*/,'').trim());return;}
+  if(task.startsWith('/')){
+    const handled=await handleSlashCommand(task);
+    if(handled)return;
+  }
   const payload=task+attachmentPrompt();
   $('taskInput').value='';
   localStorage.removeItem('sparrow-composer-draft');
@@ -3567,6 +3594,126 @@ async function runTask(){
     if(!j.ok)showError('Run failed',j.message,'Check the command channel and retry.');
     else{rememberSubmitted(task||'analyse attached files');attachedFiles=[];renderAttachments();updateContextMeter();}
   }catch(e){showError('Run failed',e.message,'Check that the WebView server is still connected.')}
+}
+
+async function handleSlashCommand(task){
+  const lower=task.toLowerCase();
+  const cmd=(lower.match(/^\/([a-z0-9_-]+)/)||[])[1]||'';
+  if(cmd==='help'||cmd==='commands'){await showCommands();clearComposerAfterCommand();return true;}
+  if(cmd==='plan'){await planTask(task.replace(/^\/plan\s*/i,'').trim());return true;}
+  if(cmd==='run'){
+    const prompt=task.replace(/^\/run\s*/i,'').trim();
+    if(prompt){
+      $('taskInput').value=prompt;
+      await runTask();
+    }else{
+      line('<span class="warn">Usage: /run &lt;task&gt;</span>');
+      clearComposerAfterCommand();
+    }
+    return true;
+  }
+  if(cmd==='clear'){
+    term.innerHTML='';
+    clearComposerAfterCommand();
+    return true;
+  }
+  if(cmd==='reset'){
+    clearComposerAfterCommand();
+    await resetConversationFromSlash();
+    return true;
+  }
+  if(cmd==='stop'){
+    clearComposerAfterCommand();
+    await stopRun();
+    return true;
+  }
+  if(cmd==='config'){
+    clearComposerAfterCommand();
+    openConfig();
+    line('<span class="acc">/config</span> <span class="muted">configuration panel opened</span>');
+    return true;
+  }
+  if(cmd==='upload'){
+    clearComposerAfterCommand();
+    $('fileInput')?.click();
+    line('<span class="acc">/upload</span> <span class="muted">choose files, or drag them into Sparrow</span>');
+    return true;
+  }
+  const localEndpoints={
+    status:'/status',
+    memory:'/memory',
+    tools:'/tools',
+    plugins:'/plugins',
+    security:'/security',
+    sessions:'/sessions',
+    agents:'/agents',
+    routing:'/routing',
+    permissions:'/permissions',
+    models:'/models'
+  };
+  if(localEndpoints[cmd] && task.trim()===`/${cmd}`){
+    await showEndpointCommand(task,localEndpoints[cmd]);
+    clearComposerAfterCommand();
+    return true;
+  }
+  await runWebviewCliCommand(task);
+  clearComposerAfterCommand();
+  return true;
+}
+
+function clearComposerAfterCommand(){
+  $('taskInput').value='';
+  localStorage.removeItem('sparrow-composer-draft');
+  autoResizeComposer();
+  updateContextMeter();
+}
+
+async function resetConversationFromSlash(){
+  try{
+    const r=await fetch('/conversation/reset',{method:'POST'});
+    const j=await r.json();
+    line(`<span class="${j.ok?'acc':'warn'}">/reset</span> <span class="muted">${esc(j.message||'conversation reset')}</span>`);
+  }catch(e){showError('Reset failed',e.message,'Reload the WebView and retry.')}
+}
+
+async function runWebviewCliCommand(task){
+  line(`<span class="prompt">sparrow ›</span> <span class="cmd">${esc(task)}</span>`);
+  try{
+    const r=await fetch('/cli',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({command:task})});
+    const j=await r.json();
+    const label=j.ok?'completed':(j.message||'failed');
+    line(`<span class="${j.ok?'acc':'warn'}">↳ command ${esc(label)}</span>`);
+    if(j.stdout)renderCommandOutput('stdout',j.stdout);
+    if(j.stderr)renderCommandOutput('stderr',j.stderr);
+    if(!j.stdout&&!j.stderr&&!j.ok)line(`<span class="warn">${esc(j.message||'command failed')}</span>`);
+    if(j.ok)rememberSubmitted(task);
+  }catch(e){showError('Command failed',e.message,'Check that the WebView server is still connected.')}
+}
+
+async function showEndpointCommand(task,url){
+  line(`<span class="prompt">sparrow ›</span> <span class="cmd">${esc(task)}</span>`);
+  try{
+    const r=await fetch(url);
+    const j=await r.json();
+    renderCommandOutput(url.replace('/','')||'json',JSON.stringify(j,null,2),'json');
+    rememberSubmitted(task);
+  }catch(e){showError('Command failed',e.message,`Unable to read ${url}.`)}
+}
+
+function renderCommandOutput(label,text,lang='text'){
+  const d=document.createElement('details');
+  d.className='code-card';
+  d.open=true;
+  const lines=String(text).split(/\r?\n/).filter(Boolean).length||1;
+  d.dataset.lang=lang;
+  d.innerHTML='<summary><span class="cc-icon">▸</span>'+
+    `<span class="cc-lang">${escHtml(label)}</span>`+
+    `<span class="cc-meta">${lines} lines</span>`+
+    '<button class="cc-copy" onclick="navigator.clipboard.writeText(this.closest(\'.code-card\').querySelector(\'code\').textContent);this.textContent=\'copied ✓\'">copy</button>'+
+    '</summary><pre><code></code></pre>';
+  d.querySelector('code').textContent=text;
+  term.appendChild(d);
+  term.scrollTop=term.scrollHeight;
 }
 
 async function showCommands(){
