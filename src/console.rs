@@ -13,8 +13,32 @@ use crate::memory::{Memory, MemoryDocKind};
 use crate::plan::ReadOnlyPlan;
 
 // ─── Embedded HTML ─────────────────────────────────────────────────────────────
+//
+// console.html is `include_str!`d into the binary so a release build ships as
+// a single file. The drawback: any edit to console.html requires a fresh
+// `cargo build` — a plain WebView reload (Ctrl+R) re-fetches the same baked-in
+// bytes. To make the WebView dev loop tight, set the env var
+// `SPARROW_CONSOLE_HTML` to a path on disk and that file is served instead.
 
-const CONSOLE_HTML: &str = include_str!("../console.html");
+const CONSOLE_HTML_EMBEDDED: &str = include_str!("../console.html");
+
+fn console_html() -> std::borrow::Cow<'static, str> {
+    if let Ok(path) = std::env::var("SPARROW_CONSOLE_HTML") {
+        if !path.trim().is_empty() {
+            match std::fs::read_to_string(&path) {
+                Ok(contents) => return std::borrow::Cow::Owned(contents),
+                Err(e) => {
+                    tracing::warn!(
+                        "SPARROW_CONSOLE_HTML={} unreadable ({}); falling back to embedded HTML",
+                        path,
+                        e
+                    );
+                }
+            }
+        }
+    }
+    std::borrow::Cow::Borrowed(CONSOLE_HTML_EMBEDDED)
+}
 
 fn looks_like_api_key(value: &str) -> bool {
     let value = value.trim();
@@ -77,7 +101,10 @@ impl WebViewServer {
         });
 
         let app = Router::new()
-            .route("/", get(|| async { Html(CONSOLE_HTML) }))
+            // Reads from disk if `SPARROW_CONSOLE_HTML` is set (live-reload
+            // friendly: Ctrl+R picks up edits without recompile). Otherwise
+            // serves the include_str!()'d copy baked at compile time.
+            .route("/", get(|| async { Html(console_html().into_owned()) }))
             .route("/run", post(run_task))
             .route("/plan", post(plan_task))
             .route("/commands", get(get_commands))
@@ -94,6 +121,7 @@ impl WebViewServer {
             .route("/permissions", get(get_permissions).post(save_permissions))
             .route("/security", get(get_security))
             .route("/sessions", get(list_sessions))
+            .route("/sessions/load", post(load_session))
             .route("/history", get(get_history))
             .route("/agents", get(list_agents))
             .route("/upload", post(upload_attachment))
@@ -550,19 +578,23 @@ async fn list_models(
                 .collect();
             // Merge live-discovered models from the SQLite cache (e.g. the 92
             // NVIDIA models) so the picker shows everything, not just curated.
+            // For each discovered model, infer per-model caps from the name so
+            // the WebView context-window meter adapts (DeepSeek V4 Pro = 1M,
+            // not the previous hard-coded 128k default).
             if let Some(mem) = &state.memory {
                 let curated: std::collections::HashSet<String> =
                     p.models.iter().map(|m| m.name.clone()).collect();
-                let default_ctx = p.models.first().map(|m| m.context_window).unwrap_or(128_000);
                 for name in mem.get_discovered_models(&p.id) {
                     if !curated.contains(&name) {
+                        let caps = crate::config::providers::model_caps(&p.id, &name);
                         models.push(serde_json::json!({
                             "name": name,
                             "label": name,
                             "tags": [],
-                            "context_window": default_ctx,
-                            "cost_in": 0.0,
-                            "cost_out": 0.0,
+                            "context_window": caps.context_window,
+                            "max_output": caps.max_output,
+                            "cost_in": caps.cost_input_per_mtok,
+                            "cost_out": caps.cost_output_per_mtok,
                             "recommended": false,
                             "source": "discovered",
                         }));
@@ -751,6 +783,27 @@ async fn get_config(
                     })
                     .unwrap_or(false);
 
+            // Merge configured + curated + discovered into a single sorted
+            // unique list so the config panel's "X models" count survives
+            // across sessions (was only counting the static registry, hiding
+            // the 60+ models the user had just scanned).
+            let mut models: Vec<String> = configured
+                .map(|p| {
+                    if p.models.is_empty() {
+                        def.models.iter().map(|m| m.name.clone()).collect()
+                    } else {
+                        p.models.clone()
+                    }
+                })
+                .unwrap_or_else(|| def.models.iter().map(|m| m.name.clone()).collect());
+            if let Some(mem) = &state.memory {
+                let known: std::collections::HashSet<String> = models.iter().cloned().collect();
+                for name in mem.get_discovered_models(&def.id) {
+                    if !known.contains(&name) {
+                        models.push(name);
+                    }
+                }
+            }
             ProviderView {
                 name: def.id,
                 label: def.label,
@@ -758,15 +811,7 @@ async fn get_config(
                 base_url: configured
                     .and_then(|p| p.base_url.clone())
                     .or(Some(def.base_url)),
-                models: configured
-                    .map(|p| {
-                        if p.models.is_empty() {
-                            def.models.iter().map(|m| m.name.clone()).collect()
-                        } else {
-                            p.models.clone()
-                        }
-                    })
-                    .unwrap_or_else(|| def.models.iter().map(|m| m.name.clone()).collect()),
+                models,
                 tags: def.tags,
                 notes: def.notes,
                 api_key_env,
@@ -1160,6 +1205,38 @@ pub fn classify_agent_color(raw: &str) -> &'static str {
         "gold" | "yellow" => "gold",
         "coral" | "red" => "coral",
         _ => "steel",
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct LoadSessionRequest {
+    id: String,
+}
+
+async fn load_session(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    axum::extract::Json(req): axum::extract::Json<LoadSessionRequest>,
+) -> axum::extract::Json<RunResponse> {
+    let id = req.id.trim();
+    if id.is_empty() {
+        return axum::extract::Json(RunResponse {
+            ok: false,
+            message: "empty session id".into(),
+        });
+    }
+    // Reuse the same command channel sentinel mechanism that powers
+    // __reset_conversation__ — main.rs interprets __load_session__:<id> and
+    // swaps the live `conv_history` with the loaded session's messages.
+    let sentinel = format!("__load_session__:{}", id);
+    match &state.command_tx {
+        Some(tx) if tx.send(sentinel).is_ok() => axum::extract::Json(RunResponse {
+            ok: true,
+            message: "session load requested".into(),
+        }),
+        _ => axum::extract::Json(RunResponse {
+            ok: false,
+            message: "console command channel unavailable".into(),
+        }),
     }
 }
 
