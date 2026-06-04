@@ -141,6 +141,8 @@ files with frontmatter fields such as `name`, `description`, `role`, `prompt`,
 | `sparrow tools list --surface <surface>` | Alpha | Show tools visible to `cli`, `tui`, `webview`, `gateway`, or `subagent` |
 | `sparrow tools enable <tool>` | Alpha | Remove a tool deny rule and add an allow rule |
 | `sparrow tools disable <tool>` | Alpha | Remove a tool allow rule and add a deny rule |
+| Tool `browser` | Alpha | Playwright-backed headless browser navigation, screenshots, clicks, typing, extraction, and JS evaluation |
+| Tool `computer` | Alpha | Playwright-backed screenshot/click/type primitive gated as sandboxed exec |
 
 ## Security
 
