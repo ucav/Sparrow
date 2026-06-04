@@ -15,45 +15,18 @@ impl Tool for BrowserAutomation {
         "browser"
     }
     fn description(&self) -> &str {
-        "Control a headless browser to navigate pages, take screenshots, and interact with elements"
+        "Control a Playwright headless browser to navigate pages, take screenshots, and interact with elements"
     }
     fn schema(&self) -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "action": { "type": "string", "enum": ["navigate", "screenshot", "click", "type", "extract"] },
-                "url": { "type": "string" },
-                "selector": { "type": "string" },
-                "text": { "type": "string" }
-            },
-            "required": ["action"]
-        })
+        crate::tools::browser_sandbox::BrowserTool.schema()
     }
     fn risk(&self) -> RiskLevel {
         RiskLevel::Network
     }
-    async fn call(&self, args: serde_json::Value, _ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
-        let action = args["action"].as_str().unwrap_or("navigate");
-        let url = args["url"].as_str().unwrap_or("about:blank");
-
-        match action {
-            "navigate" => Ok(ToolResult::text(format!(
-                "Browser navigation to: {} (requires headless browser runtime)",
-                url
-            ))),
-            "screenshot" => Ok(ToolResult::ok(vec![Block::Text(format!(
-                "Screenshot of {} (headless browser not embedded — use Playwright or Puppeteer MCP server)",
-                url
-            ))])),
-            "extract" => Ok(ToolResult::text(format!(
-                "Content extraction from: {} (use web_fetch for simple cases, MCP server for complex)",
-                url
-            ))),
-            _ => Ok(ToolResult::text(format!(
-                "Browser action '{}' on {} (requires browser automation backend)",
-                action, url
-            ))),
-        }
+    async fn call(&self, args: serde_json::Value, ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
+        crate::tools::browser_sandbox::BrowserTool
+            .call(args, ctx)
+            .await
     }
 }
 
