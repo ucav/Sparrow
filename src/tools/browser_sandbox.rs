@@ -35,6 +35,7 @@ impl Tool for BrowserTool {
             "extract",
             "click",
             "type",
+            "press",
             "evaluate",
         ])
     }
@@ -48,7 +49,7 @@ impl Tool for BrowserTool {
     }
 }
 
-/// Computer-use primitive focused on screenshot/click/type.
+/// Computer-use primitive focused on screenshot/click/type/press.
 ///
 /// This is intentionally separate from `browser`: it is classified as Exec so
 /// supervised/autonomous policy gates can treat UI-driving actions as stronger
@@ -63,11 +64,11 @@ impl Tool for ComputerTool {
     }
 
     fn description(&self) -> &str {
-        "Computer-use actions through Playwright Chromium: screenshot, click, and type, gated as sandboxed exec"
+        "Computer-use actions through Playwright Chromium: screenshot, click, type, and key press, gated as sandboxed exec"
     }
 
     fn schema(&self) -> serde_json::Value {
-        browser_schema(&["screenshot", "click", "type"])
+        browser_schema(&["screenshot", "click", "type", "press"])
     }
 
     fn risk(&self) -> RiskLevel {
@@ -86,9 +87,17 @@ fn browser_schema(actions: &[&str]) -> serde_json::Value {
             "action": { "type": "string", "enum": actions },
             "url": { "type": "string", "description": "URL to open before the action; defaults to about:blank" },
             "selector": { "type": "string", "description": "CSS selector for click/type/extract or element screenshot" },
+            "x": { "type": "number", "description": "Viewport X coordinate for computer click/type actions" },
+            "y": { "type": "number", "description": "Viewport Y coordinate for computer click/type actions" },
+            "button": { "type": "string", "enum": ["left", "right", "middle"], "description": "Mouse button for coordinate click actions" },
+            "click_count": { "type": "integer", "description": "Number of clicks for coordinate click actions" },
             "text": { "type": "string", "description": "Text for type/fill actions" },
+            "key": { "type": "string", "description": "Keyboard key or chord for press actions, e.g. Enter or Control+A" },
             "js": { "type": "string", "description": "JavaScript expression/function body for evaluate" },
             "timeout_ms": { "type": "integer", "description": "Timeout in milliseconds, default 30000" },
+            "wait_until": { "type": "string", "description": "Playwright navigation wait state, default networkidle" },
+            "headless": { "type": "boolean", "description": "Run Chromium headless unless false" },
+            "session_id": { "type": "string", "description": "Optional persistent browser session id for multi-step browser/computer-use" },
             "full_page": { "type": "boolean", "description": "For screenshots, capture the full page unless false" },
             "viewport": {
                 "type": "object",
@@ -109,14 +118,18 @@ async fn run_playwright(
     require_computer_action: bool,
 ) -> anyhow::Result<ToolResult> {
     let action = args["action"].as_str().unwrap_or("navigate").to_string();
-    if require_computer_action && !matches!(action.as_str(), "screenshot" | "click" | "type") {
+    if require_computer_action
+        && !matches!(action.as_str(), "screenshot" | "click" | "type" | "press")
+    {
         return Ok(ToolResult::error(format!(
-            "computer only supports screenshot, click, and type (got {})",
+            "computer only supports screenshot, click, type, and press (got {})",
             action
         )));
     }
 
-    if args.get("url").and_then(|v| v.as_str()).is_none() {
+    if args.get("url").and_then(|v| v.as_str()).is_none()
+        && args.get("session_id").and_then(|v| v.as_str()).is_none()
+    {
         args["url"] = json!("about:blank");
     }
 
@@ -325,5 +338,18 @@ mod tests {
                 .unwrap()
         });
         assert!(result.is_error);
+    }
+
+    #[test]
+    fn computer_schema_exposes_coordinate_session_and_press_controls() {
+        let schema = ComputerTool.schema();
+        let actions = schema["properties"]["action"]["enum"]
+            .as_array()
+            .expect("action enum");
+        assert!(actions.iter().any(|v| v == "press"));
+        assert!(schema["properties"].get("x").is_some());
+        assert!(schema["properties"].get("y").is_some());
+        assert!(schema["properties"].get("session_id").is_some());
+        assert!(schema["properties"].get("key").is_some());
     }
 }
