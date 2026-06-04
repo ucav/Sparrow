@@ -1758,6 +1758,27 @@ async function newConversation(){
     term.appendChild(banner);term.scrollTop=term.scrollHeight;
   }catch(e){toast('reset failed: '+e.message,'error');}
 }
+let ACTIVE_AGENT = null;
+function activateAgent(name) {
+  // Highlight selected agent
+  document.querySelectorAll('[data-agent-name]').forEach(el => {
+    if (el.dataset.agentName === name) {
+      el.style.background = 'color-mix(in srgb,var(--brand) 12%,transparent)';
+      el.style.borderLeft = '2px solid var(--brand)';
+    } else {
+      el.style.background = 'transparent';
+      el.style.borderLeft = '';
+    }
+  });
+  ACTIVE_AGENT = name;
+  // Fill composer
+  const inp = document.getElementById('taskInput');
+  if (inp && name) {
+    inp.value = '@' + name + ' ' + inp.value.replace(/^@\S+\s*/, '');
+    inp.focus();
+  }
+}
+
 async function loadCrewPanel(){
   const host=document.getElementById('drw-crew-list');
   try{
@@ -1768,7 +1789,7 @@ async function loadCrewPanel(){
     const colorMap={planner:'var(--planner)',coder:'var(--agent)',verifier:'var(--verifier)',gold:'var(--gold)',coral:'var(--coral)',steel:'var(--steel)'};
     host.innerHTML=agents.map(a=>{
       const col=colorMap[a.color_key]||'var(--steel)';
-      return `<div data-agent-name="${escHtml(a.name)}" style="padding:9px 10px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:3px">
+      return `<div data-agent-name="${escHtml(a.name)}" onclick="activateAgent('${escHtml(a.name)}')" style="cursor:pointer;padding:9px 10px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:3px;transition:background .15s" onmouseenter="this.style.background='color-mix(in srgb,var(--brand) 8%,transparent)'" onmouseleave="this.style.background='transparent'">
         <div style="display:flex;align-items:center;gap:7px">
           <span style="width:7px;height:7px;border-radius:50%;background:${col};box-shadow:0 0 7px ${col};flex:0 0 auto"></span>
           <span style="font-weight:600;font-size:11.5px;color:${col}">${escHtml(a.name)}</span>
