@@ -18,7 +18,7 @@ use crate::auth::{AuthStore, Credential};
 use crate::config::{Config, ConfigStore, FsConfigStore, ProviderConfig};
 use crate::event::AutonomyLevel;
 use crate::memory::Memory;
-use crate::provider::{Brain, BrainEvent, BrainRequest, ContentBlock, Msg};
+use crate::provider::{Brain, BrainEvent, BrainRequest, ContentBlock, Msg, PromptCacheConfig};
 
 use futures::StreamExt;
 
@@ -209,6 +209,7 @@ async fn ask_llm_for_setup(
         max_tokens: 1500,
         temperature: 0.0,
         stop: vec![],
+        cache: PromptCacheConfig::disabled(),
     };
 
     let mut stream = brain.complete(req).await?;

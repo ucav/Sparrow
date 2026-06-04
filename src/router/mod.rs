@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
-use crate::provider::{Brain, BrainError, BrainRequest, ContentBlock, LatencyClass, Msg};
+use crate::provider::{
+    Brain, BrainError, BrainRequest, ContentBlock, LatencyClass, Msg, PromptCacheConfig,
+};
 
 // ─── Routing need ───────────────────────────────────────────────────────────────
 
@@ -220,6 +222,7 @@ impl BasicRouter {
             max_tokens: 10,
             temperature: 0.0,
             stop: vec![],
+            cache: PromptCacheConfig::disabled(),
         };
 
         match brain.complete(req).await {

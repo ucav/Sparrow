@@ -7,7 +7,9 @@ use crate::config::Config;
 use crate::engine::{Identity, Workspace};
 use crate::event::{AgentStatus, Block, Event, OutcomeSummary, RiskLevel, RunId, TokenUsage};
 use crate::memory::Memory;
-use crate::provider::{Brain, BrainRequest, BrainStream, ContentBlock, ModelCaps, Msg};
+use crate::provider::{
+    Brain, BrainRequest, BrainStream, ContentBlock, ModelCaps, Msg, PromptCacheConfig, ToolSpec,
+};
 use crate::router::{BudgetState, Router, TaskTier};
 use crate::sandbox::LocalSandbox;
 use crate::tools::edit::{Edit, MultiEdit};
@@ -16,6 +18,20 @@ use crate::tools::fs::{FsList, FsRead, FsWrite};
 use crate::tools::git::Git;
 use crate::tools::search_and_web::Search;
 use crate::tools::{ToolCtx, ToolRegistry};
+
+fn prompt_cache_key(scope: &str, workspace_root: &std::path::Path, tools: &[ToolSpec]) -> String {
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    scope.hash(&mut hasher);
+    workspace_root.display().to_string().hash(&mut hasher);
+    for tool in tools {
+        tool.name.hash(&mut hasher);
+        tool.description.hash(&mut hasher);
+        tool.input_schema.to_string().hash(&mut hasher);
+    }
+    format!("sparrow-{}-{:016x}", scope, hasher.finish())
+}
 
 // ─── Fallback brain ──────────────────────────────────────────────────────────
 // Wraps an ordered chain of brains and tries each on `complete()` until one
@@ -368,13 +384,19 @@ Output format:
 
         let tools = swarm_tool_registry(workspace, false);
 
+        let tool_specs = tools.to_specs();
         let req = BrainRequest {
             system: Some(system),
             messages,
-            tools: tools.to_specs(),
+            tools: tool_specs.clone(),
             max_tokens: 4096,
             temperature: 0.0,
             stop: vec![],
+            cache: PromptCacheConfig::enabled(Some(prompt_cache_key(
+                "swarm-planner",
+                &workspace.root,
+                &tool_specs,
+            ))),
         };
 
         let _ = event_tx.send(Event::AgentStatus {
@@ -522,6 +544,11 @@ Your job: implement the SPEC exactly. Use tools to read existing files and write
                 max_tokens: 8192,
                 temperature: 0.0,
                 stop: vec![],
+                cache: PromptCacheConfig::enabled(Some(prompt_cache_key(
+                    "swarm-coder",
+                    &workspace.root,
+                    &tool_specs,
+                ))),
             };
 
             let mut stream = brain.complete(req).await?;
@@ -791,13 +818,19 @@ or:
             content: vec![ContentBlock::Text { text: context }],
         }];
 
+        let tool_specs = tools.to_specs();
         let req = BrainRequest {
             system: Some(system),
             messages,
-            tools: tools.to_specs(),
+            tools: tool_specs.clone(),
             max_tokens: 4096,
             temperature: 0.0,
             stop: vec![],
+            cache: PromptCacheConfig::enabled(Some(prompt_cache_key(
+                "swarm-verifier",
+                &workspace.root,
+                &tool_specs,
+            ))),
         };
 
         let _ = event_tx.send(Event::AgentStatus {

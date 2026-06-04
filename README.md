@@ -31,6 +31,9 @@ The project focuses on a narrow product promise: a Rust-native local cockpit whe
 > **Public polish pass** — WebView code output, repo hygiene, and release metadata are tightened for day-to-day use.
 
 - **Syntax-highlighted code cards**: fenced code is rendered in compact collapsible cards with language labels, line counts, copy actions, and local editor-style highlighting.
+- **Prompt caching controls**: Anthropic Messages and OpenAI-compatible/Responses requests now carry cache controls for stable Sparrow prefixes.
+- **Safer plan flow**: WebView `/plan` has explicit run, edit, and reject actions before execution.
+- **Per-hunk diff review UI**: diff cards and the side panel group patches by hunk with accept/reject review states.
 - **No metric spam**: high-frequency token/cost events update live meters without flooding the transcript.
 - **Cleaner typography**: WebView uses system UI fonts with `SF Mono`-style code rendering.
 - **Repo hygiene**: local handoffs, scratch files, and presentation-only artifacts are kept out of the public tree.
