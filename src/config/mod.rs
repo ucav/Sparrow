@@ -92,6 +92,16 @@ pub struct Routing {
     pub policy: HashMap<String, String>,
     #[serde(default = "default_on_budget")]
     pub on_budget: String,
+    /// When true, automatically scan /v1/models on every provider as soon as an
+    /// API key is stored, and cache the results for 24h. Defaults to true.
+    #[serde(default = "default_true")]
+    pub auto_discover: bool,
+    /// Pin ALL routing tiers to a single provider. When set, this overrides
+    /// every entry in `policy` (but still respects capability hard constraints
+    /// like vision/tools). Set via `sparrow route set <provider>` or directly
+    /// in config.yaml under `routing.preferred_provider`.
+    #[serde(default)]
+    pub preferred_provider: Option<String>,
 }
 
 impl Default for Routing {
@@ -100,6 +110,8 @@ impl Default for Routing {
             free_first: default_true(),
             policy: default_policy(),
             on_budget: default_on_budget(),
+            auto_discover: true,
+            preferred_provider: None,
         }
     }
 }

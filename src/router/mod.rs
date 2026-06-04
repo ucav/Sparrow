@@ -74,6 +74,11 @@ pub trait Router: Send + Sync {
     fn select(&self, need: &RoutingNeed, budget: &BudgetState) -> Vec<Arc<dyn Brain>>;
 
     fn on_error(&self, b: &dyn Brain, e: &BrainError) -> Retry;
+
+    /// Look up a brain by its model ID across all registered providers.
+    /// Used by the WebView model-override path when the user picks a model
+    /// that isn't in the natural routing chain.
+    fn find_brain_by_id(&self, model_id: &str) -> Option<Arc<dyn Brain>>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,6 +100,9 @@ pub struct BasicRouter {
     /// task tier -> preferred provider name
     policy: HashMap<String, String>,
     free_first: bool,
+    /// Global preferred provider override — when Some, every tier resolves to
+    /// this provider first (capability constraints still apply).
+    preferred_provider: Option<String>,
 }
 
 impl BasicRouter {
@@ -115,6 +123,7 @@ impl BasicRouter {
             providers,
             policy,
             free_first: config.routing.free_first,
+            preferred_provider: config.routing.preferred_provider.clone(),
         }
     }
 
@@ -180,6 +189,13 @@ impl BasicRouter {
     }
 
     fn resolve_provider(&self, need: &RoutingNeed) -> &str {
+        // If a global preferred provider is configured, use it for all tiers.
+        // The scoring loop will still add a +25 bonus for this provider so it
+        // bubbles to the top; capability fallback still kicks in if it lacks
+        // tools/vision support.
+        if let Some(ref pref) = self.preferred_provider {
+            return pref.as_str();
+        }
         self.policy
             .get(need.tier.as_str())
             .map(|s| s.as_str())
@@ -335,5 +351,16 @@ impl Router for BasicRouter {
             BrainError::Refusal(_) => Retry::Abort,
             _ => Retry::NextInChain,
         }
+    }
+
+    fn find_brain_by_id(&self, model_id: &str) -> Option<Arc<dyn Brain>> {
+        for brains in self.providers.values() {
+            for b in brains {
+                if b.id() == model_id {
+                    return Some(b.clone());
+                }
+            }
+        }
+        None
     }
 }

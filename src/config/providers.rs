@@ -2,6 +2,33 @@ use serde::{Deserialize, Serialize};
 
 use crate::provider::{LatencyClass, ModelCaps};
 
+// ─── Auth flow types ─────────────────────────────────────────────────────────
+
+/// Describes how a provider authenticates the client.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AuthFlow {
+    /// Standard API key — stored as PROVIDER_API_KEY or via `sparrow auth add`.
+    ApiKey,
+    /// RFC 8628 Device Authorization Grant — browser-less, best for CLIs.
+    /// `device_endpoint`: POST URL to start the flow.
+    /// `token_endpoint`:  POST URL to poll for the token.
+    /// `scope`:           Space-separated OAuth scopes to request.
+    /// `client_id_env`:   Env var name for the client id (optional override).
+    DeviceOAuth {
+        device_endpoint: String,
+        token_endpoint: String,
+        scope: String,
+        client_id_env: String,
+    },
+}
+
+impl Default for AuthFlow {
+    fn default() -> Self {
+        AuthFlow::ApiKey
+    }
+}
+
 /// Provider + model registry aligned with Hermes Agent (NousResearch/hermes-agent).
 /// Source: https://github.com/NousResearch/hermes-agent/tree/main/plugins/model-providers
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -14,6 +41,9 @@ pub struct ProviderDef {
     pub models: Vec<ModelDef>,
     pub tags: Vec<String>,
     pub notes: String,
+    /// Authentication method. Defaults to `ApiKey` for backwards-compat.
+    #[serde(default)]
+    pub auth_flow: AuthFlow,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,6 +88,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             ],
             tags: vec!["local".into(), "free".into()],
             notes: "Ollama Cloud. For self-hosted Ollama use 'custom' provider.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── Anthropic ─────────────────────────────────────────────────
         ProviderDef {
@@ -107,6 +138,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             ],
             tags: vec!["strong".into(), "code".into(), "vision".into()],
             notes: "Best-in-class for complex code and reasoning.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── OpenAI Codex (Hermes: openai-codex) ───────────────────────
         ProviderDef {
@@ -147,6 +179,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             ],
             tags: vec!["strong".into(), "code".into(), "vision".into()],
             notes: "OpenAI Codex — GPT models via OpenAI API.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── NVIDIA ────────────────────────────────────────────────────
         ProviderDef {
@@ -223,6 +256,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             ],
             tags: vec!["free".into(), "fast".into(), "strong".into(), "code".into()],
             notes: "NVIDIA API Catalog / NIM — free tier with API key; discovery expands this list from /v1/models.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── OpenRouter ────────────────────────────────────────────────
         ProviderDef {
@@ -247,6 +281,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             }],
             tags: vec!["strong".into(), "multi".into()],
             notes: "200+ models via one API — auto-routes to best model.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── DeepSeek ──────────────────────────────────────────────────
         ProviderDef {
@@ -277,6 +312,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             ],
             tags: vec!["cheap".into(), "code".into(), "reasoning".into()],
             notes: "DeepSeek — very competitive pricing, strong coding.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── Gemini ────────────────────────────────────────────────────
         ProviderDef {
@@ -317,6 +353,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             ],
             tags: vec!["strong".into(), "vision".into(), "free".into()],
             notes: "Google Gemini — 1M context window, free tier.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── xAI ───────────────────────────────────────────────────────
         ProviderDef {
@@ -336,6 +373,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             }],
             tags: vec!["strong".into(), "code".into()],
             notes: "xAI Grok — strong reasoning and coding.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── HuggingFace ───────────────────────────────────────────────
         ProviderDef {
@@ -355,6 +393,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             }],
             tags: vec!["free".into()],
             notes: "Hugging Face Serverless Inference — free tier, many models.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── Nous Portal ───────────────────────────────────────────────
         ProviderDef {
@@ -375,6 +414,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             tags: vec!["strong".into(), "code".into()],
             notes: "Nous Portal — one sub for models + web search + image gen + TTS + browser."
                 .into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── NovitaAI ──────────────────────────────────────────────────
         ProviderDef {
@@ -394,6 +434,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             }],
             tags: vec!["cheap".into(), "reasoning".into()],
             notes: "NovitaAI — AI-native cloud for Model API, Agent Sandbox, and GPU Cloud.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── Alibaba ───────────────────────────────────────────────────
         ProviderDef {
@@ -413,6 +454,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             }],
             tags: vec!["cheap".into(), "code".into()],
             notes: "Alibaba Cloud DashScope — Qwen models via OpenAI-compatible API.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── Bedrock (AWS) ─────────────────────────────────────────────
         ProviderDef {
@@ -437,6 +479,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             }],
             tags: vec!["strong".into(), "code".into()],
             notes: "AWS Bedrock — managed foundation models. Requires AWS credentials.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── Kimi/Moonshot ─────────────────────────────────────────────
         ProviderDef {
@@ -456,6 +499,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             }],
             tags: vec!["code".into()],
             notes: "Kimi/Moonshot — coding-focused models.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── MiniMax ───────────────────────────────────────────────────
         ProviderDef {
@@ -475,6 +519,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             }],
             tags: vec!["strong".into()],
             notes: "MiniMax — ABAB series models via OpenAI-compatible API.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── Xiaomi MiMo ───────────────────────────────────────────────
         ProviderDef {
@@ -494,6 +539,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             }],
             tags: vec!["code".into()],
             notes: "Xiaomi MiMo — coding models via Xiaomi platform.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── z.ai/GLM ──────────────────────────────────────────────────
         ProviderDef {
@@ -513,6 +559,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             }],
             tags: vec!["code".into()],
             notes: "z.ai / GLM — ChatGLM models via OpenAI-compatible API.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── GMI Cloud ─────────────────────────────────────────────────
         ProviderDef {
@@ -532,6 +579,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             }],
             tags: vec!["cheap".into()],
             notes: "GMI Cloud — GPU cloud for open-source model inference.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── Arcee ─────────────────────────────────────────────────────
         ProviderDef {
@@ -551,6 +599,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             }],
             tags: vec!["code".into()],
             notes: "Arcee — specialized coding models.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── StepFun ───────────────────────────────────────────────────
         ProviderDef {
@@ -570,6 +619,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             }],
             tags: vec!["cheap".into()],
             notes: "StepFun — Step series models via OpenAI-compatible API.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── Custom ────────────────────────────────────────────────────
         ProviderDef {
@@ -589,6 +639,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             }],
             tags: vec!["custom".into()],
             notes: "Bring your own OpenAI-compatible endpoint. Set base_url to your server.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── Azure Foundry ─────────────────────────────────────────────
         ProviderDef {
@@ -610,6 +661,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             notes:
                 "Azure AI Foundry — OpenAI models on Azure. Set base_url with your resource name."
                     .into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── Qwen OAuth ────────────────────────────────────────────────
         ProviderDef {
@@ -629,6 +681,76 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             }],
             tags: vec!["code".into()],
             notes: "Qwen via OAuth login — no API key needed, login via browser.".into(),
+            auth_flow: AuthFlow::DeviceOAuth {
+                device_endpoint: "https://oauth.aliyun.com/device/code".into(),
+                token_endpoint:  "https://oauth.aliyun.com/device/token".into(),
+                scope: "openid profile".into(),
+                client_id_env: "QWEN_OAUTH_CLIENT_ID".into(),
+            },
+        },
+        // ─── OpenCode Go (paid subscription tier) ─────────────────────
+        ProviderDef {
+            id: "opencode-go".into(),
+            label: "OpenCode Go".into(),
+            adapter: "openai-compatible".into(),
+            base_url: "https://opencode.ai/zen/go/v1".into(),
+            api_key_env: Some("OPENCODE_GO_API_KEY".into()),
+            models: vec![
+                ModelDef {
+                    name: "claude-sonnet-4-6".into(),
+                    label: "Claude Sonnet 4.6 (Go)".into(),
+                    tags: vec![
+                        "strong".into(),
+                        "code".into(),
+                        "vision".into(),
+                        "tool_support".into(),
+                    ],
+                    cost_input_per_mtok: 3.0,
+                    cost_output_per_mtok: 15.0,
+                    context_window: 200000,
+                    recommended: true,
+                },
+                ModelDef {
+                    name: "claude-opus-4-8".into(),
+                    label: "Claude Opus 4 (Go)".into(),
+                    tags: vec![
+                        "strong".into(),
+                        "code".into(),
+                        "vision".into(),
+                        "tool_support".into(),
+                    ],
+                    cost_input_per_mtok: 15.0,
+                    cost_output_per_mtok: 75.0,
+                    context_window: 200000,
+                    recommended: false,
+                },
+                ModelDef {
+                    name: "gpt-5".into(),
+                    label: "GPT-5 (Go)".into(),
+                    tags: vec!["strong".into(), "code".into(), "tool_support".into()],
+                    cost_input_per_mtok: 5.0,
+                    cost_output_per_mtok: 20.0,
+                    context_window: 200000,
+                    recommended: false,
+                },
+                ModelDef {
+                    name: "gemini-2-5-pro".into(),
+                    label: "Gemini 2.5 Pro (Go)".into(),
+                    tags: vec![
+                        "strong".into(),
+                        "code".into(),
+                        "vision".into(),
+                        "tool_support".into(),
+                    ],
+                    cost_input_per_mtok: 2.5,
+                    cost_output_per_mtok: 15.0,
+                    context_window: 1000000,
+                    recommended: false,
+                },
+            ],
+            tags: vec!["code".into(), "strong".into(), "multi".into(), "paid".into()],
+            notes: "OpenCode Go subscription tier — full model library via go/v1 endpoint. Discovery expands the list from /v1/models.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── OpenCode Zen ──────────────────────────────────────────────
         ProviderDef {
@@ -681,6 +803,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             ],
             tags: vec!["code".into(), "strong".into(), "multi".into()],
             notes: "OpenCode Zen — curated gateway (Claude, GPT, Qwen, DeepSeek). Most models need credits or an OpenCode Go subscription. Discovery expands the list from /v1/models.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── KiloCode ──────────────────────────────────────────────────
         ProviderDef {
@@ -700,6 +823,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             }],
             tags: vec!["code".into()],
             notes: "KiloCode — coding-specialized models.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── Copilot (GitHub) ──────────────────────────────────────────
         ProviderDef {
@@ -719,6 +843,12 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             }],
             tags: vec!["code".into()],
             notes: "GitHub Copilot — available with Copilot subscription.".into(),
+            auth_flow: AuthFlow::DeviceOAuth {
+                device_endpoint: "https://github.com/login/device/code".into(),
+                token_endpoint:  "https://github.com/login/oauth/access_token".into(),
+                scope: "read:user".into(),
+                client_id_env: "GITHUB_OAUTH_CLIENT_ID".into(),
+            },
         },
         // ─── Alibaba Coding Plan ───────────────────────────────────────
         ProviderDef {
@@ -738,6 +868,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             }],
             tags: vec!["code".into()],
             notes: "Alibaba Coding Plan — Qwen Coder models for software development.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ═══ MERGED: additional providers not in Hermes but valid ═════
 
@@ -784,6 +915,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             ],
             tags: vec!["local".into(), "free".into(), "offline".into()],
             notes: "Self-hosted models via Ollama. Install: https://ollama.com".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── Groq ──────────────────────────────────────────────────────
         ProviderDef {
@@ -814,6 +946,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             ],
             tags: vec!["fast".into(), "free".into()],
             notes: "Groq LPU — ultra-fast inference, free tier available.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── Together AI ───────────────────────────────────────────────
         ProviderDef {
@@ -833,6 +966,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             }],
             tags: vec!["cheap".into(), "code".into()],
             notes: "Together AI — open-source models at low cost.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── Cerebras ──────────────────────────────────────────────────
         ProviderDef {
@@ -852,6 +986,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             }],
             tags: vec!["fast".into(), "free".into()],
             notes: "Cerebras Wafer-Scale — fastest inference available.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── Mistral ───────────────────────────────────────────────────
         ProviderDef {
@@ -882,6 +1017,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             ],
             tags: vec!["strong".into(), "code".into()],
             notes: "Mistral AI — strong European models.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── Fireworks AI ──────────────────────────────────────────────
         ProviderDef {
@@ -901,6 +1037,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             }],
             tags: vec!["fast".into(), "code".into()],
             notes: "Fireworks AI — fast open-source model inference.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── Perplexity ────────────────────────────────────────────────
         ProviderDef {
@@ -931,6 +1068,7 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             ],
             tags: vec!["search".into(), "web".into()],
             notes: "Perplexity Sonar — live web/search-focused model routing.".into(),
+            auth_flow: AuthFlow::default(),
         },
         // ─── Cohere ────────────────────────────────────────────────────
         ProviderDef {
@@ -961,12 +1099,71 @@ pub fn provider_registry() -> Vec<ProviderDef> {
             ],
             tags: vec!["enterprise".into(), "tool_support".into()],
             notes: "Cohere Command models through the OpenAI-compatible endpoint.".into(),
+            auth_flow: AuthFlow::default(),
+        },
+        // ─── Google (OAuth device flow) ────────────────────────────────
+        ProviderDef {
+            id: "google-oauth".into(),
+            label: "Google (OAuth)".into(),
+            adapter: "openai-compatible".into(),
+            base_url: "https://generativelanguage.googleapis.com/v1beta/openai".into(),
+            api_key_env: None,
+            models: vec![ModelDef {
+                name: "gemini-2.5-pro".into(),
+                label: "Gemini 2.5 Pro".into(),
+                tags: vec!["strong".into(), "vision".into(), "tool_support".into()],
+                cost_input_per_mtok: 0.0,
+                cost_output_per_mtok: 0.0,
+                context_window: 1_000_000,
+                recommended: true,
+            }],
+            tags: vec!["strong".into()],
+            notes: "Google Gemini via OAuth device flow — no API key required.".into(),
+            auth_flow: AuthFlow::DeviceOAuth {
+                device_endpoint: "https://oauth2.googleapis.com/device/code".into(),
+                token_endpoint:  "https://oauth2.googleapis.com/token".into(),
+                scope: "openid https://www.googleapis.com/auth/generative-language".into(),
+                client_id_env: "GOOGLE_OAUTH_CLIENT_ID".into(),
+            },
+        },
+        // ─── Microsoft (OAuth device flow) ────────────────────────────
+        ProviderDef {
+            id: "microsoft-oauth".into(),
+            label: "Microsoft (OAuth)".into(),
+            adapter: "openai-compatible".into(),
+            base_url: "https://api.cognitive.microsoft.com/openai/v1".into(),
+            api_key_env: None,
+            models: vec![ModelDef {
+                name: "gpt-4o".into(),
+                label: "GPT-4o (Azure)".into(),
+                tags: vec!["strong".into(), "vision".into(), "tool_support".into()],
+                cost_input_per_mtok: 0.0,
+                cost_output_per_mtok: 0.0,
+                context_window: 128000,
+                recommended: true,
+            }],
+            tags: vec!["strong".into()],
+            notes: "Microsoft Azure OpenAI via OAuth device flow.".into(),
+            auth_flow: AuthFlow::DeviceOAuth {
+                device_endpoint: "https://login.microsoftonline.com/common/oauth2/v2.0/devicecode".into(),
+                token_endpoint:  "https://login.microsoftonline.com/common/oauth2/v2.0/token".into(),
+                scope: "openid profile".into(),
+                client_id_env: "MICROSOFT_OAUTH_CLIENT_ID".into(),
+            },
         },
     ]
 }
 
 pub fn find_provider(id: &str) -> Option<ProviderDef> {
     provider_registry().into_iter().find(|p| p.id == id)
+}
+
+/// Return all providers that use an OAuth device flow (not a plain API key).
+pub fn list_oauth_providers() -> Vec<ProviderDef> {
+    provider_registry()
+        .into_iter()
+        .filter(|p| p.auth_flow != AuthFlow::ApiKey)
+        .collect()
 }
 
 pub fn find_model(provider_id: &str, model_name: &str) -> Option<ModelDef> {

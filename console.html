@@ -66,6 +66,10 @@
   .route .arrow{display:inline-block;margin:0 5px;color:var(--brand);animation:route-step 1.7s ease-in-out infinite}
   .route .arrow:nth-of-type(2n){animation-delay:.28s}
   @keyframes route-step{0%,100%{opacity:.45;transform:translateX(0)}50%{opacity:1;transform:translateX(2px)}}
+  .budget-track{width:44px;height:5px;border:1px solid var(--line);border-radius:999px;background:#0d0a07;overflow:hidden;flex-shrink:0}
+  .budget-fill{display:block;height:100%;width:0;background:var(--add);transition:width .4s ease}
+  .budget-fill.warn{background:var(--coral)}
+  .budget-fill.danger{background:var(--rem)}
   .cost{color:var(--brand);font-weight:600;font-variant-numeric:tabular-nums;transition:color .3s,text-shadow .3s,transform .3s}
   .cost.up{animation:flash-cost .55s ease-out}
   @keyframes flash-cost{0%{filter:brightness(1.8) saturate(1.4);text-shadow:0 0 12px var(--brand);transform:translateY(-1px) scale(1.05)}100%{filter:none;text-shadow:none;transform:none}}
@@ -102,7 +106,7 @@
   .lane .st{display:flex;align-items:center;gap:6px;font-size:10.5px;color:var(--dim);margin-left:auto;white-space:nowrap}
   /* No truncation — messages wrap freely */
   .lane .msg{color:var(--dim);font-size:11px;line-height:1.45;
-    overflow-wrap:break-word;word-break:normal;white-space:normal}
+    overflow-wrap:anywhere;word-break:break-word;white-space:normal}
   .lane .msg b{color:var(--fg);font-weight:500}
   .lane.working .st{color:var(--agent)}.lane.done .st{color:var(--add)}.lane.idle .st{color:var(--dimmer)}.lane.error .st{color:var(--rem)}
   .lane.idle-card{opacity:.65}
@@ -123,12 +127,7 @@
 
   #term{min-height:0;overflow-y:auto;padding:18px clamp(18px,2vw,34px) 22px;font-size:13px;line-height:1.62;scroll-behavior:smooth}
   #term::-webkit-scrollbar{width:9px}#term::-webkit-scrollbar-thumb{background:#2c2419;border-radius:6px}
-  /* Children always span the full stream width — prevents the column from
-     collapsing to min-content and breaking text vertically char-by-char. */
-  #term>*{max-width:100%;width:100%}
-  /* word-break:break-word is deprecated and acts like break-all in some
-     Chromium builds (mid-word vertical breaking). Use overflow-wrap instead. */
-  .ln{white-space:pre-wrap;word-break:normal;overflow-wrap:break-word;animation:in .18s ease}
+  .ln{white-space:pre-wrap;word-break:break-word;animation:in .18s ease}
   @keyframes in{from{opacity:0;transform:translateY(3px)}to{opacity:1}}
   .muted{color:var(--dim)}.dimd{color:var(--dimmer)}
   .prompt{color:var(--brand)}.cmd{color:var(--fg)}
@@ -165,9 +164,7 @@
     .home-left{border-right:none;border-bottom:1px solid var(--line);grid-template-columns:84px 1fr;padding:18px}
     .hero-logo{width:84px;height:84px}
   }
-  /* The chrome bar already shows the live/offline tag — hide the redundant
-     fixed bottom-right status that overlapped the composer hints. */
-  .status{display:none}
+  .status{position:fixed;bottom:48px;right:16px;font-size:10px;color:var(--dimmer);z-index:10}
   .status.on{color:var(--add)}.status.off{color:var(--rem)}
 
   .input-bar{display:grid;grid-template-columns:auto minmax(0,1fr) minmax(190px,270px) auto;gap:8px;padding:8px clamp(16px,2vw,30px) 12px;border-top:1px solid var(--line);align-items:end;background:linear-gradient(180deg,#15110c,#100d09)}
@@ -249,18 +246,17 @@
     color:var(--brand);padding:1px 6px;border-radius:4px;font-size:9px;letter-spacing:.8px}
   /* All panels stacked, always visible (mockup behavior). Active panel
      gets a brand-coloured left bar to mark the rail-icon focus. */
-  /* Only the panel matching the clicked rail icon is shown — not all metrics
-     stacked at once. openPanel() toggles the .active class. */
-  .drawer .panel{display:none;padding:6px 4px}
-  .drawer .panel.active{display:block}
+  .drawer .panel{display:block;padding:6px 4px;border-left:2px solid transparent;transition:.18s}
+  .drawer .panel.active{border-left-color:var(--brand);background:color-mix(in srgb,var(--brand) 5%, transparent)}
+  .drawer .panel + .panel{margin-top:6px}
   @keyframes fade{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
   .drw-row{display:flex;flex-direction:column;gap:3px;padding:8px 10px;border-radius:7px;
     background:var(--panel2);border:1px solid transparent;cursor:pointer;transition:.15s;margin-bottom:5px}
   .drw-row:hover{border-color:var(--line-hot)}
   .drw-row.cur{border-color:color-mix(in srgb,var(--brand) 55%,var(--line));background:color-mix(in srgb,var(--brand) 10%,var(--panel))}
   .drw-row .ttl{font-size:11.5px;color:var(--fg);font-weight:500;display:flex;align-items:center;gap:6px;
-    overflow-wrap:break-word;word-break:normal}
-  .drw-row .ttl .led{width:6px;height:6px;border-radius:50%;background:var(--add);box-shadow:0 0 6px var(--add);animation:pulse 1.4s ease-in-out infinite}
+    overflow-wrap:anywhere;word-break:break-word}
+  .drw-row .ttl .led{width:6px;height:6px;border-radius:50%;background:var(--add);box-shadow:0 0 6px var(--add)}
   .drw-row .meta{font-size:10px;color:var(--dim);display:flex;gap:8px;flex-wrap:wrap}
   .drw-row .meta b{color:var(--fg);font-weight:500}
   .drw-empty{color:var(--dimmer);font-size:11px;font-style:italic;padding:8px 10px;text-align:center}
@@ -460,6 +456,20 @@
   .diff-card .pls{color:var(--add);background:color-mix(in srgb,var(--add) 9%,transparent);border-left-color:var(--add)!important}
   .diff-card .mns{color:var(--rem);background:color-mix(in srgb,var(--rem) 9%,transparent);border-left-color:var(--rem)!important}
 
+  /* collapsible code block (assistant code output) */
+  .code-block{margin:6px 0 8px;border:1px solid var(--line-hot);border-radius:8px;background:var(--panel);overflow:hidden}
+  .code-block summary{list-style:none;cursor:pointer;padding:6px 11px;display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--dim)}
+  .code-block summary::-webkit-details-marker{display:none}
+  .code-block .cb-ico{font-size:11px}
+  .code-block .cb-lbl{color:var(--fg);font-weight:500;font-size:11px}
+  .code-block .cb-size{margin-left:auto;color:var(--dimmer);font-size:9.5px}
+  .code-block .cb-chev{color:var(--dimmer);transition:transform .2s;font-size:9px}
+  .code-block[open] summary .cb-chev{transform:rotate(90deg)}
+  .code-block .cb-body{padding:8px 11px;background:var(--bg);border-top:1px solid var(--line);animation:fold-in .18s ease both}
+  .code-block .cb-body pre{margin:0;font-family:inherit;font-size:11px;line-height:1.55;color:var(--dim);white-space:pre-wrap;overflow-x:auto}
+  .code-block .cb-body code{font-family:inherit;color:var(--steel)}
+  @keyframes fold-in{from{opacity:0;max-height:0}to{opacity:1;max-height:600px}}
+
   /* Compaction banner */
   .compact-banner{margin:8px 0;padding:7px 12px;border-radius:8px;
     background:color-mix(in srgb,var(--brand) 9%,transparent);
@@ -631,25 +641,11 @@
   .approval-card .approve{color:var(--add);background:rgba(116,194,88,.12);border:1px solid rgba(116,194,88,.4)}
   .approval-card .deny{color:var(--rem);background:rgba(217,106,99,.12);border:1px solid rgba(217,106,99,.38)}
   /* run summary card */
-  /* collapsible code block (assistant code output) */
-  .code-card{margin:8px 0;border:1px solid var(--line-hot);border-radius:9px;background:var(--panel2);overflow:hidden}
-  .code-card>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:9px;padding:7px 12px;font-size:11px;color:var(--dim);background:var(--panel)}
-  .code-card>summary::-webkit-details-marker{display:none}
-  .code-card .cc-icon{color:var(--brand);transition:transform .2s;font-size:9px}
-  .code-card[open] .cc-icon{transform:rotate(90deg)}
-  .code-card .cc-lang{color:var(--agent);font-weight:600;letter-spacing:.5px;text-transform:lowercase}
-  .code-card .cc-meta{color:var(--dimmer);font-size:9.5px}
-  .code-card .cc-copy{margin-left:auto;font-family:inherit;font-size:9.5px;padding:2px 9px;border-radius:5px;cursor:pointer;background:transparent;border:1px solid var(--line);color:var(--dim);transition:.12s}
-  .code-card .cc-copy:hover{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 40%,var(--line))}
-  .code-card pre{margin:0;padding:11px 14px;overflow-x:auto;background:var(--bg)}
-  .code-card code{font-family:inherit;font-size:12px;line-height:1.55;color:var(--fg);white-space:pre;display:block}
-  .code-card pre::-webkit-scrollbar{height:7px}.code-card pre::-webkit-scrollbar-thumb{background:#2c2419;border-radius:6px}
   .run-summary{margin:10px 0;border:1px solid var(--line-hot);border-radius:10px;background:var(--panel);overflow:hidden;animation:in .2s ease}
-  .run-summary>summary{list-style:none;cursor:pointer}
-  .run-summary>summary::-webkit-details-marker{display:none}
-  .run-summary[open] .rs-chev{transform:rotate(180deg)}
-  .run-summary:not([open]) .rs-head{border-bottom:none}
   .run-summary .rs-head{display:flex;align-items:center;gap:10px;padding:8px 13px;border-bottom:1px solid var(--line);font-size:10.5px}
+  .run-summary summary.rs-head{list-style:none;cursor:pointer}
+  .run-summary summary.rs-head::-webkit-details-marker{display:none}
+  .run-summary[open] .rs-head{border-bottom:1px solid var(--line)}
   .run-summary .rs-head .rs-ok{color:var(--add);font-size:13px}
   .run-summary .rs-head .rs-status{color:var(--fg);font-weight:500;flex:1}
   .run-summary .rs-head .rs-dur{color:var(--dimmer);font-size:10px}
@@ -669,11 +665,29 @@
   @keyframes learnpop{0%{opacity:0;transform:translateY(5px)}10%{opacity:1;transform:none}82%{opacity:1}100%{opacity:0;transform:translateY(-5px)}}
   .boot-line{opacity:0;animation:fin .35s ease forwards}
   @keyframes fin{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+  /* ─── Sprint 2 : spinner, tool icons, inline tokens, bird ── */
+  .sp{display:inline-block;color:var(--brand);width:1.2em;text-align:center;animation:sp-dot .7s linear infinite}
+  @keyframes sp-dot{to{transform:rotate(360deg)}}
+  .tool-ico{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;font-size:11px;flex-shrink:0}
+  .inline-tok{display:inline-flex;gap:5px;font-size:10px;margin-left:7px;white-space:nowrap;font-variant-numeric:tabular-nums;vertical-align:middle;background:color-mix(in srgb,var(--brand) 6%,var(--bg));padding:0 5px;border-radius:4px}
+  .inline-tok .up-c{color:var(--add);animation:tk-pulse .35s ease-out}
+  .inline-tok .dn-c{color:var(--rem);animation:tk-pulse .35s ease-out}
+  @keyframes tk-pulse{0%{filter:brightness(1.6);text-shadow:0 0 6px currentColor}100%{filter:none;text-shadow:none}}
+  .bird{line-height:1.18;font-size:14px;margin:4px 0 6px;white-space:pre;font-family:'IBM Plex Mono',ui-monospace,monospace}
+  .bird .fr{color:var(--brand)} .bird .eye{color:#fff} .bird .patch{color:#1c150c;background:#1c150c;border-radius:2px;display:inline-block;min-width:1px}
+  .bird .beak{color:var(--coral)} .bird .tool{color:var(--steel)} .bird .gold{color:var(--gold)} .bird .belly{color:#f7d089}
+  .bird .brow{color:#5a4326} .bird .cheek{color:#f0674a}
+  .verb-think{font-style:italic;color:var(--dimmer);animation:verb-in .25s ease;margin-top:1px;font-size:11px}
+  @keyframes verb-in{from{opacity:0;transform:translateX(-3px)}to{opacity:1;transform:none}}
+
   @media (prefers-reduced-motion: reduce){
     *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
     .ember{display:none!important}
     .streaming::after{animation:none!important;opacity:1}
     .boot-overlay{display:none!important}
+    .caret,.cur,.cur2{animation:none!important;opacity:1}
+    .sp{animation:none!important}
   }
 </style>
 </head>
@@ -773,8 +787,19 @@
   <!-- Tab: routing & autonomy -->
   <div data-cfg-pane="routing" style="display:none">
     <div class="row">
-      <label>default route</label>
-      <select id="defaultRouteSelect"><option value="">— auto (cheapest capable) —</option></select>
+      <label>preferred provider</label>
+      <select id="preferredProviderSelect" style="max-width:220px">
+        <option value="">-- auto (smart routing per tier) --</option>
+      </select>
+    </div>
+    <div class="row">
+      <label>auto-discover models</label>
+      <input type="checkbox" id="autoDiscoverToggle" checked>
+      <span class="muted" style="font-size:10px">scan provider APIs for available models on startup</span>
+    </div>
+    <div class="row">
+      <button class="cfg-save-btn" onclick="saveRouting()">💾 save routing</button>
+      <span class="save-status" id="routingSaveStatus" style="display:none;color:var(--add);font-size:10px;margin-left:8px">✓ saved</span>
     </div>
     <div class="row">
       <label>autonomy</label>
@@ -932,7 +957,7 @@
     <div class="stat"><span class="k">out</span><span class="tok" id="tokOut">0</span></div>
     <div class="stat"><span class="k">total</span><span class="tok" id="tok">0</span></div>
     <div class="stat"><span class="k">session</span><span class="tok" id="tokSession">0 tok · $0.000</span></div>
-    <div class="stat" title="Daily budget usage"><span class="k">budget</span><span class="tok" id="budget" style="color:var(--gold)">0% / —</span></div>
+    <div class="stat" title="Daily budget usage"><span class="k">budget</span><span class="budget-track"><span class="budget-fill" id="budgetFill"></span></span><span class="tok" id="budget" style="color:var(--gold);margin-left:6px">0% / —</span></div>
     <div class="stat"><span class="k">autonomy</span><span class="pill" id="auto"><span class="led"></span><span id="autotxt">—</span></span></div>
   </div>
 
@@ -988,10 +1013,7 @@
       <div class="context-label"><span>context</span><b id="contextText">0% · 0 / 32k tok</b></div><!-- limit updated by updateContextMeter() -->
       <div class="context-track"><span class="context-fill" id="contextFill"></span></div>
     </div>
-    <div style="display:flex;gap:6px;align-items:end">
-      <button class="btn" id="runBtn">run</button>
-      <button class="btn" id="stopBtn" title="Stop the running task" style="display:none;color:var(--rem);background:color-mix(in srgb,var(--rem) 10%,transparent);border-color:color-mix(in srgb,var(--rem) 40%,transparent)">◼ stop</button>
-    </div>
+    <button class="btn" id="runBtn">run</button>
     <div class="attachments" id="attachments"></div>
   </div>
 
@@ -1067,8 +1089,42 @@ let HISTORY_DRAFT='';
 let contextLimit=32000;
 const ATTACHMENT_CHAR_LIMIT=120000;
 const MAX_ATTACHMENT_BYTES=10*1024*1024;
-const FLIGHT_VERBS=['Soaring','Gliding','Diving','Scouting','Perching','Foraging','Wheeling'];
+const FLIGHT_VERBS=['Soaring','Gliding','Diving','Scouting','Perching','Foraging','Wheeling','Lofting','Skimming','Swooping'];
 let _vi=0;
+
+const BIRD=
+  '<span class="fr">        ^^</span>\n'+
+  '<span class="fr">      .-~~~-.</span>\n'+
+  '<span class="fr">     /</span><span class="brow">__</span><span class="fr">     \\</span>\n'+
+  '<span class="fr">    | </span><span class="eye">o</span><span class="fr">   </span><span class="patch">██</span><span class="fr">  |</span>\n'+
+  '<span class="fr">    |    </span><span class="beak">v</span><span class="fr">    |</span>\n'+
+  '<span class="fr">    | </span><span class="cheek">.</span><span class="fr">       |</span>\n'+
+  '<span class="fr">     \\ </span><span class="belly">\\__/</span><span class="fr">  /</span>\n'+
+  '<span class="fr">      \'-..-\'</span>\n'+
+  '<span class="fr">      /|  |\\</span>  <span class="tool">╤━</span><span class="gold">o</span>\n'+
+  '<span class="fr">     \'_|  |_\'</span>';
+
+const TOOL_ICONS={
+  read:'📖',search:'🔍',grep:'🎯',find:'🔍',
+  write:'✏️',edit:'🖊️',patch:'🩹',create:'✨',
+  run:'🏃',exec:'⚡',bash:'💻',terminal:'🖥️',
+  delete:'🗑️',remove:'🗑️',rm:'🧹',
+  list:'📂',ls:'📁',glob:'📁',
+  web:'🌐',fetch:'📡',http:'🔌',curl:'🌍',
+  diff:'📊',checkpoint:'💠',
+  memory:'🧠',remember:'📝',recall:'🔮',
+  think:'💭',ask:'❓',plan:'📋',
+  default:'⚒'
+};
+
+function toolIcon(name){
+  if(!name)return TOOL_ICONS.default;
+  const n=name.toLowerCase();
+  for(const [k,v] of Object.entries(TOOL_ICONS)){
+    if(n.startsWith(k)||n.includes(k))return v;
+  }
+  return TOOL_ICONS.default;
+}
 function startVerbCycle(elId){
   const el=document.getElementById(elId);
   if(!el)return;
@@ -1132,21 +1188,19 @@ function setRoute(t){
   el.title=t;
 }
 function updateSession(){
-  // Session stat shows cumulative tokens only — the $ lives in COST and BUDGET,
-  // so we don't duplicate the dollar figure across the cockpit.
-  $('tokSession').textContent=sessionTok.toLocaleString()+' tok';
+  $('tokSession').textContent=sessionTok.toLocaleString('en-US')+' tok · $'+sessionCost.toFixed(4);
 }
-let _budgetDailyUsd=0;  // 0 = unlimited until /config says otherwise
+let _budgetDailyUsd=5;  // populated by hydrateHero from /config
 function updateBudget(){
   const el=$('budget');if(!el)return;
-  if(!_budgetDailyUsd||_budgetDailyUsd<=0){
-    el.textContent='unlimited';
-    el.style.color='var(--dim)';
-    return;
-  }
-  const pct=Math.min(100,Math.round(sessionCost/_budgetDailyUsd*100));
-  el.textContent=`${pct}% / $${_budgetDailyUsd} day`;
+  const pct=_budgetDailyUsd>0?Math.min(100,Math.round(sessionCost/_budgetDailyUsd*100)):0;
+  el.textContent=pct+'% / $'+_budgetDailyUsd+' day';
+  // Colour gradient red as we approach the cap
   el.style.color=pct>=85?'var(--rem)':pct>=60?'var(--coral)':pct>=30?'var(--gold)':'var(--add)';
+  // Budget bar fill + colour
+  const fill=$('budgetFill');if(!fill)return;
+  fill.style.width=pct+'%';
+  fill.className='budget-fill'+(pct>=80?' danger':pct>=60?' warn':'');
 }
 function setCost(c){
   const next=Math.max(0,Number(c)||0);
@@ -1169,14 +1223,14 @@ function countUp(el,to,ms=420){
   const fromTxt=String(el.textContent||'').replace(/[^\d.-]/g,'');
   const from=parseFloat(fromTxt)||0;
   if(el._countUpTimer)clearInterval(el._countUpTimer);
-  if(from===to){el.textContent=to.toLocaleString();return;}
+  if(from===to){el.textContent=to.toLocaleString('en-US');return;}
   const start=Date.now();
   const tick=()=>{
     const t=Math.min(1,(Date.now()-start)/ms);
     const eased=1-Math.pow(1-t,3); // ease-out cubic
     const val=Math.round(from+(to-from)*eased);
-    el.textContent=val.toLocaleString();
-    if(t>=1){clearInterval(el._countUpTimer);el._countUpTimer=null;el.textContent=to.toLocaleString();}
+    el.textContent=val.toLocaleString('en-US');
+    if(t>=1){clearInterval(el._countUpTimer);el._countUpTimer=null;el.textContent=to.toLocaleString('en-US');}
   };
   el._countUpTimer=setInterval(tick,16); // ~60fps
   tick();
@@ -1187,9 +1241,9 @@ function refreshTokens(){
   sessionTok+=tokV-prev;
   // Direct assignment — countUp via setInterval/rAF didn't fire reliably in
   // background tabs / headless contexts. The .up class still gives the flash.
-  const elIn=$('tokIn');if(elIn)elIn.textContent=tokInV.toLocaleString();
-  const elOut=$('tokOut');if(elOut)elOut.textContent=tokOutV.toLocaleString();
-  const elTok=$('tok');if(elTok)elTok.textContent=tokV.toLocaleString();
+  const elIn=$('tokIn');if(elIn)elIn.textContent=tokInV.toLocaleString('en-US');
+  const elOut=$('tokOut');if(elOut)elOut.textContent=tokOutV.toLocaleString('en-US');
+  const elTok=$('tok');if(elTok)elTok.textContent=tokV.toLocaleString('en-US');
   // Then animate via countUp from previous-frame value (best-effort eye candy).
   if(prev!==tokV)countUp(elTok,tokV,400);
   updateSession();
@@ -1221,8 +1275,8 @@ function ensureTokenMeter(){
 }
 function updateTokenMeter(){
   const row=ensureTokenMeter().querySelector('.token-meter');
-  row.querySelector('[data-tok-in]').textContent=tokInV.toLocaleString();
-  row.querySelector('[data-tok-out]').textContent=tokOutV.toLocaleString();
+  row.querySelector('[data-tok-in]').textContent=tokInV.toLocaleString('en-US');
+  row.querySelector('[data-tok-out]').textContent=tokOutV.toLocaleString('en-US');
   row.querySelector('.cost').textContent='live $'+costV.toFixed(4);
   row.classList.remove('pulse');void row.offsetWidth;row.classList.add('pulse');
   clearTimeout(tokenMeterTimer);tokenMeterTimer=setTimeout(()=>row.classList.remove('pulse'),460);
@@ -1237,15 +1291,8 @@ function fmtCtx(n){if(n>=1000000)return(n/1000000).toFixed(n%1000000===0?0:1)+'M
 function updateContextMeter(){
   const used=Math.min(contextLimit,draftContextTokens());
   const pct=Math.min(100,Math.round((used/contextLimit)*100));
-  if($('contextText'))$('contextText').textContent=`${pct}% · ${used.toLocaleString()} / ${fmtCtx(contextLimit)} tok`;
-  const fill=$('contextFill');
-  if(fill){
-    fill.style.width=pct+'%';
-    // Color shifts green → amber → coral as the window fills.
-    const col=pct>=85?'var(--rem)':pct>=65?'var(--coral)':pct>=40?'var(--brand)':'var(--add)';
-    fill.style.background=col;
-    fill.style.boxShadow=pct>=65?`0 0 8px ${col}`:'none';
-  }
+  if($('contextText'))$('contextText').textContent=`${pct}% · ${used.toLocaleString('en-US')} / ${fmtCtx(contextLimit)} tok`;
+  if($('contextFill'))$('contextFill').style.width=pct+'%';
 }
 function setAuto(level){
   const map={supervised:'--sup',trusted:'--tru',autonomous:'--aut'};
@@ -1388,6 +1435,8 @@ function runBootAnimation(){
   sessionStorage.setItem('sparrow-booted','1');
   const ov=document.getElementById('bootOverlay');if(!ov)return;
   ov.hidden=false;ov.classList.remove('fading');
+  // Type the tagline character-by-character (STATUS2.md S1-6)
+  const tag=ov.querySelector('.b-tag');if(tag){var txt=tag.textContent;tag.textContent='';(async function(){for(var i=0;i<txt.length;i++){tag.textContent+=txt[i];await sleep(40+Math.random()*30);}})();}
   const host=document.getElementById('bootStatus');host.innerHTML='';
   BOOT_STATUS_LINES.forEach((pair,i)=>{
     const div=document.createElement('div');
@@ -1448,9 +1497,17 @@ function syncSoundBtn(){const b=document.getElementById('soundBtn');if(b)b.textC
 // ─── Bind chrome chips ───────────────────────────────────────────────
 function bindChromeChips(){
   const cmdk=document.getElementById('cmdkBtn');if(cmdk)cmdk.addEventListener('click',()=>{chirp(1000,.04);paletteOpen()});
-  const rb=document.getElementById('replayBtn');if(rb)rb.addEventListener('click',()=>{
-    chirp(800,.05);setTimeout(()=>chirp(1200,.05),80);setTimeout(()=>chirp(1600,.07),160);
-    // Re-run boot animation on demand so the user can re-see it.
+  const rb=document.getElementById('replayBtn');if(rb)rb.addEventListener('click',async()=>{
+    chirp(800,.05);setTimeout(()=>chirp(1200,.05),80);
+    // Try to replay a recorded run; fall back to boot animation.
+    var runId=prompt('Run ID to replay (leave empty for boot animation):');
+    if(runId&&runId.trim()){
+      try{
+        var r=await fetch('/replay?run_id='+encodeURIComponent(runId.trim()));
+        var j=await r.json();
+        if(j.ok&&j.events){term.innerHTML='';j.events.forEach(function(ev){handleEvent(ev);});return;}
+      }catch(e){}
+    }
     sessionStorage.removeItem('sparrow-booted');runBootAnimation();
   });
   const sb=document.getElementById('soundBtn');if(sb)sb.addEventListener('click',()=>{
@@ -1478,6 +1535,22 @@ const _heroRefreshIv=setInterval(()=>{hydrateHero();},15000);
 
 initTheme();
 syncSoundBtn();
+
+// ─── Sprint 2 : ResizeObserver for dynamic terminal sizing ─────────
+(function(){
+  const termEl=document.getElementById('term');
+  if(!termEl)return;
+  const ro=new ResizeObserver(function(entries){
+    for(var i=0;i<entries.length;i++){
+      var w=entries[i].contentRect.width;
+      var base=Math.round(11+Math.min(3,Math.max(0,(w-360)/210)));
+      termEl.style.fontSize=base+'px';
+      termEl.style.padding=w<520?'12px 14px 18px':'';
+    }
+  });
+  ro.observe(termEl);
+})();
+
 bindChromeChips();
 
 // ─── Sprint 1 inc 2 : drawer + 7 panels ──────────────────────────────
@@ -2049,7 +2122,10 @@ function openToolCard(ev){
   if(TOOL_CARDS.has(id))return;
   const d=document.createElement('details');d.className='tool-card running';d.open=false;
   const argsStr=ev.args?(typeof ev.args==='string'?ev.args:JSON.stringify(ev.args,null,2)):'';
-  d.innerHTML='<summary><span class="chev">▸</span><span class="g">⚒</span><span class="nm">'+esc(ev.name||'tool')+'</span><span class="ok" data-status>running…</span></summary>'+
+  const ico=toolIcon(ev.name||'');
+  d.dataset.tokBaseIn=actualInV+estInV;
+  d.dataset.tokBaseOut=actualOutV+estOutV;
+  d.innerHTML='<summary><span class="chev">▸</span><span class="tool-ico">'+ico+'</span><span class="nm">'+esc(ev.name||'tool')+'</span><span class="ok" data-status>running…</span></summary>'+
     (argsStr?'<div class="det"><div class="lbl">arguments</div><code>'+esc(argsStr)+'</code></div>':'');
   term.appendChild(d);TOOL_CARDS.set(id,d);
   term.scrollTop=term.scrollHeight;
@@ -2080,7 +2156,16 @@ function closeToolCard(ev){
   const st=d.querySelector('[data-status]');
   const outRaw=(ev.output!==undefined)?ev.output:(ev.text||'');
   const summary=isErr?'✗ error':(inferToolSummary(d.querySelector('.nm')?.textContent,outRaw)||'✓ done');
-  if(st){st.textContent=summary;st.style.color=isErr?'var(--rem)':'var(--add)';}
+  if(st){
+    const baseIn=parseInt(d.dataset.tokBaseIn||'0',10);
+    const baseOut=parseInt(d.dataset.tokBaseOut||'0',10);
+    const dIn=actualInV+estInV-baseIn;
+    const dOut=actualOutV+estOutV-baseOut;
+    const tokHtml=(dIn>0||dOut>0)
+      ?'<span class="inline-tok">'+(dIn>0?'<span class="up-c">↑'+dIn.toLocaleString('en-US')+'</span>':'')+(dOut>0?'<span class="dn-c">↓'+dOut.toLocaleString('en-US')+'</span>':'')+'</span>'
+      :'';
+    st.innerHTML=summary+tokHtml;st.style.color=isErr?'var(--rem)':'var(--add)';
+  }
   const out=outRaw;
   if(out){
     const det=d.querySelector('.det')||(()=>{const x=document.createElement('div');x.className='det';d.appendChild(x);return x;})();
@@ -2199,44 +2284,46 @@ function showError(title,cause,fix,doc){
 
 let STREAM_BUF=null;
 function streamDelta(text){
+  // Aggressively strip DeepSeek thinking debris: raw XML tool calls, ANSI escapes,
+  // and garbled internal monologue that leaks through the adapter.
+  var t=String(text||'');
+  if(t.indexOf('<tool_call')!==-1||t.indexOf('<function')!==-1||t.indexOf('\x1b[')!==-1||t.indexOf('\\033[')!==-1){
+    // DeepSeek thinking leak — show minimal indicator instead of raw garbage
+    if(!STREAM_BUF||!STREAM_BUF.isConnected){
+      STREAM_BUF=document.createElement('div');STREAM_BUF.className='ln streaming-line';
+      STREAM_BUF.innerHTML='<span class="cmd streaming">⏳</span>';
+      term.appendChild(STREAM_BUF);
+    }
+    term.scrollTop=term.scrollHeight;
+    return;
+  }
   if(!STREAM_BUF||!STREAM_BUF.isConnected){
     STREAM_BUF=document.createElement('div');STREAM_BUF.className='ln streaming-line';
     STREAM_BUF.innerHTML='<span class="cmd streaming"></span>';
     term.appendChild(STREAM_BUF);
   }
   const tgt=STREAM_BUF.querySelector('.streaming');
-  if(tgt){tgt.textContent+=text;term.scrollTop=term.scrollHeight;}
+  if(tgt){tgt.textContent+=t;term.scrollTop=term.scrollHeight;}
+}
+function finalizeStreamBlock(block){
+  const tgt=block.querySelector('.streaming');if(!tgt)return;
+  const text=tgt.textContent||'';
+  // Detect code blocks: triple backticks, or >5 consecutive lines starting with spaces/tabs
+  const hasCode=text.includes('```')||(text.split('\n').filter(function(l){return /^[  ]{2,}/.test(l);}).length>4)||text.length>800;
+  if(!hasCode)return;
+  block.innerHTML='<details class="code-block">'+
+    '<summary class="cb-head"><span class="cb-ico">💻</span><span class="cb-lbl">code</span><span class="cb-size">'+(Math.round(text.length/1024*10)/10)+' KB</span><span class="cb-chev">▸</span></summary>'+
+    '<div class="cb-body"><pre><code>'+esc(text)+'</code></pre></div>'+
+    '</details>';
 }
 function cryptoUid(){return Math.random().toString(36).slice(2,10)}
 
-// When a streamed assistant message finalizes, split out fenced ``` code blocks
-// into collapsible <details> cards so code never floods the conversation flow.
-function finalizeStreamBlock(buf){
-  const span=buf.querySelector('.streaming')||buf.querySelector('.cmd');
-  if(!span)return;
-  const raw=span.textContent||'';
-  if(!raw.includes('```')){return;} // plain prose — leave as-is
-  const parts=raw.split(/```/);
-  buf.innerHTML='';
-  parts.forEach((part,i)=>{
-    if(i%2===1){
-      // code block — first token may be a language hint
-      const nl=part.indexOf('\n');
-      const lang=nl>0?part.slice(0,nl).trim():'';
-      const code=nl>0?part.slice(nl+1):part;
-      const lineCount=code.split('\n').filter(l=>l.length).length;
-      const d=document.createElement('details');d.className='code-card';d.open=false;
-      d.innerHTML=`<summary><span class="cc-icon">▸</span><span class="cc-lang">${esc(lang||'code')}</span><span class="cc-meta">${lineCount} lines</span><button class="cc-copy" onclick="navigator.clipboard.writeText(this.closest('.code-card').querySelector('code').textContent);this.textContent='copied ✓'">copy</button></summary><pre><code>${esc(code)}</code></pre>`;
-      buf.appendChild(d);
-    }else if(part.trim()){
-      const p=document.createElement('div');p.className='cmd';p.style.whiteSpace='pre-wrap';p.textContent=part.trim();
-      buf.appendChild(p);
-    }
-  });
-}
 function handleEvent(ev){
-  // End the streaming line as soon as a non-delta event arrives.
-  if(STREAM_BUF&&ev.type!=='ThinkingDelta'){
+  // Only finalize the streaming block on events that start a new content section.
+  // AgentStatus, Message, RouteSelected, and token/cost updates flow through
+  // without breaking the text line — prevents one-word-per-line display.
+  const STREAM_ENDERS=new Set(['ToolUseProposed','ToolUseStarted','ToolOutput','RunFinished','Error','DiffProposed','DiffApplied','ApprovalRequested','CheckpointCreated','SkillLearned']);
+  if(STREAM_BUF&&STREAM_ENDERS.has(ev.type)){
     const s=STREAM_BUF.querySelector('.streaming');if(s)s.classList.remove('streaming');
     finalizeStreamBlock(STREAM_BUF);
     STREAM_BUF=null;
@@ -2246,9 +2333,13 @@ function handleEvent(ev){
     case 'RunStarted':{
       const turnCount=parseInt(localStorage.getItem('sparrow-turn-count')||'0',10)+1;
       localStorage.setItem('sparrow-turn-count',String(turnCount));
-      line(`<span class="acc">▸ started:</span> <span class="cmd">analyse de la requête</span>${turnCount>1?` <span style="color:var(--add);font-size:10px;margin-left:8px">● context retained · turn #${turnCount}</span>`:''}`);
-      resetRunMetrics();resetSwarm();runStartMs=Date.now();runDiffsApplied=0;runCheckpoints=0;runCheckpointIds=[];CHECKPOINT_TIMELINE=null;setSwarm('planner','thinking','classifying request and selecting route');ensureTokenMeter();
-      setRunActive(true);break;
+      // Sparrow bird on first run and every 5 runs
+      if(turnCount===1||turnCount%5===1){
+        line(BIRD,'bird');
+        line('<span class="tagline" style="color:var(--dim);font-size:12px;letter-spacing:1px;margin-bottom:6px"><b style="background:linear-gradient(90deg,var(--brand),var(--coral));-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:700;letter-spacing:2px">SPARROW</b> — one cli · grows with you</span>');
+      }
+      line(`<span class="acc">▸ started:</span> <span class="cmd">${esc(ev.task||'analyse de la requête')}</span>${turnCount>1?` <span style="color:var(--add);font-size:10px;margin-left:8px">● context retained · turn #${turnCount}</span>`:''}`);
+      resetRunMetrics();resetSwarm();runStartMs=Date.now();runDiffsApplied=0;runCheckpoints=0;runCheckpointIds=[];CHECKPOINT_TIMELINE=null;setSwarm('planner','thinking','classifying request and selecting route');ensureTokenMeter();break;
     }
     case 'RouteSelected':{
       const chain=summarizeChain(ev.chain);
@@ -2264,8 +2355,13 @@ function handleEvent(ev){
     }
     case 'ModelSwitched':line(`<span class="warn">${routeSwitchLabel(ev.from,ev.to,ev.reason)}</span> <span style="color:var(--add);font-size:10px;margin-left:6px">● context preserved</span>`);break;
     case 'Message':
-      if(ev.role==='router'){line(`<span class="muted">○ routing · <span class="planner">${esc(ev.text)}</span></span>`)}
-      else{line(`<span class="muted">${esc(ev.role)}:</span> <span class="cmd">${esc(ev.text)}</span>`)}
+      if(ev.role==='router'){
+        // Skip raw classification dumps — keep routing messages clean
+        if(ev.text&&!ev.text.startsWith('requete:')){
+          line('<span class="muted">↳ </span><span class="planner">'+esc(ev.text)+'</span>');
+        }
+      }
+      else{line('<span class="muted">'+esc(ev.role)+':</span> <span class="cmd">'+esc(ev.text)+'</span>')}
       break;
     case 'ThinkingDelta':streamDelta(ev.text);break;
     case 'ToolUseProposed':setSwarm('coder','working','using tool · '+ev.name);openToolCard(ev);break;
@@ -2280,7 +2376,17 @@ function handleEvent(ev){
       break;
     case 'ApprovalResolved':line(`<span class="muted">↳ approval: <span class="planner">${esc(ev.decision)}</span></span>`);break;
     case 'AgentSpawned':setSwarm(ev.role,'working',`model ${ev.model} online`);line(`<span class="${roleCls(ev.role)}">◆ ${esc(ev.role)} spawned (${esc(ev.model)})</span>`);updateCrewLiveStatus(ev.role||ev.name,'working',`spawned · ${ev.model}`);break;
-    case 'AgentStatus':setSwarm(ev.role,ev.status,ev.note);line(`<span class="${roleCls(ev.role)}">${icon(ev.status)} ${esc(ev.role)} — ${esc(ev.note)}${ev.role==='coder'&&(ev.status==='Working'||ev.status==='Thinking')?'<span class="caret"></span>':''}</span>`);updateCrewLiveStatus(ev.role||ev.name,ev.status,ev.note);break;
+    case 'AgentStatus':{
+      const isThinking=ev.status==='Thinking'||ev.status==='Working';
+      const note=ev.note||'';
+      const verbedNote=isThinking&&!note.includes('·')?FLIGHT_VERBS[(_vi++)%FLIGHT_VERBS.length]+' · '+note:note;
+      setSwarm(ev.role,ev.status,verbedNote);
+      const dot=icon(ev.status);
+      const roleCl=roleCls(ev.role);
+      line('<span class="'+roleCl+'">'+dot+'</span> <span class="'+roleCl+'" style="font-weight:500">'+esc(ev.role)+'</span>'+(isThinking?' <span class="sp">◌</span>':'')+' <span class="muted">'+esc(verbedNote)+(isThinking?'<span class="caret"></span>':'')+'</span>');
+      updateCrewLiveStatus(ev.role||ev.name,ev.status,verbedNote);
+      break;
+    }
     case 'CheckpointCreated':line(`<span class="acc">● checkpoint:</span> <span class="muted">${esc(ev.label)}</span>`);addCheckpointNode(ev.label,ev.id);runCheckpoints++;chirp(1400,.07);break;
     case 'SkillLearned':line(`<span class="skill-pop">✦ skill learned · ${esc(ev.name)}</span>`);chirp(1100,.05);setTimeout(()=>chirp(1700,.07),80);break;
     case 'CostUpdate':setCost(ev.usd);break;
@@ -2299,26 +2405,24 @@ function handleEvent(ev){
       const finalCost=ev.outcome?.cost_usd??costV;
       const finalTok=ev.outcome?.tokens?.input+ev.outcome?.tokens?.output||tokV;
       const status=esc(ev.outcome?.status||'done');
-      // Collapsible run summary: opens to show the grid, then auto-collapses to a
-      // single compact line after 2.5s. Click the summary to re-expand anytime.
       const card=document.createElement('details');card.className='run-summary';card.open=true;
-      card.innerHTML=`<summary class="rs-head">
-        <span class="rs-ok">✓</span>
-        <span class="rs-status">${status}</span>
-        <span style="color:var(--brand);font-size:10px">$${finalCost.toFixed(4)}</span>
-        <span style="color:var(--agent);font-size:10px">${(finalTok||tokV).toLocaleString()} tok</span>
-        <span class="rs-dur">${durStr}</span>
-        <span class="rs-chev" style="margin-left:auto;color:var(--dimmer);font-size:9px;transition:transform .2s">▼</span>
-      </summary>
-      <div class="rs-grid">
-        <div class="rs-stat"><span class="k">cost</span><span class="v cost">$${finalCost.toFixed(4)}</span></div>
-        <div class="rs-stat"><span class="k">tokens</span><span class="v tok">${(finalTok||tokV).toLocaleString()}</span></div>
-        <div class="rs-stat"><span class="k">files edited</span><span class="v files">${runDiffsApplied}</span></div>
-        <div class="rs-stat"><span class="k">checkpoints</span><span class="v checks">${runCheckpoints}</span></div>
-      </div>`;
+      card.innerHTML='<summary class="rs-head">'+
+        '<span class="rs-ok">✓</span>'+
+        '<span class="rs-status">'+status+'</span>'+
+        '<span style="color:var(--brand);font-size:10px">$'+finalCost.toFixed(4)+'</span>'+
+        '<span style="color:var(--agent);font-size:10px">'+(finalTok||tokV).toLocaleString('en-US')+' tok</span>'+
+        '<span class="rs-dur">'+durStr+'</span>'+
+        '<span class="rs-chev" style="margin-left:auto;color:var(--dimmer);font-size:9px;transition:transform .2s">▼</span>'+
+      '</summary>'+
+      '<div class="rs-grid">'+
+        '<div class="rs-stat"><span class="k">cost</span><span class="v cost">$'+finalCost.toFixed(4)+'</span></div>'+
+        '<div class="rs-stat"><span class="k">tokens</span><span class="v tok">'+(finalTok||tokV).toLocaleString('en-US')+'</span></div>'+
+        '<div class="rs-stat"><span class="k">files edited</span><span class="v files">'+runDiffsApplied+'</span></div>'+
+        '<div class="rs-stat"><span class="k">checkpoints</span><span class="v checks">'+runCheckpoints+'</span></div>'+
+      '</div>';
       term.appendChild(card);term.scrollTop=term.scrollHeight;
-      setTimeout(()=>{card.open=false;},2500);
-      chirp(900,.05);setTimeout(()=>chirp(1400,.07),100);
+      setTimeout(function(){card.open=false;},2500);
+      chirp(900,.05);setTimeout(function(){chirp(1400,.07);},100);
       setRunActive(false);
       break;
     }
@@ -2326,7 +2430,6 @@ function handleEvent(ev){
       if(!String(ev.message||'').includes('Ollama API error 404')){
         showError('Runtime error',ev.message,'Check config, provider availability, or retry after fixing the reported cause.','docs/troubleshooting.md')
       }
-      setRunActive(false);
       break;
     default:line(`<span class="dimd">${esc(JSON.stringify(ev))}</span>`);break;
   }
@@ -2394,23 +2497,8 @@ async function bootIntro(){
   typeCmd('status',term);
 }
 
-// ─── Run state (Stop button + mid-run injection hint) ───────────────
-let runActive=false;
-function setRunActive(active){
-  runActive=active;
-  const stop=$('stopBtn'),run=$('runBtn'),ta=$('taskInput');
-  if(stop)stop.style.display=active?'':'none';
-  if(run)run.textContent=active?'inject':'run';
-  if(ta)ta.placeholder=active?'type to inject into the running task · Enter to send':'Type a task and press Enter…';
-}
-async function stopRun(){
-  try{await fetch('/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});}
-  catch(e){}
-  setRunActive(false);
-}
 // ─── Input ─────────────────────────────────────────────────────────
 $('runBtn').addEventListener('click',runTask);
-$('stopBtn').addEventListener('click',stopRun);
 $('taskInput').addEventListener('keydown',composerKeydown);
 $('taskInput').addEventListener('input',composerInput);
 $('taskInput').addEventListener('paste',composerPaste);
@@ -2550,7 +2638,7 @@ function renderAttachments(){
   box.classList.add('show');
   box.innerHTML=attachedFiles.map((f,i)=>`
     <span class="file-chip" title="${escAttr(f.name)}">
-      <span>${esc(f.name)} · ${f.tokens.toLocaleString()} tok</span>
+      <span>${esc(f.name)} · ${f.tokens.toLocaleString('en-US')} tok</span>
       <button type="button" aria-label="remove ${escAttr(f.name)}" data-remove-file="${i}">×</button>
     </span>`).join('');
   box.querySelectorAll('[data-remove-file]').forEach(btn=>btn.addEventListener('click',()=>{
@@ -2645,6 +2733,8 @@ async function runTask(){
   $('taskInput').value='';
   localStorage.removeItem('sparrow-composer-draft');
   autoResizeComposer();
+  // Submit feedback: scale-down the run button for 120ms (STATUS2.md S2-6)
+  const runBtn=$('runBtn');if(runBtn){runBtn.style.transform='scale(0.92)';setTimeout(function(){runBtn.style.transform='';},120);}
   updateContextMeter();
   const attachNote=attachedFiles.length?` <span class="muted">+ ${attachedFiles.length} file${attachedFiles.length>1?'s':''}</span>`:'';
   line(`<span class="prompt">sparrow ›</span> <span class="cmd">${esc(task||'analyse attached files')}</span>${attachNote}`);
@@ -2777,7 +2867,7 @@ async function resolveApproval(id,decision,btn){
 }
 
 // ─── CONFIG panel ────────────────────────────────────────────────────
-function openConfig(){$('overlay').classList.add('show');$('configPanel').classList.add('show');loadConfig();setTimeout(()=>$('provSelect').focus(),60)}
+function openConfig(){$('overlay').classList.add('show');$('configPanel').classList.add('show');(async()=>{await loadConfig();await loadRouting();})();setTimeout(()=>$('provSelect').focus(),60)}
 function closeConfig(){$('overlay').classList.remove('show');$('configPanel').classList.remove('show');$('taskInput').focus()}
 $('cfgBtn').addEventListener('click',openConfig);
 $('closeConfig').addEventListener('click',closeConfig);
@@ -2862,7 +2952,9 @@ function renderProviderList(){
           ${envHint}
           <input type="password" id="key-${escHtml(p.name)}" placeholder="${p.has_credential?'key configured · paste to override':'paste API key'}">
           <button onclick="saveProviderKey('${escHtml(p.name)}')">save key</button>
+          <button class="btn sm" onclick="scanProviderModels('${escHtml(p.name)}',this)" title="Fetch all available models from this provider API">🔍 scan models</button>
         </div>
+        <div class="scan-result" id="scan-${escHtml(p.name)}" style="font-size:10.5px;color:var(--dim);margin-top:4px;display:none"></div>
       </div>
     </details>`;
   }).join('');
@@ -2902,6 +2994,76 @@ async function saveProviderKey(name){
     if(j.ok){inp.value='';await loadConfig();}
     else alert('save failed: '+j.message);
   }catch(e){alert('save failed: '+e.message);}
+}
+
+async function scanProviderModels(name, btn){
+  const result=document.getElementById('scan-'+name);
+  if(!result)return;
+  btn.disabled=true;btn.textContent='scanning…';
+  result.style.display='block';result.textContent='⏳ fetching models…';
+  try{
+    const r=await fetch('/providers/scan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:name})});
+    const j=await r.json();
+    if(j.ok){
+      result.style.color='var(--add)';result.textContent='✓ '+j.message+' — '+j.models.join(', ');
+      // Inject discovered models into provider detail immediately
+      const prov=document.querySelector('.cfg-provider[data-prov="'+name+'"] .models');
+      if(prov&&j.models.length){
+        const existing=new Set();prov.querySelectorAll('.mname').forEach(function(m){existing.add(m.textContent);});
+        var added=0;
+        j.models.forEach(function(m){
+          if(!existing.has(m)){
+            var d=document.createElement('div');d.className='mrow';
+            // Look up metadata from the models registry for context/cost info
+            var reg=_modelsRegistry[name]||{};var info=reg[m]||{};
+            var ctx=info.context_window?fmtCtxShort(info.context_window):'';
+            var cost=info.cost_in!==undefined?(info.cost_in===0?'free':'$'+info.cost_in+'/M'):'';
+            d.innerHTML='<span class="mname" style="color:var(--add)">'+escHtml(m)+'</span>'+
+              (ctx?'<span class="mctx">'+escHtml(ctx)+'</span>':'')+
+              (cost?'<span class="mcost">'+escHtml(cost)+'</span>':'');
+            var btn=document.createElement('button');btn.className='mset';
+            var mid=name+':'+m;
+            btn.textContent='set default';
+            btn.onclick=function(){setModelDefault(mid);};
+            d.appendChild(btn);
+            prov.appendChild(d);added++;
+          }
+        });
+        if(added)result.textContent+=' · '+added+' new model'+(added>1?'s':'')+' added ↑';
+      }
+    }else{
+      result.style.color='var(--rem)';result.textContent='✗ '+j.message;
+    }
+  }catch(e){
+    result.style.color='var(--rem)';result.textContent='✗ '+e.message;
+  }finally{btn.disabled=false;btn.textContent='🔍 scan models';}
+}
+
+async function loadRouting(){
+  try{
+    const r=await fetch('/routing');const j=await r.json();
+    const sel=document.getElementById('preferredProviderSelect');
+    if(sel){
+      const cur=j.preferred_provider||'';
+      sel.innerHTML='<option value="">-- auto (smart routing per tier) --</option>'+
+        (j.all_providers||[]).map(function(id){return '<option value="'+id+'"'+(id===cur?' selected':'')+'>'+id+'</option>';}).join('');
+    }
+    const tog=document.getElementById('autoDiscoverToggle');
+    if(tog)tog.checked=j.auto_discover!==false;
+  }catch(e){console.warn('loadRouting failed',e);}
+}
+
+async function saveRouting(){
+  const sel=document.getElementById('preferredProviderSelect');
+  const tog=document.getElementById('autoDiscoverToggle');
+  const body={preferred_provider:sel?sel.value:'',auto_discover:tog?tog.checked:true};
+  try{
+    const r=await fetch('/routing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const j=await r.json();
+    const st=document.getElementById('routingSaveStatus');
+    if(j.ok&&st){st.style.display='inline';setTimeout(function(){st.style.display='none';},2500);}
+    else if(!j.ok)alert('save routing failed: '+j.message);
+  }catch(e){alert('save routing failed: '+e.message);}
 }
 
 // Tab switching

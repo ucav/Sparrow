@@ -265,6 +265,8 @@ pub struct Engine {
     hooks: HookRegistry,
     agent_store: Option<Arc<dyn AgentStore>>,
     org_policy: Option<crate::onboarding::enterprise::OrgPolicy>,
+    /// Task description hash → TaskTier cache for classify_via_brain dedup
+    classify_cache: std::sync::Mutex<std::collections::HashMap<u64, crate::router::TaskTier>>,
 }
 
 #[derive(Debug, Clone)]
@@ -300,6 +302,7 @@ impl Engine {
             hooks,
             agent_store: None,
             org_policy: None,
+            classify_cache: std::sync::Mutex::new(std::collections::HashMap::new()),
         }
     }
 
@@ -665,6 +668,8 @@ impl Engine {
         let mut chain = self.router.select(&need, &budget);
 
         // Apply WebView model override: keep only the requested brain if found.
+        // If the model isn't in the routing chain, look it up directly (the user
+        // explicitly picked it, so it should be used even if it's not in the tier).
         if let Some(ref override_id) = model_override {
             let filtered: Vec<_> = chain
                 .iter()
@@ -673,6 +678,8 @@ impl Engine {
                 .collect();
             if !filtered.is_empty() {
                 chain = filtered;
+            } else if let Some(brain) = self.router.find_brain_by_id(override_id) {
+                chain = vec![brain];
             }
         }
 
@@ -684,32 +691,64 @@ impl Engine {
             && matches!(tier, TaskTier::Medium)
             && !self.is_routing_question(&task.description)
         {
-            if let Some(brain) = chain.first().cloned() {
-                if let Some(refined) = self
-                    .classify_via_brain(&task.description, brain.as_ref())
-                    .await
-                {
-                    if std::mem::discriminant(&refined) != std::mem::discriminant(&tier) {
-                        let _ = event_tx.send(Event::Message {
-                            run: run_id.clone(),
-                            role: "router".into(),
-                            text: format!(
-                                "classification affinée par modèle: {} → {}",
-                                tier.as_str(),
-                                refined.as_str()
-                            ),
-                        });
-                        tier = refined;
-                        required_tools = self.requires_tools(&task.description, &tier);
-                        required_vision = self.requires_vision(&task.description, &tier);
-                        need = crate::router::RoutingNeed {
-                            tier: tier.clone(),
-                            required_tools,
-                            required_vision,
-                            prefer_local: false,
-                        };
-                        chain = self.router.select(&need, &budget);
+            // Dedup: cache task hash → refined tier so identical tasks skip the LLM call.
+            let desc_hash = {
+                use std::collections::hash_map::DefaultHasher;
+                use std::hash::{Hash, Hasher};
+                let mut h = DefaultHasher::new();
+                task.description.hash(&mut h);
+                h.finish()
+            };
+            let cached = { self.classify_cache.lock().ok().and_then(|c| c.get(&desc_hash).cloned()) };
+            let refined = match cached {
+                Some(t) => {
+                    let _ = event_tx.send(Event::Message {
+                        run: run_id.clone(),
+                        role: "router".into(),
+                        text: format!(
+                            "classification (cached): {}",
+                            t.as_str()
+                        ),
+                    });
+                    Some(t)
+                }
+                None => {
+                    if let Some(brain) = chain.first().cloned() {
+                        let result = self
+                            .classify_via_brain(&task.description, brain.as_ref())
+                            .await;
+                        if let Some(r) = &result {
+                            if let Ok(mut c) = self.classify_cache.lock() {
+                                c.insert(desc_hash, r.clone());
+                            }
+                        }
+                        result
+                    } else {
+                        None
                     }
+                }
+            };
+            if let Some(refined) = refined {
+                if std::mem::discriminant(&refined) != std::mem::discriminant(&tier) {
+                    let _ = event_tx.send(Event::Message {
+                        run: run_id.clone(),
+                        role: "router".into(),
+                        text: format!(
+                            "classification affinée par modèle: {} → {}",
+                            tier.as_str(),
+                            refined.as_str()
+                        ),
+                    });
+                    tier = refined;
+                    required_tools = self.requires_tools(&task.description, &tier);
+                    required_vision = self.requires_vision(&task.description, &tier);
+                    need = crate::router::RoutingNeed {
+                        tier: tier.clone(),
+                        required_tools,
+                        required_vision,
+                        prefer_local: false,
+                    };
+                    chain = self.router.select(&need, &budget);
                 }
             }
         }
@@ -741,11 +780,24 @@ impl Engine {
             ),
         });
 
+        let _ = event_tx.send(Event::AgentStatus {
+            run: run_id.clone(),
+            role: "planner".into(),
+            status: AgentStatus::Working,
+            note: format!("analyzing request · {} candidates", chain.len()),
+        });
+
         let primary_ctx = chain.first().map(|b| b.caps().context_window).unwrap_or(128_000);
         let _ = event_tx.send(Event::RouteSelected {
             run: run_id.clone(),
             chain: chain_ids.clone(),
             context_window: primary_ctx,
+        });
+        let _ = event_tx.send(Event::AgentStatus {
+            run: run_id.clone(),
+            role: "planner".into(),
+            status: AgentStatus::Done,
+            note: format!("route set · {} primary", chain.first().map(|b| b.id()).unwrap_or("—")),
         });
 
         if chain.is_empty() {
@@ -1230,9 +1282,9 @@ impl Engine {
 
             let _ = event_tx.send(Event::AgentStatus {
                 run: run_id.clone(),
-                role: "main".into(),
+                role: "coder".into(),
                 status: AgentStatus::Thinking,
-                note: format!("using {}", brain.id()),
+                note: format!("consulting {} · parsing request…", brain.id()),
             });
 
             match brain.complete(req).await {
@@ -1453,6 +1505,12 @@ impl Engine {
                                         let _ = event_tx.send(Event::ToolUseStarted {
                                             run: run_id.clone(),
                                             id: id.clone(),
+                                        });
+                                        let _ = event_tx.send(Event::AgentStatus {
+                                            run: run_id.clone(),
+                                            role: "coder".into(),
+                                            status: AgentStatus::Working,
+                                            note: format!("running tool · {}", current_tool_name),
                                         });
 
                                         let result = if let Some(tool) = tool {
@@ -1829,6 +1887,12 @@ impl Engine {
                                                     .map(String::from)
                                                     .collect();
                                                 if !parts.is_empty() {
+                                                    let _ = event_tx.send(Event::AgentStatus {
+                                                        run: run_id.clone(),
+                                                        role: "verifier".into(),
+                                                        status: AgentStatus::Working,
+                                                        note: format!("running `{}`", verify_cmd),
+                                                    });
                                                     let cmd = crate::sandbox::Command {
                                                         program: parts[0].clone(),
                                                         args: parts[1..].to_vec(),
@@ -2015,6 +2079,22 @@ impl Engine {
                 }
             }
         }
+
+        // Emit final confirmed token usage — fallback to estimates if provider omitted usage events.
+        let final_input  = if total_input  > 0 { total_input  } else { total_input  + estimated_input_unconfirmed };
+        let final_output = if total_output > 0 { total_output } else { total_output + estimated_output_unconfirmed };
+        let _ = event_tx.send(Event::TokenUsage {
+            run: run_id.clone(),
+            input:  final_input,
+            output: final_output,
+        });
+        // Mark coder lane done — clears the animated caret cleanly.
+        let _ = event_tx.send(Event::AgentStatus {
+            run: run_id.clone(),
+            role: "coder".into(),
+            status: AgentStatus::Done,
+            note: format!("completed · {}↑ {}↓ tok", final_input, final_output),
+        });
 
         let outcome = OutcomeSummary {
             status: if had_error {
