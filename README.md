@@ -60,7 +60,7 @@ The project focuses on a narrow product promise: a Rust-native local cockpit whe
 
 ## Status
 
-Sparrow is **alpha software** with a green cross-platform CI baseline. The kernel, routing core, console surfaces, replay, checkpoints, and memory are wired and tested; external transports and release packaging still need real-world validation.
+Sparrow is **public beta** with a green cross-platform CI baseline. The kernel, routing core, console surfaces, replay, checkpoints, and memory are wired and tested; external transports are being validated by early adopters.
 
 <details>
 <summary><strong>Full status table</strong> (click to expand)</summary>
@@ -91,7 +91,7 @@ Sparrow is **alpha software** with a green cross-platform CI baseline. The kerne
 | Telegram / Discord / Slack | 🔸 Partial | Transport implementations exist; E2E token validation pending |
 | Extra transports | 🧪 Experimental | WhatsApp, Signal, Email, Feishu, WeCom, QQ, Teams adapters present |
 | Cloud sandboxes | 🧪 Experimental | Modal, Daytona, Vercel, Singularity — placeholder entries |
-| Cross-platform release | 📋 Planned | Workflows exist; signed release artifacts not yet published |
+| Cross-platform release | ✅ Stable | Linux · macOS · Windows pre-built binaries on every tag |
 
 </details>
 
