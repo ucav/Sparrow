@@ -244,6 +244,7 @@ async fn main() -> anyhow::Result<()> {
                     scheduler.clone(),
                     recorder.clone(),
                     skill_library.clone(),
+                    Some(agent_store.clone()),
                     9339,
                 )
                 .await?;
@@ -273,6 +274,7 @@ async fn main() -> anyhow::Result<()> {
                 scheduler.clone(),
                 recorder.clone(),
                 skill_library.clone(),
+                Some(agent_store.clone()),
                 port,
             )
             .await?;
@@ -4012,9 +4014,11 @@ async fn handle_webview(
     _scheduler: Arc<MemoryScheduler>,
     recorder: Arc<FsRecorder>,
     skills: Arc<dyn SkillLibrary>,
+    agent_store: Option<Arc<dyn AgentStore>>,
     port: u16,
 ) -> anyhow::Result<()> {
     use sparrow::engine::Engine;
+    use sparrow::engine::Identity;
     use sparrow::router::BasicRouter;
     use std::net::SocketAddr;
     use std::sync::RwLock;
@@ -4065,7 +4069,7 @@ async fn handle_webview(
             tokio::sync::mpsc::UnboundedSender<String>,
         )> = None;
 
-        while let Some(task) = command_rx.recv().await {
+        while let Some(mut task) = command_rx.recv().await {
             // Sentinel: clear conversation history without driving the engine.
             if task == "__reset_conversation__" {
                 let mut guard = conv_for_runs.lock().expect("conv lock poisoned");
@@ -4160,10 +4164,27 @@ async fn handle_webview(
             let repo_head = current_repo_head();
             let providers = build_provider_brains(&current_config, &memory_for_runs, false);
             let router = Arc::new(BasicRouter::new(&current_config, providers));
-            let engine = Engine::new(router, current_config)
+            let mut engine = Engine::new(router, current_config)
                 .with_memory(memory_for_runs.clone())
                 .with_skills(skills_for_runs.clone())
                 .with_approval_handler(approvals_for_runs.clone());
+            // Apply agent identity override: __identity:NAME__ROLE__PERSONALITY__
+            if let Some(rest) = task.strip_prefix("__identity:") {
+                if let Some((id_part, rest2)) = rest.split_once("__") {
+                    if let Some((role_part, personality_part)) = rest2.split_once("__") {
+                        let personality = personality_part.replace("\\n", "\n").replace('\u{00A0}', " ");
+                        engine = engine.with_identity(Identity {
+                            name: id_part.to_string(),
+                            role: role_part.to_string(),
+                            personality,
+                        });
+                        // Strip the identity prefix from the task so the LLM
+                        // sees only the user message.
+                        let clean = rest2[personality_part.len()..].trim_start_matches("__ ").to_string();
+                        task = if clean.is_empty() { task.clone() } else { clean };
+                    }
+                }
+            }
             // Pull the persisted conversation history so a model switch never
             // drops prior turns. The Vec is cloned so the engine owns it for
             // the duration of the run; new turns get captured by the forwarder.
@@ -4316,6 +4337,7 @@ async fn handle_webview(
         Some(approvals),
         Some(skills),
         Some(memory.clone()),
+        agent_store,
     );
     server.serve().await?;
 

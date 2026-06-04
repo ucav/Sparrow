@@ -6,6 +6,7 @@ use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 
+use crate::agent::AgentStore;
 use crate::auth::{AuthStore, Credential};
 use crate::capabilities::SkillLibrary;
 use crate::config::{Config, ConfigStore, FsConfigStore, ProviderConfig};
@@ -61,6 +62,7 @@ pub struct WebViewServer {
     approvals: Option<Arc<WebApprovalBroker>>,
     skills: Option<Arc<dyn SkillLibrary>>,
     memory: Option<Arc<dyn Memory>>,
+    agent_store: Option<Arc<dyn AgentStore>>,
 }
 
 impl WebViewServer {
@@ -72,6 +74,7 @@ impl WebViewServer {
         approvals: Option<Arc<WebApprovalBroker>>,
         skills: Option<Arc<dyn SkillLibrary>>,
         memory: Option<Arc<dyn Memory>>,
+        agent_store: Option<Arc<dyn AgentStore>>,
     ) -> Self {
         Self {
             addr,
@@ -81,6 +84,7 @@ impl WebViewServer {
             approvals,
             skills,
             memory,
+            agent_store,
         }
     }
 
@@ -100,6 +104,7 @@ impl WebViewServer {
             approvals: self.approvals.clone(),
             skills: self.skills.clone(),
             memory: self.memory.clone(),
+            agent_store: self.agent_store.clone(),
         });
 
         let app = Router::new()
@@ -158,6 +163,7 @@ struct AppState {
     approvals: Option<Arc<WebApprovalBroker>>,
     skills: Option<Arc<dyn SkillLibrary>>,
     memory: Option<Arc<dyn Memory>>,
+    agent_store: Option<Arc<dyn AgentStore>>,
 }
 
 #[derive(Default)]
@@ -196,6 +202,8 @@ struct RunRequest {
     task: String,
     #[serde(default)]
     model_override: Option<String>,
+    #[serde(default)]
+    agent_name: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -392,6 +400,27 @@ async fn run_task(
         format!("__model:{model_only}__ {task}")
     } else {
         task
+    };
+    // Prepend agent identity override. When an agent is selected, load its
+    // soul and embed the identity so the engine runs with that persona.
+    let dispatch = if let Some(ref agent_name) = req.agent_name.filter(|s| !s.is_empty()) {
+        if let Some(ref store) = state.agent_store {
+            if let Some(soul) = store.get(agent_name) {
+                let identity = soul.to_identity();
+                format!(
+                    "__identity:{}__{}__{}__ {dispatch}",
+                    identity.name,
+                    identity.role,
+                    identity.personality.replace('\n', "\\n").replace(' ', "\u{00A0}")
+                )
+            } else {
+                dispatch
+            }
+        } else {
+            dispatch
+        }
+    } else {
+        dispatch
     };
     match &state.command_tx {
         Some(tx) if tx.send(dispatch).is_ok() => axum::extract::Json(RunResponse {
