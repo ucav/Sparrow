@@ -255,7 +255,7 @@ fn console_html_matches_v0_3_visual_polish_contract() {
     let html =
         std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");
     for marker in [
-        "v0.3.0",
+        "v0.3.5",
         "get('boot')==='0'",
         ".boot-overlay[hidden]",
         "route-step",
@@ -310,6 +310,70 @@ fn console_html_has_typed_event_renderers() {
         html.contains("renderDiffCard") && html.contains("renderCompactBanner"),
         "diff + compact renderers must be implemented"
     );
+}
+
+#[test]
+fn console_html_styles_streamed_code_cards() {
+    let html =
+        std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");
+    assert!(
+        html.contains("d.className='code-card streaming-code'"),
+        "streaming fenced code must render through the code-card component"
+    );
+    for marker in [
+        ".code-card,.code-block",
+        ".code-card summary",
+        ".code-card summary::-webkit-details-marker",
+        ".code-card .cc-copy",
+        ".code-card pre",
+        ".code-card code",
+        ".syn-key",
+        "function highlightCode",
+        "applyCodeHighlight(card)",
+        "if(!raw.trim())",
+    ] {
+        assert!(
+            html.contains(marker),
+            "console.html must style code card marker `{}`",
+            marker
+        );
+    }
+}
+
+#[test]
+fn console_html_keeps_cost_updates_out_of_the_transcript() {
+    let html =
+        std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");
+    let cost_case = html
+        .split("case 'CostUpdate':")
+        .nth(1)
+        .expect("CostUpdate handler must exist")
+        .split("case 'TokenUsageEstimated':")
+        .next()
+        .expect("CostUpdate handler must be followed by TokenUsageEstimated");
+    assert!(
+        cost_case.contains("setCost(ev.usd)") && !cost_case.contains("verboseLine"),
+        "CostUpdate must update meters only, without adding transcript spam: {}",
+        cost_case
+    );
+}
+
+#[test]
+fn console_html_uses_system_ui_typography() {
+    let html =
+        std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");
+    for marker in [
+        "--ui-font:-apple-system",
+        "--mono-font:\"SF Mono\"",
+        "body{font-family:var(--ui-font)",
+        ".code-card code,.code-block .cb-body code{font-family:var(--mono-font)",
+    ] {
+        assert!(
+            html.contains(marker),
+            "console.html must keep Apple-style typography marker `{}`",
+            marker
+        );
+    }
 }
 
 #[test]

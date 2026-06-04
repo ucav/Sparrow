@@ -642,7 +642,10 @@ impl Engine {
             model_override = None;
             clean_description = task.description.clone();
         }
-        let task = Task { description: clean_description, context: task.context };
+        let task = Task {
+            description: clean_description,
+            context: task.context,
+        };
 
         let mut messages: Vec<Msg> = task.context.clone();
 
@@ -712,7 +715,12 @@ impl Engine {
                 task.description.hash(&mut h);
                 h.finish()
             };
-            let cached = { self.classify_cache.lock().ok().and_then(|c| c.get(&desc_hash).cloned()) };
+            let cached = {
+                self.classify_cache
+                    .lock()
+                    .ok()
+                    .and_then(|c| c.get(&desc_hash).cloned())
+            };
             let refined = match cached {
                 Some(t) => {
                     let _ = event_tx.send(Event::Message {
@@ -817,7 +825,10 @@ impl Engine {
             note: format!("analyzing request · {} candidates", chain.len()),
         });
 
-        let primary_ctx = chain.first().map(|b| b.caps().context_window).unwrap_or(128_000);
+        let primary_ctx = chain
+            .first()
+            .map(|b| b.caps().context_window)
+            .unwrap_or(128_000);
         let _ = event_tx.send(Event::RouteSelected {
             run: run_id.clone(),
             chain: chain_ids.clone(),
@@ -827,7 +838,10 @@ impl Engine {
             run: run_id.clone(),
             role: "planner".into(),
             status: AgentStatus::Done,
-            note: format!("route set · {} primary", chain.first().map(|b| b.id()).unwrap_or("—")),
+            note: format!(
+                "route set · {} primary",
+                chain.first().map(|b| b.id()).unwrap_or("—")
+            ),
         });
 
         if chain.is_empty() {
@@ -2012,11 +2026,15 @@ impl Engine {
                                         // structured self-review of the change set
                                         // so the operator/UI can see the agent's
                                         // own checklist before auto-verify runs.
-                                        if had_mutation && self.reasoning.self_critique && !diffs.is_empty() {
-                                            let review = crate::reasoning::SelfCritique::pre_mutation_review(
-                                                &diffs,
-                                                Some(&task.description),
-                                            );
+                                        if had_mutation
+                                            && self.reasoning.self_critique
+                                            && !diffs.is_empty()
+                                        {
+                                            let review =
+                                                crate::reasoning::SelfCritique::pre_mutation_review(
+                                                    &diffs,
+                                                    Some(&task.description),
+                                                );
                                             let _ = event_tx.send(Event::Message {
                                                 run: run_id.clone(),
                                                 role: "self-critique".into(),
@@ -2256,11 +2274,19 @@ impl Engine {
         }
 
         // Emit final confirmed token usage — fallback to estimates if provider omitted usage events.
-        let final_input  = if total_input  > 0 { total_input  } else { total_input  + estimated_input_unconfirmed };
-        let final_output = if total_output > 0 { total_output } else { total_output + estimated_output_unconfirmed };
+        let final_input = if total_input > 0 {
+            total_input
+        } else {
+            total_input + estimated_input_unconfirmed
+        };
+        let final_output = if total_output > 0 {
+            total_output
+        } else {
+            total_output + estimated_output_unconfirmed
+        };
         let _ = event_tx.send(Event::TokenUsage {
             run: run_id.clone(),
-            input:  final_input,
+            input: final_input,
             output: final_output,
         });
         // Mark coder lane done — clears the animated caret cleanly.

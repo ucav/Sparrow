@@ -2,10 +2,34 @@
 
 All notable changes to Sparrow will be documented in this file.
 
+## [0.3.5] — 2026-06-04
+
+Public polish pass for the WebView cockpit and repository surface.
+
+### Added
+- Local syntax highlighting for streamed code cards, covering common languages
+  without a CDN dependency.
+- Regression tests that lock code-card styling, metric-spam behavior, and
+  WebView typography.
+
+### Fixed
+- `CostUpdate` events no longer print one transcript line per streamed metric
+  tick; they update the live meters only.
+- Empty prose fragments between adjacent fenced code blocks are removed, so
+  collapsed cards no longer create large blank gaps.
+- Code cards are denser, easier to scan, and preserve copy/line-count behavior.
+
+### Polished
+- WebView typography now uses a system UI stack with a modern monospace stack
+  for code.
+- Root-level scratch logs, local handoffs, and presentation-only artifacts were
+  removed from the public tree.
+- README status and release metadata now reflect the v0.3.5 build.
+
 ## [0.3.3] — 2026-06-03
 
 Public-release hardening pass. Fixes every issue from hands-on testing and
-ships a 60-second animated keynote.
+stabilizes the WebView cockpit for local use.
 
 ### Fixed (critical)
 - **Context truly persists now.** The engine emits the assistant response as
@@ -28,8 +52,6 @@ ships a 60-second animated keynote.
 - **Collapsible code cards**: assistant code output is split out of the stream
   into `<details>` blocks with language label, line count, and copy button.
 - **Auto-collapsing run summary** that re-expands on click.
-- **60-second animated keynote** at `sparrow-keynote-60s.html` — startup-style
-  scenes, live terminal demo, feature montage, brand end-frame.
 
 ### Polished UI
 - Fixed vertical char-by-char text wrapping (`overflow-wrap` instead of the

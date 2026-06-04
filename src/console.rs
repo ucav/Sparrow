@@ -1,7 +1,7 @@
+use secrecy::ExposeSecret;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
-use secrecy::ExposeSecret;
 use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 
 use crate::auth::{AuthStore, Credential};
@@ -670,7 +670,13 @@ async fn read_file(
     // Sandbox: only allow paths inside cwd.
     let cwd = match std::env::current_dir() {
         Ok(d) => d,
-        Err(_) => return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "cwd unavailable").into_response(),
+        Err(_) => {
+            return (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "cwd unavailable",
+            )
+                .into_response();
+        }
     };
     // Canonicalize cwd too so UNC prefixes match on Windows.
     let cwd_canon = cwd.canonicalize().unwrap_or(cwd.clone());
@@ -686,16 +692,22 @@ async fn read_file(
         Ok(content) => {
             let ext = canonical.extension().and_then(|e| e.to_str()).unwrap_or("");
             let lang = match ext {
-                "rs" => "rust", "js"|"ts"|"jsx"|"tsx" => "javascript",
-                "py" => "python", "toml" => "toml", "md" => "markdown",
-                "html" => "html", "css" => "css", "json" => "json",
+                "rs" => "rust",
+                "js" | "ts" | "jsx" | "tsx" => "javascript",
+                "py" => "python",
+                "toml" => "toml",
+                "md" => "markdown",
+                "html" => "html",
+                "css" => "css",
+                "json" => "json",
                 _ => "text",
             };
             axum::extract::Json(serde_json::json!({
                 "ok": true, "path": q.path, "lang": lang,
                 "lines": content.lines().count(),
                 "content": content,
-            })).into_response()
+            }))
+            .into_response()
         }
         Err(_) => (axum::http::StatusCode::NOT_FOUND, "cannot read file").into_response(),
     }
@@ -864,7 +876,9 @@ async fn get_config(
             session_usd: cfg.budget.session_usd,
             daily_usd: cfg.budget.daily_usd,
         }),
-        workdir: std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string()),
+        workdir: std::env::current_dir()
+            .ok()
+            .map(|p| p.to_string_lossy().to_string()),
         skills_count: None,
     })
 }
@@ -1129,7 +1143,7 @@ async fn list_artifacts() -> axum::extract::Json<serde_json::Value> {
 
 /// `GET /agents` — return every installed agent so the WebView swarm row and
 /// the composer's `@<name>` picker can render the real list (Sprint 1, item
-/// 1bis of STATUS2.md). Status is "idle" by default; the runtime updates a
+/// dynamic WebView swarm row. Status is "idle" by default; the runtime updates a
 /// shared `Arc<Mutex<AgentRuntimeState>>` later — for v0.3.0 we ship the
 /// listing as a cold view backed by `FsAgentStore::list()`.
 async fn list_agents() -> axum::extract::Json<serde_json::Value> {
@@ -1143,7 +1157,9 @@ async fn list_agents() -> axum::extract::Json<serde_json::Value> {
     // Collect souls from user config dir + local repo `agents/` dir + `.sparrow/agents/`.
     let extra_dirs: Vec<std::path::PathBuf> = [
         std::env::current_dir().ok().map(|d| d.join("agents")),
-        std::env::current_dir().ok().map(|d| d.join(".sparrow").join("agents")),
+        std::env::current_dir()
+            .ok()
+            .map(|d| d.join(".sparrow").join("agents")),
     ]
     .into_iter()
     .flatten()
@@ -1152,7 +1168,8 @@ async fn list_agents() -> axum::extract::Json<serde_json::Value> {
 
     let store = FsAgentStore::new(agents_dir.clone());
     let mut souls = store.list();
-    let mut seen: std::collections::HashSet<String> = souls.iter().map(|s| s.name.clone()).collect();
+    let mut seen: std::collections::HashSet<String> =
+        souls.iter().map(|s| s.name.clone()).collect();
     for dir in &extra_dirs {
         let extra = FsAgentStore::new(dir.clone()).list();
         for s in extra {
@@ -1404,18 +1421,18 @@ async fn scan_provider_models(
 
     // Resolve API key: auth store -> env var
     let api_key = {
-        let key_from_store = state
-            .config
-            .as_ref()
-            .and_then(|cfg| {
-                let c = cfg.read().ok()?;
-                let auth = crate::auth::store::ChainedAuthStore::new(c.config_dir.clone());
-                match auth.get(&provider_id) {
-                    Some(crate::auth::Credential::ApiKey(k)) => Some(k.expose_secret().to_string()),
-                    _ => None,
-                }
-            });
-        let key_from_env = def.api_key_env.as_deref().and_then(|env| std::env::var(env).ok());
+        let key_from_store = state.config.as_ref().and_then(|cfg| {
+            let c = cfg.read().ok()?;
+            let auth = crate::auth::store::ChainedAuthStore::new(c.config_dir.clone());
+            match auth.get(&provider_id) {
+                Some(crate::auth::Credential::ApiKey(k)) => Some(k.expose_secret().to_string()),
+                _ => None,
+            }
+        });
+        let key_from_env = def
+            .api_key_env
+            .as_deref()
+            .and_then(|env| std::env::var(env).ok());
         key_from_store.or(key_from_env).unwrap_or_default()
     };
 

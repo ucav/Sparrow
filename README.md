@@ -22,79 +22,19 @@
 
 Sparrow is a single-binary CLI agent written in Rust. It routes each task to the **cheapest capable model**, keeps you in control with **Git-backed checkpoints**, and makes every run **replayable**. Local models (Ollama) are always the first hop; cloud providers are explicit fallbacks.
 
-> Inspired by Claude Code, Codex, OpenCode, OpenClaw and Hermes Agent — but intentionally narrower: a Rust-native local cockpit where every run is **visible, replayable, budgeted, and checkpointed**.
+The project focuses on a narrow product promise: a Rust-native local cockpit where every run is **visible, replayable, budgeted, and checkpointed**.
 
 ---
 
-<div align="center">
-<sub>⚡ Powered by &amp; created with</sub>
+## ✨ What's New — v0.3.5
 
-<br/><br/>
+> **Public polish pass** — WebView code output, repo hygiene, and release metadata are tightened for day-to-day use.
 
-<table>
-  <tr>
-    <td align="center" width="20%">
-      <a href="https://www.nvidia.com/en-us/ai/">
-        <picture>
-          <source media="(prefers-color-scheme: dark)" srcset="https://cdn.simpleicons.org/nvidia/76B900">
-          <img src="https://cdn.simpleicons.org/nvidia/555555" height="40" alt="NVIDIA">
-        </picture>
-        <br/><sub><b>NVIDIA NIM</b></sub>
-      </a>
-    </td>
-    <td align="center" width="20%">
-      <a href="https://openai.com/">
-        <picture>
-          <source media="(prefers-color-scheme: dark)" srcset="https://cdn.simpleicons.org/openai/ffffff">
-          <img src="https://cdn.simpleicons.org/openai/000000" height="40" alt="OpenAI">
-        </picture>
-        <br/><sub><b>OpenAI</b></sub>
-      </a>
-    </td>
-    <td align="center" width="20%">
-      <a href="https://openai.com/codex">
-        <picture>
-          <source media="(prefers-color-scheme: dark)" srcset="https://cdn.simpleicons.org/openai/a78bfa">
-          <img src="https://cdn.simpleicons.org/openai/412991" height="40" alt="Codex">
-        </picture>
-        <br/><sub><b>Codex</b></sub>
-      </a>
-    </td>
-    <td align="center" width="20%">
-      <a href="https://anthropic.com/">
-        <picture>
-          <source media="(prefers-color-scheme: dark)" srcset="https://cdn.simpleicons.org/anthropic/d4a574">
-          <img src="https://cdn.simpleicons.org/anthropic/191919" height="40" alt="Anthropic Claude">
-        </picture>
-        <br/><sub><b>Claude</b></sub>
-      </a>
-    </td>
-    <td align="center" width="20%">
-      <a href="https://github.com/features/copilot">
-        <picture>
-          <source media="(prefers-color-scheme: dark)" srcset="https://cdn.simpleicons.org/githubcopilot/ffffff">
-          <img src="https://cdn.simpleicons.org/githubcopilot/000000" height="40" alt="GitHub Copilot">
-        </picture>
-        <br/><sub><b>GitHub Copilot</b></sub>
-      </a>
-    </td>
-  </tr>
-</table>
-
-</div>
-
----
-
-## ✨ What's New — v0.3.0
-
-> **WebView Cockpit** — the console is now a real local control surface, not a mockup.
-
-- **3-column layout**: icon rail · sliding drawer · live event stream
-- **Typed event cards**: tool calls, diffs, checkpoints, compaction, route changes, streaming text
-- **Full composer**: `Cmd/Ctrl+K` slash palette, `@<agent>` picker, history, multiline, drag-and-drop upload
-- **Approval modal** wired to `POST /approval`
-- **Captain & Paper themes** — both tested, persisted, auto-selected from `prefers-color-scheme`
-- **Reduced-motion** fallback disables animations and the boot overlay
+- **Syntax-highlighted code cards**: fenced code is rendered in compact collapsible cards with language labels, line counts, copy actions, and local editor-style highlighting.
+- **No metric spam**: high-frequency token/cost events update live meters without flooding the transcript.
+- **Cleaner typography**: WebView uses system UI fonts with `SF Mono`-style code rendering.
+- **Repo hygiene**: local handoffs, scratch files, and presentation-only artifacts are kept out of the public tree.
+- **Release metadata**: version, changelog, and README status align on v0.3.5.
 
 ---
 
@@ -121,10 +61,10 @@ Sparrow is **alpha software** with a green cross-platform CI baseline. The kerne
 | Area | Status | Evidence |
 |---|:---:|---|
 | CI / Rust build | ✅ Stable | Ubuntu · macOS · Windows; `fmt`, `clippy -D warnings`, `check`, release builds |
-| Test suite | ✅ Stable | 109 tests pass (`cargo test`), including 95 integration tests |
+| Test suite | ✅ Stable | 209 tests pass (`cargo test --target-dir target\codex-v035`) |
 | Security audit | ✅ Stable | `rustsec/audit-check` on all three platforms |
 | Engine loop | ✅ Stable | Event stream, task classification, fallback execution, auto-checkpoint, auto-compaction |
-| WebView console | ✅ Stable | Full cockpit — rail/drawer, typed event stream, themes, composer, approval modal |
+| WebView console | ✅ Stable | Full cockpit — rail/drawer, typed event stream, compact highlighted code cards, themes, composer, approval modal |
 | TUI cockpit | ✅ Stable | Animated cockpit, swarm lanes, checkpoint/diff/cost panels, `@` picker, history |
 | Plan mode / slash | ✅ Stable | `sparrow plan`, `/plan`, built-in commands, user/project Markdown discovery |
 | Permissions / hooks | ✅ Stable | 6 permission modes; `Pre`/`Post` lifecycle hooks for run/tool/checkpoint/compact |

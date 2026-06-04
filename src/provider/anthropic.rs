@@ -216,102 +216,115 @@ impl Brain for AnthropicAdapter {
                     lines: super::sse_buffer::LineBuffer::new(),
                 },
                 move |state, chunk| {
-                let _model = model.clone();
-                let events = match chunk {
-                    Ok(bytes) => {
-                        let lines = state.lines.push(&bytes);
-                        let tool_ids = &mut state.tools;
-                        let mut events = Vec::new();
-                        for line in lines {
-                            let line = line.trim();
-                            if line.is_empty() || !line.starts_with("data: ") {
-                                continue;
-                            }
-                            let data = &line[6..]; // Strip "data: "
-                            let event: serde_json::Value = match serde_json::from_str(data) {
-                                Ok(v) => v,
-                                Err(_) => continue,
-                            };
-
-                            let event_type = event["type"].as_str().unwrap_or("");
-                            match event_type {
-                                "content_block_start" => {
-                                    let index = event["index"].as_u64().unwrap_or(0);
-                                    let content_type =
-                                        event["content_block"]["type"].as_str().unwrap_or("");
-                                    if content_type == "tool_use" {
-                                        let id = event["content_block"]["id"]
-                                            .as_str()
-                                            .unwrap_or("")
-                                            .to_string();
-                                        let name = event["content_block"]["name"]
-                                            .as_str()
-                                            .unwrap_or("")
-                                            .to_string();
-                                        if !id.is_empty() {
-                                            tool_ids.insert(index, id.clone());
-                                        }
-                                        events.push(BrainEvent::ToolUseStart { id, name });
-                                    }
+                    let _model = model.clone();
+                    let events = match chunk {
+                        Ok(bytes) => {
+                            let lines = state.lines.push(&bytes);
+                            let tool_ids = &mut state.tools;
+                            let mut events = Vec::new();
+                            for line in lines {
+                                let line = line.trim();
+                                if line.is_empty() || !line.starts_with("data: ") {
+                                    continue;
                                 }
-                                "content_block_delta" => {
-                                    let delta_type = event["delta"]["type"].as_str().unwrap_or("");
-                                    if delta_type == "text_delta" {
-                                        let text = event["delta"]["text"]
-                                            .as_str()
-                                            .unwrap_or("")
-                                            .to_string();
-                                        events.push(BrainEvent::TextDelta(text));
-                                    } else if delta_type == "input_json_delta" {
-                                        let partial = event["delta"]["partial_json"]
-                                            .as_str()
-                                            .unwrap_or("")
-                                            .to_string();
+                                let data = &line[6..]; // Strip "data: "
+                                let event: serde_json::Value = match serde_json::from_str(data) {
+                                    Ok(v) => v,
+                                    Err(_) => continue,
+                                };
+
+                                let event_type = event["type"].as_str().unwrap_or("");
+                                match event_type {
+                                    "content_block_start" => {
+                                        let index = event["index"].as_u64().unwrap_or(0);
+                                        let content_type =
+                                            event["content_block"]["type"].as_str().unwrap_or("");
+                                        if content_type == "tool_use" {
+                                            let id = event["content_block"]["id"]
+                                                .as_str()
+                                                .unwrap_or("")
+                                                .to_string();
+                                            let name = event["content_block"]["name"]
+                                                .as_str()
+                                                .unwrap_or("")
+                                                .to_string();
+                                            if !id.is_empty() {
+                                                tool_ids.insert(index, id.clone());
+                                            }
+                                            events.push(BrainEvent::ToolUseStart { id, name });
+                                        }
+                                    }
+                                    "content_block_delta" => {
+                                        let delta_type =
+                                            event["delta"]["type"].as_str().unwrap_or("");
+                                        if delta_type == "text_delta" {
+                                            let text = event["delta"]["text"]
+                                                .as_str()
+                                                .unwrap_or("")
+                                                .to_string();
+                                            events.push(BrainEvent::TextDelta(text));
+                                        } else if delta_type == "input_json_delta" {
+                                            let partial = event["delta"]["partial_json"]
+                                                .as_str()
+                                                .unwrap_or("")
+                                                .to_string();
+                                            let index = event["index"].as_u64().unwrap_or(0);
+                                            let id = tool_ids
+                                                .get(&index)
+                                                .cloned()
+                                                .unwrap_or_else(|| index.to_string());
+                                            events.push(BrainEvent::ToolUseDelta {
+                                                id,
+                                                json: partial,
+                                            });
+                                        }
+                                    }
+                                    "content_block_stop" => {
                                         let index = event["index"].as_u64().unwrap_or(0);
                                         let id = tool_ids
-                                            .get(&index)
-                                            .cloned()
+                                            .remove(&index)
                                             .unwrap_or_else(|| index.to_string());
-                                        events.push(BrainEvent::ToolUseDelta { id, json: partial });
+                                        events.push(BrainEvent::ToolUseEnd { id });
                                     }
-                                }
-                                "content_block_stop" => {
-                                    let index = event["index"].as_u64().unwrap_or(0);
-                                    let id = tool_ids
-                                        .remove(&index)
-                                        .unwrap_or_else(|| index.to_string());
-                                    events.push(BrainEvent::ToolUseEnd { id });
-                                }
-                                "message_delta" => {
-                                    if let Some(usage) = event["usage"].as_object() {
-                                        events.push(BrainEvent::Usage(crate::event::TokenUsage {
-                                            input: usage["input_tokens"].as_u64().unwrap_or(0),
-                                            output: usage["output_tokens"].as_u64().unwrap_or(0),
-                                        }));
+                                    "message_delta" => {
+                                        if let Some(usage) = event["usage"].as_object() {
+                                            events.push(BrainEvent::Usage(
+                                                crate::event::TokenUsage {
+                                                    input: usage["input_tokens"]
+                                                        .as_u64()
+                                                        .unwrap_or(0),
+                                                    output: usage["output_tokens"]
+                                                        .as_u64()
+                                                        .unwrap_or(0),
+                                                },
+                                            ));
+                                        }
+                                        let stop_reason = event["delta"]["stop_reason"]
+                                            .as_str()
+                                            .unwrap_or("end_turn");
+                                        let reason = match stop_reason {
+                                            "end_turn" => crate::event::StopReason::EndTurn,
+                                            "max_tokens" => crate::event::StopReason::MaxTokens,
+                                            "tool_use" => crate::event::StopReason::ToolUse,
+                                            s => crate::event::StopReason::StopSequence(
+                                                s.to_string(),
+                                            ),
+                                        };
+                                        events.push(BrainEvent::Done(reason));
                                     }
-                                    let stop_reason = event["delta"]["stop_reason"]
-                                        .as_str()
-                                        .unwrap_or("end_turn");
-                                    let reason = match stop_reason {
-                                        "end_turn" => crate::event::StopReason::EndTurn,
-                                        "max_tokens" => crate::event::StopReason::MaxTokens,
-                                        "tool_use" => crate::event::StopReason::ToolUse,
-                                        s => crate::event::StopReason::StopSequence(s.to_string()),
-                                    };
-                                    events.push(BrainEvent::Done(reason));
+                                    "message_stop" => {}
+                                    _ => {}
                                 }
-                                "message_stop" => {}
-                                _ => {}
                             }
+                            events
                         }
-                        events
-                    }
-                    Err(e) => {
-                        vec![BrainEvent::Error(format!("stream error: {}", e))]
-                    }
-                };
-                futures::future::ready(Some(stream::iter(events)))
-            })
+                        Err(e) => {
+                            vec![BrainEvent::Error(format!("stream error: {}", e))]
+                        }
+                    };
+                    futures::future::ready(Some(stream::iter(events)))
+                },
+            )
             .flatten();
 
         Ok(Box::pin(event_stream))

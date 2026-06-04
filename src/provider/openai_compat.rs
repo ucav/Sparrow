@@ -244,192 +244,206 @@ impl Brain for OpenAICompatAdapter {
                     lines: super::sse_buffer::LineBuffer::new(),
                 },
                 |state, chunk| {
-                let events: Vec<BrainEvent> = match chunk {
-                    Ok(bytes) => {
-                        let lines = state.lines.push(&bytes);
-                        let tool_state = &mut state.tools;
-                        let mut parsed = Vec::new();
-                        for line in lines {
-                            let line = line.trim();
-                            if line.is_empty() || !line.starts_with("data: ") {
-                                continue;
-                            }
-                            let data = &line[6..];
-                            if data == "[DONE]" {
-                                continue;
-                            }
-                            let event: serde_json::Value = match serde_json::from_str(data) {
-                                Ok(v) => v,
-                                Err(e) => {
-                                    tracing::debug!(
-                                        "JSON parse error: {} — data: {}",
-                                        e,
-                                        &data[..data.len().min(200)]
-                                    );
+                    let events: Vec<BrainEvent> = match chunk {
+                        Ok(bytes) => {
+                            let lines = state.lines.push(&bytes);
+                            let tool_state = &mut state.tools;
+                            let mut parsed = Vec::new();
+                            for line in lines {
+                                let line = line.trim();
+                                if line.is_empty() || !line.starts_with("data: ") {
                                     continue;
                                 }
-                            };
+                                let data = &line[6..];
+                                if data == "[DONE]" {
+                                    continue;
+                                }
+                                let event: serde_json::Value = match serde_json::from_str(data) {
+                                    Ok(v) => v,
+                                    Err(e) => {
+                                        tracing::debug!(
+                                            "JSON parse error: {} — data: {}",
+                                            e,
+                                            &data[..data.len().min(200)]
+                                        );
+                                        continue;
+                                    }
+                                };
 
-                            if let Some(choices) = event["choices"].as_array() {
-                                for choice in choices {
-                                    if let Some(delta) = choice["delta"].as_object() {
-                                        if let Some(text) =
-                                            delta.get("content").and_then(|v| v.as_str())
-                                        {
-                                            if !text.is_empty() {
-                                                parsed
-                                                    .push(BrainEvent::TextDelta(text.to_string()));
-                                            }
-                                        }
-                                        // DeepSeek / Moonshot thinking-mode emit
-                                        // reasoning trace alongside content. Capture
-                                        // it as a dedicated event so the engine can
-                                        // echo it back on the next turn (required
-                                        // by DeepSeek's contract).
-                                        // Several providers report this under
-                                        // different keys; check the known aliases.
-                                        for key in [
-                                            "reasoning_content",
-                                            "reasoning",
-                                            "thinking",
-                                            "thought",
-                                        ] {
-                                            if let Some(rtext) =
-                                                delta.get(key).and_then(|v| v.as_str())
+                                if let Some(choices) = event["choices"].as_array() {
+                                    for choice in choices {
+                                        if let Some(delta) = choice["delta"].as_object() {
+                                            if let Some(text) =
+                                                delta.get("content").and_then(|v| v.as_str())
                                             {
-                                                if !rtext.is_empty() {
-                                                    parsed.push(BrainEvent::ReasoningDelta(
-                                                        rtext.to_string(),
+                                                if !text.is_empty() {
+                                                    parsed.push(BrainEvent::TextDelta(
+                                                        text.to_string(),
                                                     ));
                                                 }
                                             }
-                                        }
-                                    }
-                                    // Some providers (non-streaming chunk at end of
-                                    // turn) bundle the reasoning under
-                                    // `message.reasoning_content` rather than
-                                    // streaming it through `delta`. Cover that path
-                                    // too — duplicate captures are harmless because
-                                    // the engine joins them.
-                                    if let Some(msg_obj) = choice.get("message").and_then(|v| v.as_object()) {
-                                        for key in [
-                                            "reasoning_content",
-                                            "reasoning",
-                                            "thinking",
-                                        ] {
-                                            if let Some(rtext) =
-                                                msg_obj.get(key).and_then(|v| v.as_str())
-                                            {
-                                                if !rtext.is_empty() {
-                                                    parsed.push(BrainEvent::ReasoningDelta(
-                                                        rtext.to_string(),
-                                                    ));
-                                                }
-                                            }
-                                        }
-                                    }
-                                    if let Some(delta) = choice["delta"].as_object() {
-                                        // (Re-open the original tool_calls block.)
-                                        let _ = delta; // keep this branch syntactically anchored
-                                        if let Some(tool_calls) =
-                                            delta.get("tool_calls").and_then(|v| v.as_array())
-                                        {
-                                            for tc in tool_calls {
-                                                let idx = tc
-                                                    .get("index")
-                                                    .and_then(|v| v.as_u64())
-                                                    .unwrap_or(0);
-                                                let id = tc
-                                                    .get("id")
-                                                    .and_then(|v| v.as_str())
-                                                    .map(|s| s.to_string());
-                                                let state = tool_state.entry(idx).or_default();
-                                                if let Some(id) = id {
-                                                    state.id = id;
-                                                }
-                                                if let Some(func) =
-                                                    tc.get("function").and_then(|v| v.as_object())
+                                            // DeepSeek / Moonshot thinking-mode emit
+                                            // reasoning trace alongside content. Capture
+                                            // it as a dedicated event so the engine can
+                                            // echo it back on the next turn (required
+                                            // by DeepSeek's contract).
+                                            // Several providers report this under
+                                            // different keys; check the known aliases.
+                                            for key in [
+                                                "reasoning_content",
+                                                "reasoning",
+                                                "thinking",
+                                                "thought",
+                                            ] {
+                                                if let Some(rtext) =
+                                                    delta.get(key).and_then(|v| v.as_str())
                                                 {
-                                                    if let Some(name) =
-                                                        func.get("name").and_then(|v| v.as_str())
-                                                    {
-                                                        if !state.started {
-                                                            if state.id.is_empty() {
-                                                                state.id =
-                                                                    format!("tool-call-{}", idx);
-                                                            }
-                                                            state.started = true;
-                                                            parsed.push(BrainEvent::ToolUseStart {
-                                                                id: state.id.clone(),
-                                                                name: name.to_string(),
-                                                            });
-                                                        }
+                                                    if !rtext.is_empty() {
+                                                        parsed.push(BrainEvent::ReasoningDelta(
+                                                            rtext.to_string(),
+                                                        ));
                                                     }
-                                                    if let Some(args) = func
-                                                        .get("arguments")
+                                                }
+                                            }
+                                        }
+                                        // Some providers (non-streaming chunk at end of
+                                        // turn) bundle the reasoning under
+                                        // `message.reasoning_content` rather than
+                                        // streaming it through `delta`. Cover that path
+                                        // too — duplicate captures are harmless because
+                                        // the engine joins them.
+                                        if let Some(msg_obj) =
+                                            choice.get("message").and_then(|v| v.as_object())
+                                        {
+                                            for key in
+                                                ["reasoning_content", "reasoning", "thinking"]
+                                            {
+                                                if let Some(rtext) =
+                                                    msg_obj.get(key).and_then(|v| v.as_str())
+                                                {
+                                                    if !rtext.is_empty() {
+                                                        parsed.push(BrainEvent::ReasoningDelta(
+                                                            rtext.to_string(),
+                                                        ));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        if let Some(delta) = choice["delta"].as_object() {
+                                            // (Re-open the original tool_calls block.)
+                                            let _ = delta; // keep this branch syntactically anchored
+                                            if let Some(tool_calls) =
+                                                delta.get("tool_calls").and_then(|v| v.as_array())
+                                            {
+                                                for tc in tool_calls {
+                                                    let idx = tc
+                                                        .get("index")
+                                                        .and_then(|v| v.as_u64())
+                                                        .unwrap_or(0);
+                                                    let id = tc
+                                                        .get("id")
                                                         .and_then(|v| v.as_str())
+                                                        .map(|s| s.to_string());
+                                                    let state = tool_state.entry(idx).or_default();
+                                                    if let Some(id) = id {
+                                                        state.id = id;
+                                                    }
+                                                    if let Some(func) = tc
+                                                        .get("function")
+                                                        .and_then(|v| v.as_object())
                                                     {
-                                                        if !state.id.is_empty() && !args.is_empty()
+                                                        if let Some(name) = func
+                                                            .get("name")
+                                                            .and_then(|v| v.as_str())
                                                         {
-                                                            parsed.push(BrainEvent::ToolUseDelta {
-                                                                id: state.id.clone(),
-                                                                json: args.to_string(),
-                                                            });
+                                                            if !state.started {
+                                                                if state.id.is_empty() {
+                                                                    state.id = format!(
+                                                                        "tool-call-{}",
+                                                                        idx
+                                                                    );
+                                                                }
+                                                                state.started = true;
+                                                                parsed.push(
+                                                                    BrainEvent::ToolUseStart {
+                                                                        id: state.id.clone(),
+                                                                        name: name.to_string(),
+                                                                    },
+                                                                );
+                                                            }
+                                                        }
+                                                        if let Some(args) = func
+                                                            .get("arguments")
+                                                            .and_then(|v| v.as_str())
+                                                        {
+                                                            if !state.id.is_empty()
+                                                                && !args.is_empty()
+                                                            {
+                                                                parsed.push(
+                                                                    BrainEvent::ToolUseDelta {
+                                                                        id: state.id.clone(),
+                                                                        json: args.to_string(),
+                                                                    },
+                                                                );
+                                                            }
                                                         }
                                                     }
                                                 }
                                             }
                                         }
-                                    }
 
-                                    if let Some(reason) =
-                                        choice.get("finish_reason").and_then(|v| v.as_str())
-                                    {
-                                        if !reason.is_empty() && reason != "null" {
-                                            let stop = match reason {
-                                                "stop" => crate::event::StopReason::EndTurn,
-                                                "length" => crate::event::StopReason::MaxTokens,
-                                                "tool_calls" => {
-                                                    for (_, state) in tool_state.drain() {
-                                                        if !state.id.is_empty() {
-                                                            parsed.push(BrainEvent::ToolUseEnd {
-                                                                id: state.id,
-                                                            });
+                                        if let Some(reason) =
+                                            choice.get("finish_reason").and_then(|v| v.as_str())
+                                        {
+                                            if !reason.is_empty() && reason != "null" {
+                                                let stop = match reason {
+                                                    "stop" => crate::event::StopReason::EndTurn,
+                                                    "length" => crate::event::StopReason::MaxTokens,
+                                                    "tool_calls" => {
+                                                        for (_, state) in tool_state.drain() {
+                                                            if !state.id.is_empty() {
+                                                                parsed.push(
+                                                                    BrainEvent::ToolUseEnd {
+                                                                        id: state.id,
+                                                                    },
+                                                                );
+                                                            }
                                                         }
+                                                        crate::event::StopReason::ToolUse
                                                     }
-                                                    crate::event::StopReason::ToolUse
-                                                }
-                                                s => crate::event::StopReason::StopSequence(
-                                                    s.to_string(),
-                                                ),
-                                            };
-                                            parsed.push(BrainEvent::Done(stop));
+                                                    s => crate::event::StopReason::StopSequence(
+                                                        s.to_string(),
+                                                    ),
+                                                };
+                                                parsed.push(BrainEvent::Done(stop));
+                                            }
                                         }
                                     }
                                 }
-                            }
 
-                            if let Some(usage) = event.get("usage").and_then(|u| u.as_object()) {
-                                // Use .get() — indexing a serde_json::Map with [] panics on a
-                                // missing key, and some providers (e.g. MiniMax) omit fields.
-                                parsed.push(BrainEvent::Usage(crate::event::TokenUsage {
-                                    input: usage
-                                        .get("prompt_tokens")
-                                        .and_then(|v| v.as_u64())
-                                        .unwrap_or(0),
-                                    output: usage
-                                        .get("completion_tokens")
-                                        .and_then(|v| v.as_u64())
-                                        .unwrap_or(0),
-                                }));
+                                if let Some(usage) = event.get("usage").and_then(|u| u.as_object())
+                                {
+                                    // Use .get() — indexing a serde_json::Map with [] panics on a
+                                    // missing key, and some providers (e.g. MiniMax) omit fields.
+                                    parsed.push(BrainEvent::Usage(crate::event::TokenUsage {
+                                        input: usage
+                                            .get("prompt_tokens")
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(0),
+                                        output: usage
+                                            .get("completion_tokens")
+                                            .and_then(|v| v.as_u64())
+                                            .unwrap_or(0),
+                                    }));
+                                }
                             }
+                            parsed
                         }
-                        parsed
-                    }
-                    Err(e) => vec![BrainEvent::Error(format!("stream error: {}", e))],
-                };
-                futures::future::ready(Some(stream::iter(events)))
-            })
+                        Err(e) => vec![BrainEvent::Error(format!("stream error: {}", e))],
+                    };
+                    futures::future::ready(Some(stream::iter(events)))
+                },
+            )
             .flatten();
 
         Ok(Box::pin(event_stream))

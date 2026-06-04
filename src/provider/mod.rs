@@ -141,9 +141,17 @@ pub enum BrainEvent {
     /// OpenAI Responses reasoning summaries, …). Must be re-sent on the
     /// next turn for providers that require it.
     ReasoningDelta(String),
-    ToolUseStart { id: String, name: String },
-    ToolUseDelta { id: String, json: String },
-    ToolUseEnd { id: String },
+    ToolUseStart {
+        id: String,
+        name: String,
+    },
+    ToolUseDelta {
+        id: String,
+        json: String,
+    },
+    ToolUseEnd {
+        id: String,
+    },
     Usage(TokenUsage),
     Done(StopReason),
     Error(String),

@@ -112,8 +112,9 @@ impl Brain for OpenAIResponsesAdapter {
         // SSE frames split across TCP chunks must be reassembled — see
         // provider/sse_buffer.rs. Without this, words/characters mid-stream
         // silently disappear (the original symptom: streamed text mangling).
-        let event_stream =
-            futures::stream::unfold((stream, false, super::sse_buffer::LineBuffer::new()), |(mut stream, done, mut buf)| async move {
+        let event_stream = futures::stream::unfold(
+            (stream, false, super::sse_buffer::LineBuffer::new()),
+            |(mut stream, done, mut buf)| async move {
                 if done {
                     return None;
                 }
@@ -151,8 +152,9 @@ impl Brain for OpenAIResponsesAdapter {
                     )),
                     None => None,
                 }
-            })
-            .flatten();
+            },
+        )
+        .flatten();
 
         Ok(Box::pin(event_stream))
     }

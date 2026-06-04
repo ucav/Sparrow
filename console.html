@@ -14,10 +14,12 @@
     --brand:#f2a93c;--coral:#f0674a;--agent:#4ec9b0;--planner:#6fa6e6;--verifier:#c9a14e;
     --add:#74c258;--rem:#d96a63;--steel:#b9b0a3;--gold:#f2c94c;
     --sup:#74c258;--tru:#f2a93c;--aut:#d96a63;
+    --ui-font:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono-font:"SF Mono","IBM Plex Mono","Cascadia Code","JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
   }
   *{box-sizing:border-box;margin:0;padding:0}
   html,body{height:100%}
-  body{font-family:'IBM Plex Mono',ui-monospace,monospace;color:var(--fg);min-height:100%;
+  body{font-family:var(--ui-font);color:var(--fg);min-height:100%;
     background:radial-gradient(1100px 700px at 72% -12%,rgba(242,169,60,.13),transparent 60%),
       radial-gradient(900px 600px at 10% 114%,rgba(240,103,74,.09),transparent 55%),var(--bg);
     overflow:hidden;letter-spacing:.2px}
@@ -37,7 +39,7 @@
   .dot.r{background:#e15a52}.dot.y{background:#e0a93a}.dot.g{background:#62b85a}
   .chrome .nm{margin-left:8px;color:var(--dim);font-size:12.5px}.chrome .nm b{color:var(--brand)}
   .chrome .right{margin-left:auto;display:flex;gap:8px;align-items:center}
-  .btn{font-family:inherit;font-size:11px;letter-spacing:.5px;color:var(--brand);cursor:pointer;
+  .btn{font-family:var(--mono-font);font-size:11px;letter-spacing:.5px;color:var(--brand);cursor:pointer;
     background:color-mix(in srgb,var(--brand) 10%,transparent);border:1px solid color-mix(in srgb,var(--brand) 40%,transparent);
     padding:4px 12px;border-radius:7px;transition:.15s}
   .btn:hover{background:color-mix(in srgb,var(--brand) 22%,transparent)}
@@ -458,18 +460,44 @@
   .diff-card .pls{color:var(--add);background:color-mix(in srgb,var(--add) 9%,transparent);border-left-color:var(--add)!important}
   .diff-card .mns{color:var(--rem);background:color-mix(in srgb,var(--rem) 9%,transparent);border-left-color:var(--rem)!important}
 
-  /* collapsible code block (assistant code output) */
-  .code-block{margin:6px 0 8px;border:1px solid var(--line-hot);border-radius:8px;background:var(--panel);overflow:hidden}
-  .code-block summary{list-style:none;cursor:pointer;padding:6px 11px;display:flex;align-items:center;gap:7px;font-size:10.5px;color:var(--dim)}
-  .code-block summary::-webkit-details-marker{display:none}
-  .code-block .cb-ico{font-size:11px}
-  .code-block .cb-lbl{color:var(--fg);font-weight:500;font-size:11px}
-  .code-block .cb-size{margin-left:auto;color:var(--dimmer);font-size:9.5px}
-  .code-block .cb-chev{color:var(--dimmer);transition:transform .2s;font-size:9px}
-  .code-block[open] summary .cb-chev{transform:rotate(90deg)}
-  .code-block .cb-body{padding:8px 11px;background:var(--bg);border-top:1px solid var(--line);animation:fold-in .18s ease both}
-  .code-block .cb-body pre{margin:0;font-family:inherit;font-size:11px;line-height:1.55;color:var(--dim);white-space:pre-wrap;overflow-x:auto}
-  .code-block .cb-body code{font-family:inherit;color:var(--steel)}
+  /* collapsible code cards (assistant fenced output) */
+  .code-card,.code-block{margin:7px 0 8px 10px;border:1px solid color-mix(in srgb,var(--line-hot) 82%,transparent);
+    border-radius:10px;background:linear-gradient(180deg,color-mix(in srgb,var(--panel) 92%,transparent),color-mix(in srgb,var(--panel2) 96%,transparent));
+    overflow:hidden;box-shadow:0 14px 32px -28px rgba(0,0,0,.68),inset 0 1px 0 rgba(255,255,255,.045)}
+  .code-card summary,.code-block summary{list-style:none;cursor:pointer;padding:7px 10px;display:flex;align-items:center;gap:8px;
+    font-family:var(--ui-font);font-size:11px;color:var(--dim);background:linear-gradient(180deg,color-mix(in srgb,var(--fg) 4%,transparent),transparent)}
+  .code-card summary::-webkit-details-marker,.code-block summary::-webkit-details-marker{display:none}
+  .code-card .cc-icon,.code-block .cb-chev{color:var(--brand);transition:transform .18s ease;font-size:10px}
+  .code-card[open] summary .cc-icon,.code-block[open] summary .cb-chev{transform:rotate(90deg)}
+  .code-card .cc-lang,.code-block .cb-lbl{color:var(--fg);font-weight:700;font-size:11.5px;letter-spacing:.2px;text-transform:none}
+  .code-card .cc-meta,.code-block .cb-size{margin-left:auto;color:var(--dimmer);font-size:10px;font-variant-numeric:tabular-nums}
+  .code-card .cc-meta.live{color:var(--brand);animation:tokpulse .8s ease-in-out infinite}
+  .code-card .cc-copy{font-family:var(--ui-font);font-size:10px;font-weight:600;color:var(--brand);cursor:pointer;
+    background:color-mix(in srgb,var(--brand) 9%,transparent);border:1px solid color-mix(in srgb,var(--brand) 28%,transparent);
+    border-radius:999px;padding:3px 9px;transition:.15s}
+  .code-card .cc-copy:hover{background:color-mix(in srgb,var(--brand) 18%,transparent);transform:translateY(-1px)}
+  .code-card pre,.code-block .cb-body{margin:0;padding:10px 12px;background:color-mix(in srgb,var(--bg) 76%,#000);
+    border-top:1px solid var(--line);animation:fold-in .18s ease both;overflow-x:auto}
+  .code-card code,.code-block .cb-body code{font-family:var(--mono-font);font-size:12.5px;line-height:1.58;color:var(--steel);white-space:pre-wrap;tab-size:2}
+  .code-card code .syn-key{color:#ffb454;font-weight:650}
+  .code-card code .syn-str{color:#aad94c}
+  .code-card code .syn-num{color:#d2a6ff}
+  .code-card code .syn-com{color:#7f8c98;font-style:italic}
+  .code-card code .syn-fn{color:#7dcfff}
+  .code-card code .syn-type{color:#73d0ff}
+  .code-card code .syn-op{color:#f29e74}
+  .code-card code .syn-prop{color:#ffd580}
+  :root[data-theme="paper"] .code-card code{color:#3f3629;font-weight:520}
+  :root[data-theme="paper"] .code-card code .syn-key{color:#a94700;font-weight:700}
+  :root[data-theme="paper"] .code-card code .syn-str{color:#3f7800}
+  :root[data-theme="paper"] .code-card code .syn-num{color:#6d3db8}
+  :root[data-theme="paper"] .code-card code .syn-com{color:#786f61}
+  :root[data-theme="paper"] .code-card code .syn-fn{color:#006cae}
+  :root[data-theme="paper"] .code-card code .syn-type{color:#087d8d}
+  :root[data-theme="paper"] .code-card code .syn-op{color:#9b4317}
+  :root[data-theme="paper"] .code-card code .syn-prop{color:#8a5700}
+  :root[data-theme="paper"] .code-card,:root[data-theme="paper"] .code-block{box-shadow:0 18px 42px -34px rgba(64,42,12,.36),inset 0 1px 0 rgba(255,255,255,.55)}
+  :root[data-theme="paper"] .code-card pre,:root[data-theme="paper"] .code-block .cb-body{background:color-mix(in srgb,var(--panel) 82%,#fff)}
   @keyframes fold-in{from{opacity:0;max-height:0}to{opacity:1;max-height:600px}}
 
   /* Compaction banner */
@@ -883,7 +911,7 @@
       <button class="chip-btn" id="verboseBtn" title="Verbose mode — show tool args, token ticks, internal reasoning" aria-pressed="false">⊕ verbose</button>
       <button class="chip-btn" id="themeBtn" title="Cmd+Shift+L toggle theme">☾</button>
       <button class="btn sm" id="cfgBtn">config</button>
-      <span style="font-size:11px;color:var(--dimmer)">v0.3.0</span>
+      <span style="font-size:11px;color:var(--dimmer)">v0.3.5</span>
     </span>
   </div>
 
@@ -1466,7 +1494,7 @@ function runBootAnimation(){
   sessionStorage.setItem('sparrow-booted','1');
   const ov=document.getElementById('bootOverlay');if(!ov)return;
   ov.hidden=false;ov.classList.remove('fading');
-  // Type the tagline character-by-character (STATUS2.md S1-6)
+  // Type the tagline character-by-character during boot.
   const tag=ov.querySelector('.b-tag');if(tag){var txt=tag.textContent;tag.textContent='';(async function(){for(var i=0;i<txt.length;i++){tag.textContent+=txt[i];await sleep(40+Math.random()*30);}})();}
   const host=document.getElementById('bootStatus');host.innerHTML='';
   BOOT_STATUS_LINES.forEach((pair,i)=>{
@@ -1851,7 +1879,7 @@ async function loadArtifactsPanel(){
   }catch(_){host.innerHTML='<div class="drw-empty">_none yet_ · unable to load /artifacts</div>';}
 }
 
-// ─── Dynamic swarm row (Sprint 1 / STATUS2.md item 1bis) ─────────────
+// ─── Dynamic swarm row ──────────────────────────────────────────────────────
 // Fetches every installed agent from `GET /agents` and renders any agent
 // outside the orchestrator triad as an extra lane. Triade always rendered
 // first; extras inserted between #swarm-extras-anchor and #swarm-more.
@@ -2421,12 +2449,12 @@ function showError(title,cause,fix,doc){
 //       the chance to detect a fence that spanned the split.
 // The new design is a small state machine: as deltas arrive, we tokenize
 // `\`\`\`` markers live and rewrite the active sink (prose span ↔ code card)
-// on the fly — the code card appears AS the model types, like Claude Code.
+// on the fly — the code card appears as the model types.
 
 let STREAM_BUF=null;
 let STREAM_STATE=null;
 
-// Filter helper: strip DeepSeek thinking-debris that occasionally leaks through
+// Filter helper: strip provider thinking-debris that occasionally leaks through
 // the adapter (raw XML tool calls, ANSI escapes). Returns the cleaned text, or
 // null to drop the chunk entirely when it's mostly garbage.
 function _cleanStreamChunk(text){
@@ -2451,7 +2479,7 @@ function openProseSpan(){
   // Wrap each prose section in a container that gets a hover-revealed copy
   // button — the user asked for the same copy affordance as on code blocks.
   const wrap=document.createElement('span');wrap.className='prose-wrap';
-  wrap.style.cssText='display:inline-block;position:relative;width:100%';
+  wrap.style.cssText='display:block;position:relative;width:100%;margin:0';
   const span=document.createElement('span');
   span.className='cmd streaming md-prose';
   span.style.whiteSpace='pre-wrap';
@@ -2591,8 +2619,94 @@ function _flushProseSync(){
   // Render any pending proseRaw to the active prose span immediately
   // (synchronous) so a mode switch doesn't strand unrendered markdown.
   if(STREAM_STATE && STREAM_STATE.mode==='prose' && STREAM_STATE.el){
-    STREAM_STATE.el.innerHTML=_markdownify(STREAM_STATE.proseRaw||'');
+    const raw=STREAM_STATE.proseRaw||'';
+    if(!raw.trim()){
+      const wrap=STREAM_STATE.el.closest?.('.prose-wrap')||STREAM_STATE.el.parentElement;
+      if(wrap&&wrap.parentElement)wrap.remove();
+      return;
+    }
+    STREAM_STATE.el.innerHTML=_markdownify(raw);
   }
+}
+
+function normalizeCodeLang(lang){
+  const l=String(lang||'').trim().toLowerCase();
+  const aliases={rs:'rust',py:'python',js:'javascript',jsx:'javascript',ts:'typescript',tsx:'typescript',sh:'bash',shell:'bash',zsh:'bash',ps1:'powershell',yml:'yaml',htm:'html'};
+  return aliases[l]||l||'text';
+}
+
+function spanToken(cls,text){return `<span class="${cls}">${text}</span>`;}
+
+function highlightCode(raw,lang){
+  const normalized=normalizeCodeLang(lang);
+  const source=String(raw||'');
+  const placeholders=[];
+  const stash=(cls,value)=>{
+    const id=`\u0000${placeholders.length}\u0000`;
+    placeholders.push(spanToken(cls,esc(value)));
+    return id;
+  };
+  let s=source;
+  if(['rust','javascript','typescript','css'].includes(normalized)){
+    s=s.replace(/\/\*[\s\S]*?\*\//g,m=>stash('syn-com',m));
+    s=s.replace(/\/\/[^\n]*/g,m=>stash('syn-com',m));
+  }else if(['python','bash','powershell','yaml'].includes(normalized)){
+    s=s.replace(/(^|[\s;])#[^\n]*/g,m=>stash('syn-com',m));
+  }else if(normalized==='html'){
+    s=s.replace(/<!--[\s\S]*?-->/g,m=>stash('syn-com',m));
+  }
+  s=s.replace(/`(?:\\.|[^`\\])*`|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/g,m=>stash('syn-str',m));
+  s=esc(s);
+  const mark=(cls,value)=>{
+    const id=`\u0000${placeholders.length}\u0000`;
+    placeholders.push(spanToken(cls,value));
+    return id;
+  };
+  s=s.replace(/\b(0x[\da-fA-F]+|\d+(?:\.\d+)?)\b/g,m=>mark('syn-num',m));
+  if(normalized==='rust'){
+    s=s.replace(/\b([a-zA-Z_]\w*)\b/g,(m,word,off,str)=>{
+      if(/\s*\(/.test(str.slice(off+m.length,off+m.length+3)))return mark('syn-fn',m);
+      if(/^(fn|let|mut|pub|crate|mod|impl|trait|struct|enum|use|where|async|await|match|if|else|for|while|loop|return|Self|self|super|const|static|move|ref|type|unsafe|dyn)$/.test(word))return mark('syn-key',m);
+      if(/^(String|Vec|Option|Result|HashMap|PathBuf|Arc|Box|usize|u64|i64|bool|str)$/.test(word))return mark('syn-type',m);
+      return m;
+    });
+  }else if(['javascript','typescript'].includes(normalized)){
+    s=s.replace(/\.([a-zA-Z_$][\w$]*)/g,(_,p)=>'.'+mark('syn-prop',p));
+    s=s.replace(/\b([a-zA-Z_$][\w$]*)\b/g,(m,word,off,str)=>{
+      if(/\s*\(/.test(str.slice(off+m.length,off+m.length+3)))return mark('syn-fn',m);
+      if(/^(const|let|var|function|return|async|await|import|export|from|class|extends|new|if|else|for|while|switch|case|break|try|catch|throw|typeof|interface|type|public|private)$/.test(word))return mark('syn-key',m);
+      return m;
+    });
+  }else if(normalized==='python'){
+    s=s.replace(/\b([a-zA-Z_]\w*)\b/g,(m,word,off,str)=>{
+      if(/\s*\(/.test(str.slice(off+m.length,off+m.length+3)))return mark('syn-fn',m);
+      if(/^(def|class|return|import|from|as|async|await|if|elif|else|for|while|try|except|finally|with|lambda|yield|True|False|None|self|pass|break|continue|raise|in|is|and|or|not)$/.test(word))return mark('syn-key',m);
+      return m;
+    });
+  }else if(['bash','powershell'].includes(normalized)){
+    s=s.replace(/(\$[A-Za-z_][\w]*)/g,m=>mark('syn-prop',m));
+    s=s.replace(/\b(if|then|else|elif|fi|for|while|do|done|case|esac|function|return|export|set|param|foreach|where|select)\b/g,m=>mark('syn-key',m));
+  }else if(normalized==='yaml'){
+    s=s.replace(/^(\s*[\w.-]+)(:)/gm,(_,k,op)=>mark('syn-prop',k)+mark('syn-op',op));
+  }else if(normalized==='json'){
+    s=s.replace(/\b(true|false|null)\b/g,m=>mark('syn-key',m));
+  }else if(normalized==='html'){
+    s=s.replace(/(&lt;\/?)([a-zA-Z][\w:-]*)/g,(_,p,t)=>p+mark('syn-key',t));
+    s=s.replace(/\s([a-zA-Z_:][\w:.-]*)(=)/g,(_,a,op)=>' '+mark('syn-prop',a)+mark('syn-op',op));
+  }else if(normalized==='css'){
+    s=s.replace(/([.#]?[a-zA-Z_-][\w-]*)(\s*\{)/g,(_,sel,op)=>mark('syn-prop',sel)+op);
+    s=s.replace(/([a-zA-Z-]+)(\s*:)/g,(_,p,op)=>mark('syn-key',p)+mark('syn-op',op));
+  }
+  return s.replace(/\u0000(\d+)\u0000/g,(_,i)=>placeholders[Number(i)]||'');
+}
+
+function applyCodeHighlight(card){
+  const codeEl=card?.querySelector('code');
+  if(!codeEl)return;
+  const raw=codeEl.textContent||'';
+  const lang=card.dataset.lang||card.querySelector('.cc-lang')?.textContent||'text';
+  codeEl.innerHTML=highlightCode(raw,lang);
+  codeEl.className=`language-${normalizeCodeLang(lang)}`;
 }
 
 function openCodeCard(){
@@ -2618,6 +2732,7 @@ function closeCodeCard(){
   const card=STREAM_STATE.cardEl;
   if(card){
     card.classList.remove('streaming-code');
+    applyCodeHighlight(card);
     const meta=card.querySelector('.cc-meta');
     if(meta){
       const codeEl=card.querySelector('code');
@@ -2640,8 +2755,10 @@ function appendToActive(text){
       return;
     }
     STREAM_STATE.lang+=text.slice(0,nl);
+    const normalizedLang=normalizeCodeLang(STREAM_STATE.lang);
     const langEl=STREAM_STATE.cardEl?.querySelector('.cc-lang');
-    if(langEl && STREAM_STATE.lang.trim())langEl.textContent=STREAM_STATE.lang.trim();
+    if(langEl && STREAM_STATE.lang.trim())langEl.textContent=normalizedLang;
+    if(STREAM_STATE.cardEl)STREAM_STATE.cardEl.dataset.lang=normalizedLang;
     STREAM_STATE.codeStarted=true;
     text=text.slice(nl+1);
     if(!text)return;
@@ -2666,7 +2783,7 @@ function appendToActive(text){
 }
 
 function streamDelta(text){
-  // Drop chunks that look like DeepSeek thinking-debris (raw <tool_call> XML,
+  // Drop chunks that look like provider thinking-debris (raw <tool_call> XML,
   // ANSI escapes). Show a discreet hourglass instead of garbage.
   const cleaned=_cleanStreamChunk(String(text||''));
   if(cleaned===null){
@@ -2746,7 +2863,7 @@ const STREAM_TRANSPARENT = new Set([
   'Message',
 ]);
 
-// ─── Verbose mode (Claude-Code-style firehose) ─────────────────────────────
+// ─── Verbose mode (internal firehose) ───────────────────────────────────────
 // When ON: tool args are shown inline as the call starts, token ticks emit a
 // dim status line, and every internal Message event is rendered (not just
 // router/system roles). Persists in localStorage so it survives reloads.
@@ -2934,7 +3051,8 @@ function handleEvent(ev){
     case 'SkillLearned':line(`<span class="skill-pop">✦ skill learned · ${esc(ev.name)}</span>`);chirp(1100,.05);setTimeout(()=>chirp(1700,.07),80);break;
     case 'CostUpdate':
       setCost(ev.usd);
-      if(VERBOSE&&typeof ev.usd==='number')verboseLine(`cost · $${ev.usd.toFixed(4)}`);
+      // CostUpdate can arrive for nearly every streamed delta. Keep it in the
+      // cockpit/token meter only; never emit one chat line per tick.
       break;
     case 'TokenUsageEstimated':
       addTokEstimate(ev.input,ev.output);
@@ -3392,7 +3510,7 @@ async function runTask(){
   $('taskInput').value='';
   localStorage.removeItem('sparrow-composer-draft');
   autoResizeComposer();
-  // Submit feedback: scale-down the run button for 120ms (STATUS2.md S2-6)
+  // Submit feedback: scale-down the run button for 120ms.
   const runBtn=$('runBtn');if(runBtn){runBtn.style.transform='scale(0.92)';setTimeout(function(){runBtn.style.transform='';},120);}
   updateContextMeter();
   const attachNote=attachedFiles.length?` <span class="muted">+ ${attachedFiles.length} file${attachedFiles.length>1?'s':''}</span>`:'';

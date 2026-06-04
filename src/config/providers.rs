@@ -1252,7 +1252,9 @@ pub fn infer_caps_from_name(model_name: &str) -> ModelCaps {
         || n.contains("deepseek-reasoner")
     {
         Some(131_072) // DeepSeek V4 flash / R1: 128k
-    } else if n.contains("deepseek-chat") || n.contains("deepseek-coder") || n.contains("deepseek-v3")
+    } else if n.contains("deepseek-chat")
+        || n.contains("deepseek-coder")
+        || n.contains("deepseek-v3")
     {
         Some(65_536) // Older DeepSeek V3 chat/coder: 64k
     } else if n.contains("qwen3") && (n.contains("235b") || n.contains("max") || n.contains("plus"))
@@ -1263,11 +1265,19 @@ pub fn infer_caps_from_name(model_name: &str) -> ModelCaps {
         Some(1_000_000) // Qwen Turbo / Plus / Max
     } else if n.contains("qwen3") || n.contains("qwen2.5") {
         Some(131_072)
-    } else if n.contains("gpt-4.1") || n.contains("gpt-5") || n.contains("o1") || n.contains("o3") || n.contains("o4") {
+    } else if n.contains("gpt-4.1")
+        || n.contains("gpt-5")
+        || n.contains("o1")
+        || n.contains("o3")
+        || n.contains("o4")
+    {
         Some(1_000_000) // GPT-4.1, GPT-5, o-series
     } else if n.contains("gpt-4o") || n.contains("gpt-4-turbo") {
         Some(128_000)
-    } else if n.contains("claude-sonnet-4") || n.contains("claude-opus-4") || n.contains("claude-haiku-4") {
+    } else if n.contains("claude-sonnet-4")
+        || n.contains("claude-opus-4")
+        || n.contains("claude-haiku-4")
+    {
         Some(200_000)
     } else if n.contains("claude-3.5") || n.contains("claude-3-5") {
         Some(200_000)

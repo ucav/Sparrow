@@ -74,8 +74,15 @@ impl TreeSitterParser {
             } else if trimmed.starts_with("impl") {
                 let name = extract_impl_name(&trimmed);
                 symbols.push((name, "impl".into(), line_num));
-            } else if let Some(rest) = trimmed.strip_prefix("const ").or_else(|| trimmed.strip_prefix("static ")) {
-                let kind = if trimmed.starts_with("static ") { "static" } else { "const" };
+            } else if let Some(rest) = trimmed
+                .strip_prefix("const ")
+                .or_else(|| trimmed.strip_prefix("static "))
+            {
+                let kind = if trimmed.starts_with("static ") {
+                    "static"
+                } else {
+                    "const"
+                };
                 let name = rest
                     .split(|c: char| c == ':' || c == '=' || c == ';')
                     .next()
@@ -308,9 +315,9 @@ fn strip_rust_comments(s: &str) -> String {
             continue;
         }
         if in_string {
-            if b == b'\\' && next.is_some() {
+            if let (b'\\', Some(next)) = (b, next) {
                 out.push(b as char);
-                out.push(next.unwrap() as char);
+                out.push(next as char);
                 i += 2;
                 continue;
             }
@@ -322,9 +329,9 @@ fn strip_rust_comments(s: &str) -> String {
             continue;
         }
         if in_char {
-            if b == b'\\' && next.is_some() {
+            if let (b'\\', Some(next)) = (b, next) {
                 out.push(b as char);
-                out.push(next.unwrap() as char);
+                out.push(next as char);
                 i += 2;
                 continue;
             }
