@@ -87,12 +87,24 @@ impl Brain for OpenAICompatAdapter {
 
             let mut content: Vec<serde_json::Value> = Vec::new();
             let mut tool_calls: Vec<serde_json::Value> = Vec::new();
+            let mut reasoning_buf = String::new();
             let mut emitted_tool_result = false;
 
             for block in &msg.content {
                 match block {
                     ContentBlock::Text { text } => {
                         content.push(json!({"type": "text", "text": text}));
+                    }
+                    ContentBlock::Reasoning { text } => {
+                        // DeepSeek / Moonshot / Qwen "thinking mode" require the
+                        // model's previous reasoning_content to be echoed back
+                        // on the next turn or the API rejects with 400. We aggregate
+                        // all reasoning blocks of this message and ship them as a
+                        // single `reasoning_content` field.
+                        if !reasoning_buf.is_empty() {
+                            reasoning_buf.push('\n');
+                        }
+                        reasoning_buf.push_str(text);
                     }
                     ContentBlock::ToolUse { id, name, input } => {
                         tool_calls.push(json!({
@@ -144,6 +156,9 @@ impl Brain for OpenAICompatAdapter {
                 } else {
                     msg_json["content"] = json!(content);
                 }
+            }
+            if !reasoning_buf.is_empty() && msg.role == "assistant" {
+                msg_json["reasoning_content"] = json!(reasoning_buf);
             }
 
             messages.push(msg_json);
@@ -211,29 +226,30 @@ impl Brain for OpenAICompatAdapter {
             started: bool,
         }
 
-        // Inter-chunk buffer for resilient SSE parsing.
-        // When a data: line is split across HTTP chunks, we buffer
-        // the incomplete segment and reassemble it with the next chunk.
         let stream = response.bytes_stream();
+
+        // SSE state: tool-call accumulator + line buffer that survives chunk
+        // boundaries. Without the buffer, a JSON event split across two TCP
+        // chunks was parsed in halves and silently dropped — producing the
+        // "à rebours" → "àours" mangling.
+        struct SseState {
+            tools: HashMap<u64, ToolCallState>,
+            lines: super::sse_buffer::LineBuffer,
+        }
 
         let event_stream = stream
             .scan(
-                (HashMap::<u64, ToolCallState>::new(), String::new()),
+                SseState {
+                    tools: HashMap::new(),
+                    lines: super::sse_buffer::LineBuffer::new(),
+                },
                 |state, chunk| {
-                    let (tool_state, partial) = state;
                 let events: Vec<BrainEvent> = match chunk {
                     Ok(bytes) => {
-                        let chunk_text = String::from_utf8_lossy(&bytes);
-                        let full_text = format!("{}{}", partial, chunk_text);
+                        let lines = state.lines.push(&bytes);
+                        let tool_state = &mut state.tools;
                         let mut parsed = Vec::new();
-
-                        // Process all complete lines (ending with \n).
-                        // The trailing incomplete segment stays in `partial`
-                        // and will be prepended to the next chunk.
-                        if let Some(last_nl) = full_text.rfind('\n') {
-                            *partial = full_text[last_nl + 1..].to_string();
-                            let complete = &full_text[..=last_nl];
-                            for line in complete.lines() {
+                        for line in lines {
                             let line = line.trim();
                             if line.is_empty() || !line.starts_with("data: ") {
                                 continue;
@@ -257,24 +273,64 @@ impl Brain for OpenAICompatAdapter {
                             if let Some(choices) = event["choices"].as_array() {
                                 for choice in choices {
                                     if let Some(delta) = choice["delta"].as_object() {
-                                        // DeepSeek: only skip content when reasoning_content has
-                                        // actual non-empty text (the thinking phase). After the
-                                        // tool call, reasoning_content is null/empty — allow content.
-                                        let is_reasoning = delta.get("reasoning_content")
-                                            .and_then(|v| v.as_str())
-                                            .map(|s| !s.is_empty())
-                                            .unwrap_or(false);
-                                        if !is_reasoning {
-                                            if let Some(text) =
-                                                delta.get("content").and_then(|v| v.as_str())
+                                        if let Some(text) =
+                                            delta.get("content").and_then(|v| v.as_str())
+                                        {
+                                            if !text.is_empty() {
+                                                parsed
+                                                    .push(BrainEvent::TextDelta(text.to_string()));
+                                            }
+                                        }
+                                        // DeepSeek / Moonshot thinking-mode emit
+                                        // reasoning trace alongside content. Capture
+                                        // it as a dedicated event so the engine can
+                                        // echo it back on the next turn (required
+                                        // by DeepSeek's contract).
+                                        // Several providers report this under
+                                        // different keys; check the known aliases.
+                                        for key in [
+                                            "reasoning_content",
+                                            "reasoning",
+                                            "thinking",
+                                            "thought",
+                                        ] {
+                                            if let Some(rtext) =
+                                                delta.get(key).and_then(|v| v.as_str())
                                             {
-                                                if !text.is_empty() {
-                                                    parsed.push(BrainEvent::TextDelta(
-                                                        text.to_string(),
+                                                if !rtext.is_empty() {
+                                                    parsed.push(BrainEvent::ReasoningDelta(
+                                                        rtext.to_string(),
                                                     ));
                                                 }
                                             }
                                         }
+                                    }
+                                    // Some providers (non-streaming chunk at end of
+                                    // turn) bundle the reasoning under
+                                    // `message.reasoning_content` rather than
+                                    // streaming it through `delta`. Cover that path
+                                    // too — duplicate captures are harmless because
+                                    // the engine joins them.
+                                    if let Some(msg_obj) = choice.get("message").and_then(|v| v.as_object()) {
+                                        for key in [
+                                            "reasoning_content",
+                                            "reasoning",
+                                            "thinking",
+                                        ] {
+                                            if let Some(rtext) =
+                                                msg_obj.get(key).and_then(|v| v.as_str())
+                                            {
+                                                if !rtext.is_empty() {
+                                                    parsed.push(BrainEvent::ReasoningDelta(
+                                                        rtext.to_string(),
+                                                    ));
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if let Some(delta) = choice["delta"].as_object() {
+                                        // (Re-open the original tool_calls block.)
+                                        let _ = delta; // keep this branch syntactically anchored
                                         if let Some(tool_calls) =
                                             delta.get("tool_calls").and_then(|v| v.as_array())
                                         {
@@ -367,9 +423,6 @@ impl Brain for OpenAICompatAdapter {
                                         .unwrap_or(0),
                                 }));
                             }
-                            }
-                        } else {
-                            *partial = full_text;
                         }
                         parsed
                     }
