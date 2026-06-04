@@ -1782,11 +1782,15 @@ async fn run_task(
     let repo_head = current_repo_head();
     let print_handle = tokio::spawn(async move {
         let mut full_reply = String::new();
+        let mut reasoning_reply = String::new();
         let mut think = sparrow::event::ThinkStripper::new();
         use std::io::Write as _;
         while let Some(event) = rx.recv().await {
             if let sparrow::event::Event::ThinkingDelta { text, .. } = &event {
                 full_reply.push_str(text);
+            }
+            if let sparrow::event::Event::ReasoningDelta { text, .. } = &event {
+                reasoning_reply.push_str(text);
             }
             if let sparrow::event::Event::RunStarted { run, agent, .. } = &event {
                 recorder.start_run(
@@ -1858,12 +1862,12 @@ async fn run_task(
                 _ => {}
             }
         }
-        full_reply
+        (full_reply, reasoning_reply)
     });
 
     println!("Running: {}", task);
     let drive_result = engine.drive(task_obj, tx).await;
-    let full_reply = print_handle.await.unwrap_or_default();
+    let (full_reply, reasoning_reply) = print_handle.await.unwrap_or_default();
 
     // Persist the turn to the session BEFORE propagating any error, so a
     // transient failure never erases the user's message from the conversation.
@@ -1876,9 +1880,16 @@ async fn run_task(
             }],
         });
         if !full_reply.trim().is_empty() {
+            let mut content = Vec::new();
+            if !reasoning_reply.trim().is_empty() {
+                content.push(sparrow::provider::ContentBlock::Reasoning {
+                    text: reasoning_reply,
+                });
+            }
+            content.push(sparrow::provider::ContentBlock::Text { text: full_reply });
             updated.push(sparrow::provider::Msg {
                 role: "assistant".into(),
-                content: vec![sparrow::provider::ContentBlock::Text { text: full_reply }],
+                content,
             });
         }
         let len = updated.len();
@@ -3453,8 +3464,112 @@ fn handle_memory(
                 println!("Session '{}' not found.", session);
             }
         }
+        sparrow::cli::MemoryAction::Graph { action } => handle_memory_graph(action, memory)?,
     }
     Ok(())
+}
+
+fn handle_memory_graph(
+    action: sparrow::cli::GraphAction,
+    memory: &Arc<dyn Memory>,
+) -> anyhow::Result<()> {
+    use sparrow::memory::{GraphDirection, GraphEdge, GraphNode};
+    let now = chrono::Utc::now().to_rfc3339();
+    match action {
+        sparrow::cli::GraphAction::UpsertNode {
+            id,
+            label,
+            kind,
+            properties,
+        } => {
+            let properties = parse_json_properties(&properties)?;
+            memory.upsert_graph_node(GraphNode {
+                id: id.clone(),
+                label,
+                kind,
+                properties,
+                created_at: now.clone(),
+                updated_at: now,
+            })?;
+            println!("Graph node stored: {}", id);
+        }
+        sparrow::cli::GraphAction::UpsertEdge {
+            from_id,
+            relation,
+            to_id,
+            id,
+            weight,
+            properties,
+        } => {
+            let edge_id = id.unwrap_or_else(|| format!("{}:{}:{}", from_id, relation, to_id));
+            let properties = parse_json_properties(&properties)?;
+            memory.upsert_graph_edge(GraphEdge {
+                id: edge_id.clone(),
+                from_id,
+                to_id,
+                relation,
+                weight,
+                properties,
+                created_at: now.clone(),
+                updated_at: now,
+            })?;
+            println!("Graph edge stored: {}", edge_id);
+        }
+        sparrow::cli::GraphAction::Get { id } => {
+            if let Some(node) = memory.graph_node(&id) {
+                println!("{}", serde_json::to_string_pretty(&node)?);
+            } else {
+                println!("Graph node '{}' not found.", id);
+            }
+        }
+        sparrow::cli::GraphAction::Neighbors {
+            id,
+            direction,
+            limit,
+        } => {
+            let rows = memory.graph_neighbors(&id, GraphDirection::parse(&direction), limit);
+            println!("{}", serde_json::to_string_pretty(&rows)?);
+        }
+        sparrow::cli::GraphAction::Search { query, limit } => {
+            let nodes = memory.search_graph(&query, limit);
+            println!("{}", serde_json::to_string_pretty(&nodes)?);
+        }
+        sparrow::cli::GraphAction::Export => {
+            println!("{}", serde_json::to_string_pretty(&memory.graph_export())?);
+        }
+        sparrow::cli::GraphAction::DeleteNode { id } => {
+            memory.delete_graph_node(&id)?;
+            println!("Graph node deleted: {}", id);
+        }
+        sparrow::cli::GraphAction::DeleteEdge { id } => {
+            memory.delete_graph_edge(&id)?;
+            println!("Graph edge deleted: {}", id);
+        }
+        sparrow::cli::GraphAction::SyncNeo4j => {
+            let graph = memory.graph_export();
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?;
+            let statements =
+                runtime.block_on(sparrow::tools::knowledge_graph::sync_graph_to_neo4j(&graph))?;
+            println!(
+                "Synced graph to Neo4j: {} nodes, {} edges, {} statements",
+                graph.nodes.len(),
+                graph.edges.len(),
+                statements
+            );
+        }
+    }
+    Ok(())
+}
+
+fn parse_json_properties(raw: &str) -> anyhow::Result<serde_json::Value> {
+    let value: serde_json::Value = serde_json::from_str(raw)
+        .map_err(|e| anyhow::anyhow!("properties must be valid JSON object: {}", e))?;
+    if !value.is_object() {
+        anyhow::bail!("properties must be a JSON object");
+    }
+    Ok(value)
 }
 
 fn handle_full_import(source: sparrow::cli::ImportSource) -> anyhow::Result<()> {
@@ -4087,6 +4202,7 @@ async fn handle_webview(
                 // persistent conversation history when the run finishes. THIS is what
                 // makes context survive across model switches and separate prompts.
                 let mut assistant_buf = String::new();
+                let mut reasoning_buf = String::new();
                 while let Some(event) = run_rx.recv().await {
                     if let sparrow::event::Event::RunStarted { run, agent, .. } = &event {
                         recorder.start_run(
@@ -4105,6 +4221,9 @@ async fn handle_webview(
                     if let sparrow::event::Event::ThinkingDelta { text, .. } = &event {
                         assistant_buf.push_str(text);
                     }
+                    if let sparrow::event::Event::ReasoningDelta { text, .. } = &event {
+                        reasoning_buf.push_str(text);
+                    }
                     recorder.record(&event);
                     if let sparrow::event::Event::RunFinished { run, .. } = &event {
                         // Flush the accumulated assistant turn into the shared history.
@@ -4112,11 +4231,18 @@ async fn handle_webview(
                         let snapshot = {
                             let mut guard = conv_capture.lock().expect("conv lock poisoned");
                             if !trimmed.is_empty() {
+                                let mut content = Vec::new();
+                                if !reasoning_buf.trim().is_empty() {
+                                    content.push(sparrow::provider::ContentBlock::Reasoning {
+                                        text: reasoning_buf.clone(),
+                                    });
+                                }
+                                content.push(sparrow::provider::ContentBlock::Text {
+                                    text: trimmed.to_string(),
+                                });
                                 guard.push(sparrow::provider::Msg {
                                     role: "assistant".into(),
-                                    content: vec![sparrow::provider::ContentBlock::Text {
-                                        text: trimmed.to_string(),
-                                    }],
+                                    content,
                                 });
                                 if guard.len() > 40 {
                                     let drop = guard.len() - 40;

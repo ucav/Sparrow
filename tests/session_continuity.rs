@@ -57,6 +57,39 @@ fn session_round_trips_messages_across_reopen() {
 }
 
 #[test]
+fn session_round_trips_reasoning_blocks_for_provider_continuity() {
+    let path = temp_db("session-reasoning");
+    let key = "user:reasoning";
+
+    let store = SessionStore::open(&path).unwrap();
+    let msgs = vec![Msg {
+        role: "assistant".into(),
+        content: vec![
+            ContentBlock::Reasoning {
+                text: "opaque provider state".into(),
+            },
+            ContentBlock::Text {
+                text: "visible answer".into(),
+            },
+        ],
+    }];
+    store.save(key, &msgs, None).unwrap();
+
+    let sess = store.load(key).expect("session should persist");
+    let loaded: Vec<Msg> = serde_json::from_str(&sess.messages_json).unwrap();
+    assert!(matches!(
+        &loaded[0].content[0],
+        ContentBlock::Reasoning { text } if text == "opaque provider state"
+    ));
+    assert!(matches!(
+        &loaded[0].content[1],
+        ContentBlock::Text { text } if text == "visible answer"
+    ));
+
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
 fn session_search_and_scroll_find_old_turns() {
     let path = temp_db("session-search");
     let key = "user:search";

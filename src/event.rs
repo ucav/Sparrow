@@ -264,6 +264,14 @@ pub enum Event {
         run: RunId,
         text: String,
     },
+    /// Opaque provider reasoning state. Surfaces should not render this as
+    /// assistant-visible text, but session persistence must keep it so
+    /// reasoning-mode providers can receive `reasoning_content` on the next
+    /// turn when they require it.
+    ReasoningDelta {
+        run: RunId,
+        text: String,
+    },
     Message {
         run: RunId,
         role: String,

@@ -1,4 +1,7 @@
-use sparrow::memory::{Fact, MEMORY_MD_LIMIT, Memory, MemoryDocKind, SqliteMemory};
+use sparrow::memory::{
+    Fact, GraphDirection, GraphEdge, GraphNode, MEMORY_MD_LIMIT, Memory, MemoryDocKind,
+    SqliteMemory,
+};
 
 fn temp_db(name: &str) -> std::path::PathBuf {
     let id = std::time::SystemTime::now()
@@ -169,4 +172,58 @@ fn memory_replace_by_key_lookup_succeeds() {
 
     let root = db.parent().unwrap().to_path_buf();
     let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn sqlite_memory_persists_knowledge_graph_nodes_edges() {
+    let db = temp_db("memory-graph");
+    {
+        let memory = SqliteMemory::open(&db).unwrap();
+        memory
+            .upsert_graph_node(GraphNode {
+                id: "user:abdou".into(),
+                label: "Abdou".into(),
+                kind: "user".into(),
+                properties: serde_json::json!({"prefers": "local-first"}),
+                created_at: "2026-06-04T00:00:00Z".into(),
+                updated_at: "2026-06-04T00:00:00Z".into(),
+            })
+            .unwrap();
+        memory
+            .upsert_graph_node(GraphNode {
+                id: "project:sparrow".into(),
+                label: "Sparrow".into(),
+                kind: "project".into(),
+                properties: serde_json::json!({}),
+                created_at: "2026-06-04T00:00:00Z".into(),
+                updated_at: "2026-06-04T00:00:00Z".into(),
+            })
+            .unwrap();
+        memory
+            .upsert_graph_edge(GraphEdge {
+                id: "user:abdou:works_on:project:sparrow".into(),
+                from_id: "user:abdou".into(),
+                to_id: "project:sparrow".into(),
+                relation: "works_on".into(),
+                weight: 1.0,
+                properties: serde_json::json!({"source": "test"}),
+                created_at: "2026-06-04T00:00:00Z".into(),
+                updated_at: "2026-06-04T00:00:00Z".into(),
+            })
+            .unwrap();
+    }
+
+    let reopened = SqliteMemory::open(&db).unwrap();
+    let hits = reopened.search_graph("sparrow", 10);
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].id, "project:sparrow");
+
+    let neighbors = reopened.graph_neighbors("user:abdou", GraphDirection::Outgoing, 10);
+    assert_eq!(neighbors.len(), 1);
+    assert_eq!(neighbors[0].0.relation, "works_on");
+    assert_eq!(neighbors[0].1.id, "project:sparrow");
+
+    let export = reopened.graph_export();
+    assert_eq!(export.nodes.len(), 2);
+    assert_eq!(export.edges.len(), 1);
 }

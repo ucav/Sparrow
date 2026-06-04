@@ -616,6 +616,7 @@ impl Tui {
                     self.add_line(&visible, LogStyle::Cmd, 1);
                 }
             }
+            Event::ReasoningDelta { .. } => {}
             Event::ToolUseProposed { name, .. } => {
                 self.open_group(&format!("tool · {}", name), LogStyle::Steel);
             }

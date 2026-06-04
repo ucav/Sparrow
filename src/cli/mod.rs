@@ -495,6 +495,56 @@ pub enum MemoryAction {
         #[arg(long, default_value_t = 3)]
         after: usize,
     },
+    Graph {
+        #[command(subcommand)]
+        action: GraphAction,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum GraphAction {
+    UpsertNode {
+        id: String,
+        label: String,
+        #[arg(long, default_value = "entity")]
+        kind: String,
+        #[arg(long, default_value = "{}")]
+        properties: String,
+    },
+    UpsertEdge {
+        from_id: String,
+        relation: String,
+        to_id: String,
+        #[arg(long)]
+        id: Option<String>,
+        #[arg(long, default_value_t = 1.0)]
+        weight: f64,
+        #[arg(long, default_value = "{}")]
+        properties: String,
+    },
+    Get {
+        id: String,
+    },
+    Neighbors {
+        id: String,
+        #[arg(long, default_value = "both")]
+        direction: String,
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+    },
+    Search {
+        query: String,
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+    },
+    Export,
+    DeleteNode {
+        id: String,
+    },
+    DeleteEdge {
+        id: String,
+    },
+    SyncNeo4j,
 }
 
 #[derive(Subcommand)]

@@ -14,6 +14,7 @@ pub mod exec;
 pub mod extras;
 pub mod fs;
 pub mod git;
+pub mod knowledge_graph;
 pub mod media;
 pub mod memory;
 pub mod search_and_web;
@@ -150,6 +151,7 @@ pub const KNOWN_TOOLS: &[(&str, RiskLevel)] = &[
     ("glob", RiskLevel::ReadOnly),
     ("symbols", RiskLevel::ReadOnly),
     ("memory", RiskLevel::Mutating),
+    ("knowledge_graph", RiskLevel::Mutating),
     ("subagent_spawn", RiskLevel::Exec),
 ];
 
@@ -173,7 +175,7 @@ pub fn metadata_for(name: &str, risk: RiskLevel) -> ToolMetadata {
         "terminal"
     } else if matches!(lower.as_str(), "image_gen" | "tts") {
         "media"
-    } else if lower == "memory" {
+    } else if lower == "memory" || lower == "knowledge_graph" {
         "memory"
     } else if lower.contains("session") {
         "session_search"

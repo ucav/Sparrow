@@ -147,6 +147,7 @@ fn event_run_id(event: &Event) -> &str {
         | Event::RouteSelected { run, .. }
         | Event::ModelSwitched { run, .. }
         | Event::ThinkingDelta { run, .. }
+        | Event::ReasoningDelta { run, .. }
         | Event::Message { run, .. }
         | Event::ToolUseProposed { run, .. }
         | Event::ApprovalRequested { run, .. }
