@@ -56,6 +56,12 @@ The project focuses on a narrow product promise: a Rust-native local cockpit whe
 | **Browser/computer-use** | Playwright-backed browser tool and gated screenshot/click/type computer primitive |
 | **Gateway** | Telegram, Discord, Slack, WebSocket API — wired with honest errors, not silent failures |
 
+<br>
+<p align="center">
+  <img src="docs/screenshots/webview-captain.png" alt="Sparrow WebView cockpit" width="90%">
+  <br><em>Sparrow WebView cockpit — Captain theme</em>
+</p>
+
 ---
 
 ## Status
