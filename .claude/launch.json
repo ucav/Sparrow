@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "sparrow-console",
+      "runtimeExecutable": "C:/Sparrow/target/release/sparrow.exe",
+      "runtimeArgs": ["console"],
+      "port": 9339
+    }
+  ]
+}

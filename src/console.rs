@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
+use secrecy::ExposeSecret;
 use tokio::sync::{Mutex, broadcast, mpsc, oneshot};
 
 use crate::auth::{AuthStore, Credential};
@@ -97,6 +98,8 @@ impl WebViewServer {
             .route("/agents", get(list_agents))
             .route("/upload", post(upload_attachment))
             .route("/artifacts", get(list_artifacts))
+            .route("/providers/scan", post(scan_provider_models))
+            .route("/routing", get(get_routing).post(save_routing))
             .route(
                 "/ws",
                 get(
@@ -337,8 +340,11 @@ async fn run_task(
     }
 
     // Prepend model override hint so the engine can parse it.
+    // The frontend sends "provider:model" — strip the provider prefix to
+    // match brain.id() which returns just the model name.
     let dispatch = if let Some(m) = req.model_override.filter(|s| !s.is_empty()) {
-        format!("__model:{m}__ {task}")
+        let model_only = m.rsplit(':').next().unwrap_or(&m);
+        format!("__model:{model_only}__ {task}")
     } else {
         task
     };
@@ -1287,6 +1293,152 @@ fn parse_autonomy(value: Option<&str>) -> Option<crate::event::AutonomyLevel> {
         Some("autonomous") => Some(crate::event::AutonomyLevel::Autonomous),
         _ => None,
     }
+}
+
+// ─── Provider model scan ──────────────────────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+struct ScanRequest {
+    provider: String,
+}
+
+#[derive(serde::Serialize)]
+struct ScanResponse {
+    ok: bool,
+    message: String,
+    models: Vec<String>,
+}
+
+async fn scan_provider_models(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    axum::extract::Json(req): axum::extract::Json<ScanRequest>,
+) -> axum::extract::Json<ScanResponse> {
+    use crate::config::providers::find_provider;
+
+    let provider_id = req.provider.trim().to_string();
+
+    let Some(def) = find_provider(&provider_id) else {
+        return axum::extract::Json(ScanResponse {
+            ok: false,
+            message: format!("Unknown provider: {}", provider_id),
+            models: vec![],
+        });
+    };
+
+    // Resolve API key: auth store -> env var
+    let api_key = {
+        let key_from_store = state
+            .config
+            .as_ref()
+            .and_then(|cfg| {
+                let c = cfg.read().ok()?;
+                let auth = crate::auth::store::ChainedAuthStore::new(c.config_dir.clone());
+                match auth.get(&provider_id) {
+                    Some(crate::auth::Credential::ApiKey(k)) => Some(k.expose_secret().to_string()),
+                    _ => None,
+                }
+            });
+        let key_from_env = def.api_key_env.as_deref().and_then(|env| std::env::var(env).ok());
+        key_from_store.or(key_from_env).unwrap_or_default()
+    };
+
+    match crate::provider::discovery::discover_models(&def.adapter, &def.base_url, &api_key).await {
+        Ok(models) => {
+            let count = models.len();
+            axum::extract::Json(ScanResponse {
+                ok: true,
+                message: format!("Found {} model(s) for {}", count, def.label),
+                models,
+            })
+        }
+        Err(err) => axum::extract::Json(ScanResponse {
+            ok: false,
+            message: format!("Scan failed: {}", err),
+            models: vec![],
+        }),
+    }
+}
+
+// ─── Routing config get/set ───────────────────────────────────────────────────
+
+#[derive(serde::Serialize)]
+struct RoutingResponse {
+    ok: bool,
+    preferred_provider: Option<String>,
+    auto_discover: bool,
+    all_providers: Vec<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct RoutingRequest {
+    /// Set to "" or null to clear the preference.
+    preferred_provider: Option<String>,
+    auto_discover: Option<bool>,
+}
+
+async fn get_routing(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> axum::extract::Json<RoutingResponse> {
+    use crate::config::providers::provider_registry;
+
+    let all_providers: Vec<String> = provider_registry().iter().map(|p| p.id.clone()).collect();
+
+    let Some(shared) = &state.config else {
+        return axum::extract::Json(RoutingResponse {
+            ok: false,
+            preferred_provider: None,
+            auto_discover: true,
+            all_providers,
+        });
+    };
+
+    let cfg = shared.read().expect("config lock poisoned");
+    axum::extract::Json(RoutingResponse {
+        ok: true,
+        preferred_provider: cfg.routing.preferred_provider.clone(),
+        auto_discover: cfg.routing.auto_discover,
+        all_providers,
+    })
+}
+
+async fn save_routing(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+    axum::extract::Json(req): axum::extract::Json<RoutingRequest>,
+) -> axum::extract::Json<RunResponse> {
+    let Some(shared) = &state.config else {
+        return axum::extract::Json(RunResponse {
+            ok: false,
+            message: "config unavailable".into(),
+        });
+    };
+
+    {
+        let mut cfg = shared.write().expect("config lock poisoned");
+
+        // preferred_provider: empty string or missing = clear
+        cfg.routing.preferred_provider = req
+            .preferred_provider
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+
+        if let Some(ad) = req.auto_discover {
+            cfg.routing.auto_discover = ad;
+        }
+
+        let saved = cfg.clone();
+        let store = FsConfigStore::new(saved.config_dir.clone());
+        if let Err(err) = store.save(&saved) {
+            return axum::extract::Json(RunResponse {
+                ok: false,
+                message: format!("save failed: {}", err),
+            });
+        }
+    }
+
+    axum::extract::Json(RunResponse {
+        ok: true,
+        message: "Routing preferences saved.".into(),
+    })
 }
 
 async fn handle_ws(

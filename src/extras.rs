@@ -219,58 +219,49 @@ impl ReExecuter {
 pub struct OAuthFlow;
 
 impl OAuthFlow {
-    /// Start a device code OAuth flow for a provider.
-    /// Returns the URL the user should visit and the device code.
+    /// Start a device code OAuth flow.
+    /// Accepts the endpoints and scope from the provider registry — no hardcoded list.
     pub async fn start_device_flow(
-        provider: &str,
+        device_endpoint: &str,
+        token_endpoint_hint: &str,  // unused here, kept for symmetry
         client_id: &str,
+        scope: &str,
     ) -> anyhow::Result<(String, String, String)> {
-        let device_url = match provider {
-            "github" => "https://github.com/login/device/code",
-            "google" => "https://oauth2.googleapis.com/device/code",
-            "microsoft" => "https://login.microsoftonline.com/common/oauth2/v2.0/devicecode",
-            _ => anyhow::bail!("OAuth device flow not supported for {}", provider),
-        };
-
+        let _ = token_endpoint_hint;
         let client = reqwest::Client::new();
         let resp: serde_json::Value = client
-            .post(device_url)
-            .form(&[
-                ("client_id", client_id),
-                (
-                    "scope",
-                    if provider == "github" {
-                        "read:user"
-                    } else {
-                        "openid profile"
-                    },
-                ),
-            ])
+            .post(device_endpoint)
+            .form(&[("client_id", client_id), ("scope", scope)])
             .send()
             .await?
             .json()
             .await?;
 
-        Ok((
-            resp["verification_uri"].as_str().unwrap_or("").to_string(),
-            resp["user_code"].as_str().unwrap_or("").to_string(),
-            resp["device_code"].as_str().unwrap_or("").to_string(),
-        ))
+        let verification_uri = resp["verification_uri"]
+            .as_str()
+            .or_else(|| resp["verification_url"].as_str())
+            .unwrap_or("")
+            .to_string();
+        let user_code = resp["user_code"].as_str().unwrap_or("").to_string();
+        let device_code = resp["device_code"].as_str().unwrap_or("").to_string();
+
+        if device_code.is_empty() {
+            anyhow::bail!(
+                "Device flow start failed — provider response: {}",
+                resp.to_string()
+            );
+        }
+
+        Ok((verification_uri, user_code, device_code))
     }
 
-    /// Poll for OAuth token completion
+    /// Poll for token completion using the provider token endpoint.
     pub async fn poll_token(
-        provider: &str,
+        token_endpoint: &str,
         client_id: &str,
         device_code: &str,
         timeout_secs: u64,
     ) -> anyhow::Result<String> {
-        let token_url = match provider {
-            "github" => "https://github.com/login/oauth/access_token",
-            "google" => "https://oauth2.googleapis.com/token",
-            _ => anyhow::bail!("OAuth not supported for {}", provider),
-        };
-
         let client = reqwest::Client::new();
         let start = std::time::Instant::now();
 
@@ -280,7 +271,7 @@ impl OAuthFlow {
             }
 
             let resp: serde_json::Value = client
-                .post(token_url)
+                .post(token_endpoint)
                 .form(&[
                     ("client_id", client_id),
                     ("device_code", device_code),
@@ -295,12 +286,16 @@ impl OAuthFlow {
                 return Ok(token.to_string());
             }
 
-            if resp["error"].as_str() == Some("authorization_pending") {
-                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
-                continue;
+            match resp["error"].as_str() {
+                Some("authorization_pending") | Some("slow_down") => {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                    continue;
+                }
+                Some(e) => anyhow::bail!("OAuth error: {}", e),
+                None => {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+                }
             }
-
-            anyhow::bail!("OAuth error: {:?}", resp["error"]);
         }
     }
 }

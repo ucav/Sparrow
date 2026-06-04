@@ -1,0 +1,3 @@
+Tool test - write OK
+Ligne 2 : accents éèçàù
+Ligne 3 : symbols @#$%^&*()

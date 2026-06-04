@@ -211,15 +211,29 @@ impl Brain for OpenAICompatAdapter {
             started: bool,
         }
 
+        // Inter-chunk buffer for resilient SSE parsing.
+        // When a data: line is split across HTTP chunks, we buffer
+        // the incomplete segment and reassemble it with the next chunk.
         let stream = response.bytes_stream();
 
         let event_stream = stream
-            .scan(HashMap::<u64, ToolCallState>::new(), |tool_state, chunk| {
+            .scan(
+                (HashMap::<u64, ToolCallState>::new(), String::new()),
+                |state, chunk| {
+                    let (tool_state, partial) = state;
                 let events: Vec<BrainEvent> = match chunk {
                     Ok(bytes) => {
-                        let text = String::from_utf8_lossy(&bytes);
+                        let chunk_text = String::from_utf8_lossy(&bytes);
+                        let full_text = format!("{}{}", partial, chunk_text);
                         let mut parsed = Vec::new();
-                        for line in text.lines() {
+
+                        // Process all complete lines (ending with \n).
+                        // The trailing incomplete segment stays in `partial`
+                        // and will be prepended to the next chunk.
+                        if let Some(last_nl) = full_text.rfind('\n') {
+                            *partial = full_text[last_nl + 1..].to_string();
+                            let complete = &full_text[..=last_nl];
+                            for line in complete.lines() {
                             let line = line.trim();
                             if line.is_empty() || !line.starts_with("data: ") {
                                 continue;
@@ -243,12 +257,22 @@ impl Brain for OpenAICompatAdapter {
                             if let Some(choices) = event["choices"].as_array() {
                                 for choice in choices {
                                     if let Some(delta) = choice["delta"].as_object() {
-                                        if let Some(text) =
-                                            delta.get("content").and_then(|v| v.as_str())
-                                        {
-                                            if !text.is_empty() {
-                                                parsed
-                                                    .push(BrainEvent::TextDelta(text.to_string()));
+                                        // DeepSeek: only skip content when reasoning_content has
+                                        // actual non-empty text (the thinking phase). After the
+                                        // tool call, reasoning_content is null/empty — allow content.
+                                        let is_reasoning = delta.get("reasoning_content")
+                                            .and_then(|v| v.as_str())
+                                            .map(|s| !s.is_empty())
+                                            .unwrap_or(false);
+                                        if !is_reasoning {
+                                            if let Some(text) =
+                                                delta.get("content").and_then(|v| v.as_str())
+                                            {
+                                                if !text.is_empty() {
+                                                    parsed.push(BrainEvent::TextDelta(
+                                                        text.to_string(),
+                                                    ));
+                                                }
                                             }
                                         }
                                         if let Some(tool_calls) =
@@ -343,6 +367,9 @@ impl Brain for OpenAICompatAdapter {
                                         .unwrap_or(0),
                                 }));
                             }
+                            }
+                        } else {
+                            *partial = full_text;
                         }
                         parsed
                     }

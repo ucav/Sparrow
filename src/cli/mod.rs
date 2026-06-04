@@ -82,7 +82,11 @@ pub enum Commands {
     Tui,
 
     /// Launch webview console (HTTP + WebSocket)
-    Console,
+    Console {
+        /// TCP port for the webview HTTP/WS server
+        #[arg(long, default_value = "9339")]
+        port: u16,
+    },
 
     /// Run headless Sparrow runtime daemon
     Daemon,
@@ -126,6 +130,12 @@ pub enum Commands {
         /// List available models
         #[arg(long)]
         list: bool,
+    },
+
+    /// Configure intelligent auto-routing provider
+    Route {
+        #[command(subcommand)]
+        action: RouteAction,
     },
 
     /// Manage provider credentials
@@ -503,4 +513,18 @@ pub enum PermissionAction {
     AllowPath { path: PathBuf },
     /// Add a denied path boundary
     DenyPath { path: PathBuf },
+}
+
+#[derive(Subcommand)]
+pub enum RouteAction {
+    /// Pin the intelligent auto-router to a specific provider for all tiers.
+    /// Example: sparrow route set opencode-go
+    Set {
+        /// Provider ID to use for all task tiers (e.g. opencode-go, anthropic, nvidia)
+        provider: String,
+    },
+    /// Clear the pinned provider — let the multi-tier policy decide per task.
+    Clear,
+    /// Show the current routing config (preferred provider + per-tier policy).
+    Show,
 }

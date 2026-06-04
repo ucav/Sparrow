@@ -546,13 +546,8 @@ impl Curator {
 
         let specificity_markers = [
             "github.com",
-            "repo",
             "http",
             "https",
-            ".rs",
-            ".py",
-            ".js",
-            ".ts",
             "this ",
             "that ",
             "the file",
@@ -561,9 +556,6 @@ impl Curator {
             "2024",
             "2025",
             "2026",
-            "v0.",
-            "v1.",
-            "v2.",
         ];
         if specificity_markers
             .iter()
@@ -573,18 +565,22 @@ impl Curator {
         }
         if words.iter().any(|word| {
             let cleaned = word.trim_matches(|c: char| !c.is_alphanumeric());
+            // Only bail on long proper-noun-looking tokens (> 12 chars, starts uppercase).
+            // Shorter capitalized words (structs, types) are normal in coding tasks.
             cleaned
                 .chars()
                 .next()
                 .map(|c| c.is_uppercase())
                 .unwrap_or(false)
-                && cleaned.chars().count() > 8
+                && cleaned.chars().count() > 12
         }) {
             return None;
         }
 
         let has_concrete_output = [
             "diff", "fn ", "struct ", "impl ", "test", "fixed", "refactor",
+            "added", "updated", "created", "modified", "patch", "write", "edit",
+            "return", "async", "pub ", "let ", "const ", "mod ",
         ]
         .iter()
         .any(|needle| outcome_lower.contains(needle));

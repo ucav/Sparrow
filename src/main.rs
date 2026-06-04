@@ -18,6 +18,7 @@ use sparrow::capabilities::{FsSkillLibrary, SkillLibrary};
 use sparrow::cli::{Cli, Commands};
 use sparrow::config::{ConfigStore, FsConfigStore, ProviderConfig};
 use sparrow::console::WebViewServer;
+use std::io::Write;
 use sparrow::extras::{ChatSession, ReExecuter};
 use sparrow::gateway::discord::DiscordTransport;
 use sparrow::gateway::slack::SlackTransport;
@@ -243,6 +244,7 @@ async fn main() -> anyhow::Result<()> {
                     scheduler.clone(),
                     recorder.clone(),
                     skill_library.clone(),
+                    9339,
                 )
                 .await?;
             } else {
@@ -264,13 +266,14 @@ async fn main() -> anyhow::Result<()> {
             )
             .await?;
         }
-        Some(Commands::Console) => {
+        Some(Commands::Console { port }) => {
             handle_webview(
                 &config,
                 memory.clone(),
                 scheduler.clone(),
                 recorder.clone(),
                 skill_library.clone(),
+                port,
             )
             .await?;
         }
@@ -523,6 +526,53 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
         }
+        Some(Commands::Route { action }) => {
+            match action {
+                sparrow::cli::RouteAction::Show => {
+                    println!("Routing configuration:");
+                    println!(
+                        "  auto_discover : {}",
+                        if config.routing.auto_discover { "on" } else { "off" }
+                    );
+                    match &config.routing.preferred_provider {
+                        Some(p) => println!("  preferred_provider : {} (all tiers pinned)", p),
+                        None => println!("  preferred_provider : (none — per-tier policy active)"),
+                    }
+                    println!("  Per-tier policy:");
+                    let mut tiers: Vec<_> = config.routing.policy.iter().collect();
+                    tiers.sort_by_key(|(k, _): &(&String, &String)| k.as_str());
+                    for (tier, provider) in tiers {
+                        println!("    {} -> {}", tier, provider);
+                    }
+                }
+                sparrow::cli::RouteAction::Set { provider } => {
+                    // Validate the provider is known
+                    let known = sparrow::config::providers::find_provider(&provider).is_some()
+                        || !memory.get_discovered_models(&provider).is_empty();
+                    if !known {
+                        eprintln!(
+                            "Unknown provider '{}'. Run 'sparrow model --list' to see options.",
+                            provider
+                        );
+                    } else {
+                        let mut updated = config.clone();
+                        updated.routing.preferred_provider = Some(provider.clone());
+                        config_store.save(&updated)?;
+                        println!("Auto-routing pinned to provider: {}", provider);
+                        println!("All task tiers will prefer this provider.");
+                        println!(
+                            "Run 'sparrow route clear' to restore per-tier policy."
+                        );
+                    }
+                }
+                sparrow::cli::RouteAction::Clear => {
+                    let mut updated = config.clone();
+                    updated.routing.preferred_provider = None;
+                    config_store.save(&updated)?;
+                    println!("Preferred provider cleared. Per-tier routing policy is now active.");
+                }
+            }
+        }
         Some(Commands::Auth { action }) => {
             let auth = sparrow::auth::store::ChainedAuthStore::new(config.config_dir.clone());
             match action {
@@ -580,15 +630,19 @@ async fn main() -> anyhow::Result<()> {
                     let stored_key = key.clone();
                     auth.set(&provider_id, Credential::api_key(key))?;
                     println!("Stored credential for {}.", provider_id);
-                    discover_and_cache_provider(
-                        memory.clone(),
-                        provider_id,
-                        adapter,
-                        base_url,
-                        stored_key,
-                        true,
-                    )
-                    .await;
+                    // Auto-discover models right after storing the key, unless
+                    // the user explicitly disabled it in config.
+                    if config.routing.auto_discover {
+                        discover_and_cache_provider(
+                            memory.clone(),
+                            provider_id,
+                            adapter,
+                            base_url,
+                            stored_key,
+                            true,
+                        )
+                        .await;
+                    }
                 }
                 sparrow::cli::AuthAction::Rm { provider } => {
                     auth.remove(&provider)?;
@@ -645,11 +699,21 @@ async fn main() -> anyhow::Result<()> {
             }
         },
         Some(Commands::Rewind { id }) => {
-            let cwd = std::env::current_dir().unwrap_or_default();
-            let checkpoints = GitCheckpoints::new(cwd);
-            match checkpoints.rewind(sparrow::event::CheckpointId(id.clone())) {
-                Ok(()) => println!("Rewound to checkpoint: {}", id),
-                Err(e) => eprintln!("Failed to rewind: {}", e),
+            // Safety: `git reset --hard` discards uncommitted changes. Ask for confirmation.
+            eprint!("⚠ Rewind to checkpoint `{}`? This will `git reset --hard` [y/N] ", id);
+            let _ = std::io::stdout().flush();
+            let mut input = String::new();
+            if std::io::stdin().read_line(&mut input).is_ok()
+                && input.trim().eq_ignore_ascii_case("y")
+            {
+                let cwd = std::env::current_dir().unwrap_or_default();
+                let checkpoints = GitCheckpoints::new(cwd);
+                match checkpoints.rewind(sparrow::event::CheckpointId(id.clone())) {
+                    Ok(()) => println!("Rewound to checkpoint: {}", id),
+                    Err(e) => eprintln!("Failed to rewind: {}", e),
+                }
+            } else {
+                println!("Rewind cancelled.");
             }
         }
         Some(Commands::Doctor) => {
@@ -1553,7 +1617,11 @@ async fn handle_daemon(
     Ok(())
 }
 
-// ─── OAuth device-flow login (§3.2 Tool Gateway) ─────────────────────────────────
+// ─── OAuth device-flow login — registry-driven ───────────────────────────────
+//
+// Any provider in the registry with `auth_flow: DeviceOAuth { .. }` is
+// automatically supported.  The `client_id` can be passed on the CLI or
+// read from the env var declared in the registry entry (`client_id_env`).
 
 async fn handle_auth_login(
     provider: &str,
@@ -1561,39 +1629,58 @@ async fn handle_auth_login(
     auth: &sparrow::auth::store::ChainedAuthStore,
 ) -> anyhow::Result<()> {
     use sparrow::auth::AuthStore;
+    use sparrow::config::providers::{AuthFlow, find_provider, list_oauth_providers};
     use sparrow::extras::OAuthFlow;
 
-    let supported = ["github", "google", "microsoft"];
-    if !supported.contains(&provider) {
-        anyhow::bail!(
-            "OAuth device flow not supported for '{}'. Supported: {}.\n\
-             For API-key providers use 'sparrow auth add {}'.",
+    let def = find_provider(provider).ok_or_else(|| {
+        let oauth_ids: Vec<String> = list_oauth_providers().into_iter().map(|p| p.id).collect();
+        anyhow::anyhow!(
+            "Unknown provider '{}'. OAuth-capable providers: {}.\nFor API-key providers use 'sparrow auth add {}'.",
             provider,
-            supported.join(", "),
-            provider
-        );
-    }
+            oauth_ids.join(", "),
+            provider,
+        )
+    })?;
 
-    let client_id = client_id
-        .or_else(|| std::env::var(format!("{}_CLIENT_ID", provider.to_uppercase())).ok())
+    let (device_ep, token_ep, scope, cid_env) = match &def.auth_flow {
+        AuthFlow::DeviceOAuth {
+            device_endpoint,
+            token_endpoint,
+            scope,
+            client_id_env,
+        } => (
+            device_endpoint.clone(),
+            token_endpoint.clone(),
+            scope.clone(),
+            client_id_env.clone(),
+        ),
+        AuthFlow::ApiKey => {
+            anyhow::bail!(
+                "Provider '{}' uses API-key auth, not OAuth.\nUse 'sparrow auth add {}' instead.",
+                provider, provider
+            )
+        }
+    };
+
+    let cid = client_id
+        .or_else(|| std::env::var(&cid_env).ok())
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "No OAuth client id. Pass --client-id <id> or set {}_CLIENT_ID.\n\
-                 Register an OAuth app with your provider to obtain one.",
-                provider.to_uppercase()
+                "No OAuth client id for '{}'.\nPass --client-id <id> or set {}.\nRegister an OAuth app with your provider to obtain one.",
+                provider, cid_env
             )
         })?;
 
-    println!("Starting OAuth device flow for {}...", provider);
+    println!("Starting OAuth device flow for {} ({})...", def.label, provider);
     let (verification_uri, user_code, device_code) =
-        OAuthFlow::start_device_flow(provider, &client_id).await?;
+        OAuthFlow::start_device_flow(&device_ep, &token_ep, &cid, &scope).await?;
     println!("\n  1. Open: {}", verification_uri);
     println!("  2. Enter code: {}\n", user_code);
     println!("Waiting for authorization (up to 5 min)...");
 
-    let token = OAuthFlow::poll_token(provider, &client_id, &device_code, 300).await?;
+    let token = OAuthFlow::poll_token(&token_ep, &cid, &device_code, 300).await?;
     auth.set(provider, sparrow::auth::Credential::api_key(token))?;
-    println!("✓ Authenticated. Credential stored for {}.", provider);
+    println!("Authenticated. Credential stored for {}.", provider);
     Ok(())
 }
 
@@ -3678,13 +3765,14 @@ async fn handle_webview(
     _scheduler: Arc<MemoryScheduler>,
     recorder: Arc<FsRecorder>,
     skills: Arc<dyn SkillLibrary>,
+    port: u16,
 ) -> anyhow::Result<()> {
     use sparrow::engine::Engine;
     use sparrow::router::BasicRouter;
     use std::net::SocketAddr;
     use std::sync::RwLock;
 
-    let (event_tx, _) = tokio::sync::broadcast::channel::<sparrow::event::Event>(256);
+    let (event_tx, _) = tokio::sync::broadcast::channel::<sparrow::event::Event>(1024);
     let (command_tx, mut command_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
     let shared_config = Arc::new(RwLock::new(config.clone()));
     let approvals = Arc::new(sparrow::console::WebApprovalBroker::new());
@@ -3782,7 +3870,8 @@ async fn handle_webview(
                     continue;
                 }
             }
-            active = None;
+            // Previous run finished (or was never started) — drop the old handle.
+            drop(active.take());
             let current_config = config_for_runs
                 .read()
                 .expect("config lock poisoned")
@@ -3907,10 +3996,19 @@ async fn handle_webview(
         }
     });
 
-    let addr: SocketAddr = "127.0.0.1:9339".parse()?;
-    println!("WebView console: http://{}", addr);
-    println!("Open this URL in your browser.");
+    let addr: SocketAddr = format!("0.0.0.0:{}", port).parse()?;
+    let url = format!("http://{}", addr);
+    println!("WebView console: {}", url);
     println!("Press Ctrl+C to stop.\n");
+
+    // Auto-open the browser (STATUS2.md Q1 decision).
+    // Fire-and-forget — the server keeps running regardless.
+    #[cfg(target_os = "windows")]
+    { let _ = std::process::Command::new("cmd").args(["/c","start",&url]).spawn(); }
+    #[cfg(target_os = "linux")]
+    { let _ = std::process::Command::new("xdg-open").arg(&url).spawn(); }
+    #[cfg(target_os = "macos")]
+    { let _ = std::process::Command::new("open").arg(&url).spawn(); }
 
     let server = WebViewServer::new(
         addr,
