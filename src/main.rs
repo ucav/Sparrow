@@ -4168,20 +4168,22 @@ async fn handle_webview(
                 .with_memory(memory_for_runs.clone())
                 .with_skills(skills_for_runs.clone())
                 .with_approval_handler(approvals_for_runs.clone());
-            // Apply agent identity override: __identity:NAME__ROLE__PERSONALITY__
-            if let Some(rest) = task.strip_prefix("__identity:") {
+            // Apply agent identity override: __agent:NAME__ROLE__BASE64__
+            if let Some(rest) = task.strip_prefix("__agent:") {
                 if let Some((id_part, rest2)) = rest.split_once("__") {
-                    if let Some((role_part, personality_part)) = rest2.split_once("__") {
-                        let personality = personality_part.replace("\\n", "\n").replace('\u{00A0}', " ");
+                    if let Some((role_part, b64_part)) = rest2.split_once("__") {
+                        use base64::{Engine as _, engine::general_purpose::STANDARD};
+                        let personality = String::from_utf8(
+                            STANDARD.decode(b64_part.as_bytes()).unwrap_or_default()
+                        ).unwrap_or_default();
                         engine = engine.with_identity(Identity {
                             name: id_part.to_string(),
                             role: role_part.to_string(),
                             personality,
                         });
-                        // Strip the identity prefix from the task so the LLM
-                        // sees only the user message.
-                        let clean = rest2[personality_part.len()..].trim_start_matches("__ ").to_string();
-                        task = if clean.is_empty() { task.clone() } else { clean };
+                        // Strip the agent prefix from the task.
+                        let skip = b64_part.len() + 2; // +2 for the trailing __
+                        task = rest2[skip..].trim_start_matches(' ').to_string();
                     }
                 }
             }
