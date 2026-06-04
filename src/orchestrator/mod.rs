@@ -328,7 +328,7 @@ impl DefaultOrchestrator {
         brain: Arc<dyn Brain>,
         event_tx: &mpsc::UnboundedSender<Event>,
         parent_run: &RunId,
-    ) -> anyhow::Result<String> {
+    ) -> anyhow::Result<(String, f64, TokenUsage)> {
         let planner_identity = Identity {
             name: "planner".into(),
             role: "technical architect and planner".into(),
@@ -386,6 +386,9 @@ Output format:
 
         let mut stream = brain.complete(req).await?;
         let mut plan = String::new();
+        let caps = brain.caps();
+        let mut cost = 0.0_f64;
+        let mut tokens = TokenUsage { input: 0, output: 0 };
 
         while let Some(ev) = futures::StreamExt::next(&mut stream).await {
             match ev {
@@ -395,6 +398,12 @@ Output format:
                         run: parent_run.clone(),
                         text,
                     });
+                }
+                crate::provider::BrainEvent::Usage(usage) => {
+                    tokens.input = tokens.input.saturating_add(usage.input);
+                    tokens.output = tokens.output.saturating_add(usage.output);
+                    cost += caps.cost_input_per_mtok * (usage.input as f64) / 1_000_000.0
+                        + caps.cost_output_per_mtok * (usage.output as f64) / 1_000_000.0;
                 }
                 crate::provider::BrainEvent::Done(_) => break,
                 crate::provider::BrainEvent::Error(e) => {
@@ -411,7 +420,7 @@ Output format:
             note: "plan complete".into(),
         });
 
-        Ok(plan)
+        Ok((plan, cost, tokens))
     }
 
     /// Run the coder agent with a given spec
@@ -423,7 +432,7 @@ Output format:
         brain: Arc<dyn Brain>,
         event_tx: &mpsc::UnboundedSender<Event>,
         parent_run: &RunId,
-    ) -> anyhow::Result<Vec<crate::event::FileDiff>> {
+    ) -> anyhow::Result<(Vec<crate::event::FileDiff>, f64, TokenUsage)> {
         let coder_identity = Identity {
             name: "coder".into(),
             role: "implementation engineer".into(),
@@ -495,6 +504,9 @@ Your job: implement the SPEC exactly. Use tools to read existing files and write
 
         let mut output = String::new();
         let mut diffs = Vec::new();
+        let caps = brain.caps();
+        let mut cost = 0.0_f64;
+        let mut tokens = TokenUsage { input: 0, output: 0 };
 
         for _turn in 0..8 {
             let req = BrainRequest {
@@ -524,6 +536,10 @@ Your job: implement the SPEC exactly. Use tools to read existing files and write
                             text,
                         });
                     }
+                    // The orchestrator's coder loop doesn't need to round-trip
+                    // reasoning content (each phase uses a fresh BrainRequest),
+                    // so we just swallow it here to keep the match exhaustive.
+                    crate::provider::BrainEvent::ReasoningDelta(_) => {}
                     crate::provider::BrainEvent::ToolUseStart { id, name } => {
                         current_tool_id = id.clone();
                         current_tool_name = name.clone();
@@ -603,7 +619,12 @@ Your job: implement the SPEC exactly. Use tools to read existing files and write
                     }
                     crate::provider::BrainEvent::Done(_) => break,
                     crate::provider::BrainEvent::Error(e) => anyhow::bail!("Coder error: {}", e),
-                    crate::provider::BrainEvent::Usage(_) => {}
+                    crate::provider::BrainEvent::Usage(usage) => {
+                        tokens.input = tokens.input.saturating_add(usage.input);
+                        tokens.output = tokens.output.saturating_add(usage.output);
+                        cost += caps.cost_input_per_mtok * (usage.input as f64) / 1_000_000.0
+                            + caps.cost_output_per_mtok * (usage.output as f64) / 1_000_000.0;
+                    }
                 }
             }
 
@@ -667,7 +688,7 @@ Your job: implement the SPEC exactly. Use tools to read existing files and write
             note: format!("{} files changed", diffs.len()),
         });
 
-        Ok(diffs)
+        Ok((diffs, cost, tokens))
     }
 
     /// Run the verifier agent
@@ -679,7 +700,7 @@ Your job: implement the SPEC exactly. Use tools to read existing files and write
         brain: Arc<dyn Brain>,
         event_tx: &mpsc::UnboundedSender<Event>,
         parent_run: &RunId,
-    ) -> anyhow::Result<Verdict> {
+    ) -> anyhow::Result<(Verdict, f64, TokenUsage)> {
         let verifier_identity = Identity {
             name: "verifier".into(),
             role: "code reviewer and quality assurance".into(),
@@ -782,18 +803,32 @@ or:
 
         let mut stream = brain.complete(req).await?;
         let mut verdict_text = String::new();
+        let caps = brain.caps();
+        let mut cost = 0.0_f64;
+        let mut tokens = TokenUsage { input: 0, output: 0 };
 
         while let Some(ev) = futures::StreamExt::next(&mut stream).await {
             match ev {
                 crate::provider::BrainEvent::TextDelta(text) => {
                     verdict_text.push_str(&text);
                 }
+                crate::provider::BrainEvent::Usage(usage) => {
+                    tokens.input = tokens.input.saturating_add(usage.input);
+                    tokens.output = tokens.output.saturating_add(usage.output);
+                    cost += caps.cost_input_per_mtok * (usage.input as f64) / 1_000_000.0
+                        + caps.cost_output_per_mtok * (usage.output as f64) / 1_000_000.0;
+                }
                 crate::provider::BrainEvent::Done(_) => break,
                 _ => {}
             }
         }
 
-        let verdict = if verdict_text.contains("✗ REWORK") || verdict_text.contains("REWORK") {
+        // Case-insensitive PASS/REWORK detection. "PASS" wins only if no rework signal.
+        let upper = verdict_text.to_uppercase();
+        let has_rework = upper.contains("REWORK") || upper.contains("NEEDS REWORK") || verdict_text.contains("✗");
+        let has_pass = (upper.contains("PASS") || verdict_text.contains("✓")) && !has_rework;
+
+        let verdict = if has_rework {
             let findings: Vec<String> = verdict_text
                 .lines()
                 .filter(|l| l.trim().starts_with(|c: char| c.is_ascii_digit()) && l.contains('.'))
@@ -801,13 +836,15 @@ or:
                 .collect();
 
             if findings.is_empty() {
-                let findings = vec![verdict_text.clone()];
-                Verdict::Rework { findings }
+                Verdict::Rework { findings: vec![verdict_text.clone()] }
             } else {
                 Verdict::Rework { findings }
             }
-        } else {
+        } else if has_pass {
             Verdict::Pass
+        } else {
+            // No clear verdict — treat as rework with the raw text to be safe.
+            Verdict::Rework { findings: vec![format!("Verifier verdict unclear: {}", verdict_text)] }
         };
 
         let _ = event_tx.send(Event::AgentStatus {
@@ -820,7 +857,7 @@ or:
             },
         });
 
-        Ok(verdict)
+        Ok((verdict, cost, tokens))
     }
 }
 
@@ -860,7 +897,8 @@ impl Orchestrator for DefaultOrchestrator {
             sandbox: Arc::new(sandbox),
         };
 
-        let total_cost: f64 = 0.0;
+        let mut total_cost: f64 = 0.0;
+        let mut total_tokens = TokenUsage { input: 0, output: 0 };
 
         // ▸ PHASE 1: PLANNING
         let _ = event_tx.send(Event::AgentSpawned {
@@ -869,9 +907,13 @@ impl Orchestrator for DefaultOrchestrator {
             model: planner_brain.id().to_string(),
         });
 
-        let spec = self
+        let (spec, planner_cost, planner_tokens) = self
             .run_planner(&task, &workspace, planner_brain, &event_tx, &run_id)
             .await?;
+        total_cost += planner_cost;
+        total_tokens.input = total_tokens.input.saturating_add(planner_tokens.input);
+        total_tokens.output = total_tokens.output.saturating_add(planner_tokens.output);
+        let _ = event_tx.send(Event::CostUpdate { run: run_id.clone(), usd: total_cost });
 
         // Post plan to shared memory
         let _ = self.memory.upsert_doc(crate::memory::WorkingDoc {
@@ -901,7 +943,7 @@ impl Orchestrator for DefaultOrchestrator {
 
         for attempt in 0..=plan.max_reworks {
             // ▸ CODER
-            let diffs = self
+            let (diffs, coder_cost, coder_tokens) = self
                 .run_coder(
                     &spec,
                     rework_notes.as_deref(),
@@ -911,6 +953,10 @@ impl Orchestrator for DefaultOrchestrator {
                     &run_id,
                 )
                 .await?;
+            total_cost += coder_cost;
+            total_tokens.input = total_tokens.input.saturating_add(coder_tokens.input);
+            total_tokens.output = total_tokens.output.saturating_add(coder_tokens.output);
+            let _ = event_tx.send(Event::CostUpdate { run: run_id.clone(), usd: total_cost });
 
             // Release any locks from previous attempt
             if attempt > 0 {
@@ -956,7 +1002,7 @@ impl Orchestrator for DefaultOrchestrator {
             }
 
             // ▸ VERIFIER
-            let verdict = self
+            let (verdict, verifier_cost, verifier_tokens) = self
                 .run_verifier(
                     &spec,
                     &diffs,
@@ -966,6 +1012,10 @@ impl Orchestrator for DefaultOrchestrator {
                     &run_id,
                 )
                 .await?;
+            total_cost += verifier_cost;
+            total_tokens.input = total_tokens.input.saturating_add(verifier_tokens.input);
+            total_tokens.output = total_tokens.output.saturating_add(verifier_tokens.output);
+            let _ = event_tx.send(Event::CostUpdate { run: run_id.clone(), usd: total_cost });
 
             match verdict {
                 Verdict::Pass => {
@@ -1040,10 +1090,7 @@ impl Orchestrator for DefaultOrchestrator {
             status: outcome.status.clone(),
             diffs: outcome.diffs.clone(),
             cost_usd: outcome.cost_usd,
-            tokens: TokenUsage {
-                input: 0,
-                output: 0,
-            },
+            tokens: total_tokens,
         };
 
         let _ = event_tx.send(Event::RunFinished {

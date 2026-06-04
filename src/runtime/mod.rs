@@ -296,7 +296,45 @@ impl Runtime for SparrowRuntime {
         self.injects.lock().await.insert(run_id.clone(), inject_tx);
         let injects_map = self.injects.clone();
 
+        // RAII cleanup so that a panic anywhere inside the spawned task still
+        // releases the run_id from `cancellations` / `injects` — preventing the
+        // map from growing unboundedly with zombie keys.
+        struct RunCleanup {
+            rid: String,
+            cancellations:
+                Arc<tokio::sync::Mutex<std::collections::HashMap<String, CancellationToken>>>,
+            injects: Arc<
+                tokio::sync::Mutex<
+                    std::collections::HashMap<String, mpsc::UnboundedSender<String>>,
+                >,
+            >,
+            recorder: Arc<FsRecorder>,
+        }
+        impl Drop for RunCleanup {
+            fn drop(&mut self) {
+                // We can't .await in drop; use blocking_lock when not on a Tokio
+                // worker thread, or spawn a task that owns the cleanup. The
+                // cheapest correct option is to spawn a detached task — runtime
+                // is guaranteed alive because submit() runs inside it.
+                let rid = std::mem::take(&mut self.rid);
+                let cancellations = self.cancellations.clone();
+                let injects = self.injects.clone();
+                let recorder = self.recorder.clone();
+                tokio::spawn(async move {
+                    cancellations.lock().await.remove(&rid);
+                    injects.lock().await.remove(&rid);
+                    let _ = recorder.finalize(&rid);
+                });
+            }
+        }
+
         let handle = tokio::spawn(async move {
+            let _guard = RunCleanup {
+                rid: rid.clone(),
+                cancellations,
+                injects: injects_map,
+                recorder: recorder.clone(),
+            };
             let engine_rid = rid.clone();
             let cancel_rid = rid.clone();
             let cancel_tx = tx.clone();
@@ -334,9 +372,7 @@ impl Runtime for SparrowRuntime {
             if let Err(err) = engine_handle.await {
                 tracing::error!("runtime engine task failed: {}", err);
             }
-            cancellations.lock().await.remove(&rid);
-            injects_map.lock().await.remove(&rid);
-            let _ = recorder.finalize(&rid);
+            // `_guard` drops here on the happy path and on early returns / panics.
         });
 
         self.cancellations

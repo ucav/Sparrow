@@ -220,6 +220,10 @@ pub trait Scheduler: Send + Sync {
 pub struct MemoryScheduler {
     jobs: std::sync::Mutex<Vec<Job>>,
     memory: Option<Arc<dyn Memory>>,
+    /// Abort handle for the running cron loop, if any. Repeated
+    /// `start_cron_loop()` calls cancel the previous loop instead of leaking
+    /// parallel copies (each loop would otherwise re-fire every due job).
+    cron_abort: std::sync::Mutex<Option<tokio::task::AbortHandle>>,
 }
 
 impl MemoryScheduler {
@@ -227,6 +231,7 @@ impl MemoryScheduler {
         Self {
             jobs: std::sync::Mutex::new(Vec::new()),
             memory: None,
+            cron_abort: std::sync::Mutex::new(None),
         }
     }
 
@@ -261,13 +266,26 @@ impl MemoryScheduler {
         }
     }
 
+    /// Stop the running cron loop if any. Idempotent.
+    pub fn stop_cron_loop(&self) {
+        if let Some(abort) = self.cron_abort.lock().unwrap().take() {
+            abort.abort();
+        }
+    }
+
     pub fn start_cron_loop(
         self: &Arc<Self>,
         engine: Arc<Engine>,
         recorder: Arc<FsRecorder>,
     ) -> tokio::task::JoinHandle<()> {
+        // Cancel any previously-running loop so repeated start() calls don't
+        // leak parallel ticking loops (each tick spawns engine work — multiple
+        // loops would fire the same job multiple times).
+        if let Some(prev) = self.cron_abort.lock().unwrap().take() {
+            prev.abort();
+        }
         let scheduler = self.clone();
-        tokio::spawn(async move {
+        let handle = tokio::spawn(async move {
             loop {
                 tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
                 let due_jobs = scheduler.tick().await;
@@ -309,7 +327,12 @@ impl MemoryScheduler {
                     });
                 }
             }
-        })
+        });
+        // Store an AbortHandle so the next start() or an explicit stop() can
+        // cancel this loop. The original JoinHandle is still returned to the
+        // caller for backward compatibility.
+        *self.cron_abort.lock().unwrap() = Some(handle.abort_handle());
+        handle
     }
 }
 

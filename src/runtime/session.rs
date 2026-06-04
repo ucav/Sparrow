@@ -30,6 +30,14 @@ pub struct SessionSlice {
     pub messages: Vec<crate::provider::Msg>,
 }
 
+/// SQLite-backed session storage.
+///
+/// All public methods are synchronous and hold a `std::sync::Mutex<Connection>`
+/// for the duration of a single statement (or a single `BEGIN…COMMIT` block).
+/// They are safe to call from an async context because they do not `.await`
+/// while the lock is held — but they are *blocking I/O*, so callers that run
+/// in a Tokio worker thread should wrap calls in `tokio::task::spawn_blocking`
+/// when latency matters (e.g. inside a hot request path).
 pub struct SessionStore {
     conn: Mutex<Connection>,
 }
@@ -119,10 +127,12 @@ impl SessionStore {
 
     pub fn list(&self) -> Vec<Session> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
+        let Ok(mut stmt) = conn.prepare(
             "SELECT id, name, status, messages_json, created_at, updated_at FROM sessions ORDER BY updated_at DESC LIMIT 100"
-        ).unwrap();
-        stmt.query_map([], |row| {
+        ) else {
+            return Vec::new();
+        };
+        let Ok(rows) = stmt.query_map([], |row| {
             Ok(Session {
                 id: row.get(0)?,
                 name: row.get(1)?,
@@ -131,10 +141,10 @@ impl SessionStore {
                 created_at: row.get(4)?,
                 updated_at: row.get(5)?,
             })
-        })
-        .unwrap()
-        .filter_map(|r| r.ok())
-        .collect()
+        }) else {
+            return Vec::new();
+        };
+        rows.filter_map(|r| r.ok()).collect()
     }
 
     pub fn delete(&self, id: &str) -> anyhow::Result<()> {
@@ -270,6 +280,10 @@ fn block_text(block: &crate::provider::ContentBlock) -> Option<String> {
             }
         }
         crate::provider::ContentBlock::Image { .. } => None,
+        // Reasoning content is an opaque thinking trace — not part of the
+        // visible transcript searched by FTS, but keep it indexed lightly so
+        // a "what did the model decide" query still hits.
+        crate::provider::ContentBlock::Reasoning { text } => Some(text.clone()),
     }
 }
 
