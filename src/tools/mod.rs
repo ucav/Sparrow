@@ -151,6 +151,7 @@ pub const KNOWN_TOOLS: &[(&str, RiskLevel)] = &[
     ("text_to_speech", RiskLevel::Network),
     ("transcribe", RiskLevel::Network),
     ("python_rpc", RiskLevel::Exec),
+    ("lsp", RiskLevel::ReadOnly),
     ("glob", RiskLevel::ReadOnly),
     ("symbols", RiskLevel::ReadOnly),
     ("memory", RiskLevel::Mutating),
@@ -192,6 +193,8 @@ pub fn metadata_for(name: &str, risk: RiskLevel) -> ToolMetadata {
         "session_search"
     } else if lower == "python_rpc" {
         "terminal"
+    } else if lower == "lsp" {
+        "debug"
     } else if lower.contains("mcp") {
         "mcp"
     } else if lower.contains("subagent") {
