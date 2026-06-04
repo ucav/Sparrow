@@ -1079,6 +1079,7 @@ impl Engine {
         registry.register(Arc::new(crate::tools::media::Tts::new()));
         registry.register(Arc::new(crate::tools::media::Transcribe::new()));
         registry.register(Arc::new(crate::tools::subagent::PythonRpc::new()));
+        registry.register(Arc::new(crate::tools::builder_tools::LspClient));
         registry.register(Arc::new(crate::tools::code_nav::Glob));
         registry.register(Arc::new(crate::tools::code_nav::Symbols));
         if let Some(mem) = &self.memory {

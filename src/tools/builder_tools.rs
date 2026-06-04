@@ -1,5 +1,6 @@
 use async_trait::async_trait;
 use serde_json::json;
+use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
 
 use crate::event::{Block, RiskLevel};
@@ -282,7 +283,7 @@ impl Tool for FetchDocs {
     }
 }
 
-// ─── LSP stub (requires tower-lsp runtime) ─────────────────────────────────────
+// ─── Lightweight local code intelligence ───────────────────────────────────────
 
 pub struct LspClient;
 
@@ -292,7 +293,7 @@ impl Tool for LspClient {
         "lsp"
     }
     fn description(&self) -> &str {
-        "Language Server Protocol: diagnostics, goto definition, references, hover"
+        "Local code intelligence: diagnostics, goto definition, references, and hover context without a language server daemon"
     }
     fn schema(&self) -> serde_json::Value {
         json!({
@@ -310,17 +311,337 @@ impl Tool for LspClient {
     fn risk(&self) -> RiskLevel {
         RiskLevel::ReadOnly
     }
-    async fn call(&self, args: serde_json::Value, _ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
+    async fn call(&self, args: serde_json::Value, ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
         let action = args["action"].as_str().unwrap_or("diagnostics");
         let file = args["file"].as_str().unwrap_or("");
+        if file.is_empty() {
+            return Ok(ToolResult::error("lsp: 'file' is required"));
+        }
+        let root = ctx
+            .workspace_root
+            .canonicalize()
+            .unwrap_or_else(|_| ctx.workspace_root.clone());
+        let path = crate::tools::resolve_workspace_path(&root, file)?;
+        let rel = path
+            .strip_prefix(&root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let line = args["line"].as_u64().map(|n| n.max(1) as usize);
+        let column = args["column"].as_u64().map(|n| n.max(1) as usize);
+        let symbol = args["symbol"]
+            .as_str()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(ToOwned::to_owned)
+            .or_else(|| symbol_at_position(&path, line, column).ok().flatten());
 
-        // LSP requires tower-lsp runtime; stub returns instructions + fallback to grep
-        Ok(ToolResult::text(format!(
-            "LSP '{}' on {}: For full LSP support, install the tower-lsp runtime.\n\
-             Fallback: use 'search' tool for symbol finding in {}",
-            action, file, file
-        )))
+        match action {
+            "diagnostics" => diagnostics(&root, &path, &rel),
+            "goto_definition" => {
+                let Some(symbol) = symbol else {
+                    return Ok(ToolResult::error(
+                        "lsp goto_definition: provide 'symbol' or line/column",
+                    ));
+                };
+                Ok(definitions(&root, &symbol, false))
+            }
+            "find_references" => {
+                let Some(symbol) = symbol else {
+                    return Ok(ToolResult::error(
+                        "lsp find_references: provide 'symbol' or line/column",
+                    ));
+                };
+                Ok(references(&root, &symbol))
+            }
+            "hover" => hover(&root, &path, &rel, line, column, symbol.as_deref()),
+            "rename" => Ok(ToolResult::error(
+                "lsp rename is mutating; use the edit or multi_edit tool after reviewing references",
+            )),
+            other => Ok(ToolResult::error(format!(
+                "lsp: unknown action '{}'",
+                other
+            ))),
+        }
     }
+}
+
+const LSP_SKIP_DIRS: &[&str] = &[".git", "target", "node_modules", "dist", "build", ".venv"];
+const LSP_MAX_RESULTS: usize = 120;
+
+fn diagnostics(root: &Path, path: &Path, rel: &str) -> anyhow::Result<ToolResult> {
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    let output = match ext {
+        "rs" if root.join("Cargo.toml").exists() => StdCommand::new("cargo")
+            .args(["check", "--message-format", "short"])
+            .current_dir(root)
+            .output(),
+        "py" => StdCommand::new("python")
+            .args(["-m", "py_compile", rel])
+            .current_dir(root)
+            .output()
+            .or_else(|_| {
+                StdCommand::new("python3")
+                    .args(["-m", "py_compile", rel])
+                    .current_dir(root)
+                    .output()
+            }),
+        "js" | "mjs" | "cjs" => StdCommand::new("node")
+            .args(["--check", rel])
+            .current_dir(root)
+            .output(),
+        "ts" | "tsx" if root.join("package.json").exists() => StdCommand::new("npx")
+            .args(["tsc", "--noEmit", "--pretty", "false"])
+            .current_dir(root)
+            .output(),
+        _ => return syntax_scan(path, rel),
+    };
+
+    match output {
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let combined = if stderr.trim().is_empty() {
+                stdout.trim().to_string()
+            } else {
+                format!("{}\n{}", stdout.trim(), stderr.trim())
+                    .trim()
+                    .to_string()
+            };
+            let status = output.status.code().unwrap_or(-1);
+            Ok(ToolResult::text(format!(
+                "diagnostics for {}\nexit: {}\n{}",
+                rel,
+                status,
+                if combined.is_empty() {
+                    "no diagnostics reported".to_string()
+                } else {
+                    combined
+                }
+            )))
+        }
+        Err(e) => Ok(ToolResult::error(format!(
+            "diagnostics for {} failed to launch checker: {}",
+            rel, e
+        ))),
+    }
+}
+
+fn syntax_scan(path: &Path, rel: &str) -> anyhow::Result<ToolResult> {
+    let content = std::fs::read_to_string(path)?;
+    let mut findings = Vec::new();
+    let mut paren = 0i32;
+    let mut brace = 0i32;
+    let mut bracket = 0i32;
+    for (idx, line) in content.lines().enumerate() {
+        for ch in line.chars() {
+            match ch {
+                '(' => paren += 1,
+                ')' => paren -= 1,
+                '{' => brace += 1,
+                '}' => brace -= 1,
+                '[' => bracket += 1,
+                ']' => bracket -= 1,
+                _ => {}
+            }
+        }
+        if paren < 0 || brace < 0 || bracket < 0 {
+            findings.push(format!("{}:{}: unmatched closing delimiter", rel, idx + 1));
+            paren = paren.max(0);
+            brace = brace.max(0);
+            bracket = bracket.max(0);
+        }
+    }
+    if paren > 0 || brace > 0 || bracket > 0 {
+        findings.push(format!(
+            "{}: unmatched delimiters: paren={} brace={} bracket={}",
+            rel, paren, brace, bracket
+        ));
+    }
+    if findings.is_empty() {
+        findings.push(format!("{}: no lightweight syntax findings", rel));
+    }
+    Ok(ToolResult::text(findings.join("\n")))
+}
+
+fn definitions(root: &Path, symbol: &str, include_empty_message: bool) -> ToolResult {
+    let patterns = definition_patterns(symbol);
+    let hits = scan_code(root, |path, line_no, line| {
+        if patterns.iter().any(|re| re.is_match(line)) {
+            Some(format!(
+                "{}:{}: {}",
+                rel_path(root, path),
+                line_no,
+                line.trim()
+            ))
+        } else {
+            None
+        }
+    });
+    if hits.is_empty() {
+        if include_empty_message {
+            ToolResult::text(format!("no definition found for '{}'", symbol))
+        } else {
+            ToolResult::error(format!("no definition found for '{}'", symbol))
+        }
+    } else {
+        ToolResult::ok(vec![Block::Text(hits.join("\n"))])
+    }
+}
+
+fn references(root: &Path, symbol: &str) -> ToolResult {
+    let Ok(re) = regex::Regex::new(&format!(r"\b{}\b", regex::escape(symbol))) else {
+        return ToolResult::error("invalid reference regex");
+    };
+    let hits = scan_code(root, |path, line_no, line| {
+        if re.is_match(line) {
+            Some(format!(
+                "{}:{}: {}",
+                rel_path(root, path),
+                line_no,
+                line.trim()
+            ))
+        } else {
+            None
+        }
+    });
+    if hits.is_empty() {
+        ToolResult::text(format!("no references found for '{}'", symbol))
+    } else {
+        ToolResult::ok(vec![Block::Text(hits.join("\n"))])
+    }
+}
+
+fn hover(
+    root: &Path,
+    path: &Path,
+    rel: &str,
+    line: Option<usize>,
+    column: Option<usize>,
+    symbol: Option<&str>,
+) -> anyhow::Result<ToolResult> {
+    let content = std::fs::read_to_string(path)?;
+    let lines: Vec<&str> = content.lines().collect();
+    let line = line.unwrap_or(1).clamp(1, lines.len().max(1));
+    let start = line.saturating_sub(3).max(1);
+    let end = (line + 2).min(lines.len().max(1));
+    let mut out = vec![format!("hover {}:{}:{}", rel, line, column.unwrap_or(1))];
+    if let Some(symbol) = symbol {
+        out.push(format!("symbol: {}", symbol));
+        if let Block::Text(defs) = definitions(root, symbol, true).content.remove(0) {
+            out.push(format!("definitions:\n{}", defs));
+        }
+    }
+    out.push("context:".into());
+    for n in start..=end {
+        if let Some(text) = lines.get(n - 1) {
+            out.push(format!("{:>4} | {}", n, text));
+        }
+    }
+    Ok(ToolResult::text(out.join("\n")))
+}
+
+fn definition_patterns(symbol: &str) -> Vec<regex::Regex> {
+    let esc = regex::escape(symbol);
+    [
+        format!(
+            r"\b(fn|struct|enum|trait|type|const|static|class|def|function)\s+{}\b",
+            esc
+        ),
+        format!(r"\bimpl\b[^\n]*\b{}\b", esc),
+        format!(r"\b{}\s*[:=]\s*(async\s*)?(\([^)]*\)\s*=>|function\b)", esc),
+    ]
+    .into_iter()
+    .filter_map(|p| regex::Regex::new(&p).ok())
+    .collect()
+}
+
+fn symbol_at_position(
+    path: &Path,
+    line: Option<usize>,
+    column: Option<usize>,
+) -> anyhow::Result<Option<String>> {
+    let Some(line_no) = line else {
+        return Ok(None);
+    };
+    let content = std::fs::read_to_string(path)?;
+    let Some(line) = content.lines().nth(line_no.saturating_sub(1)) else {
+        return Ok(None);
+    };
+    let col = column.unwrap_or(1).saturating_sub(1).min(line.len());
+    let bytes = line.as_bytes();
+    let mut start = col;
+    while start > 0 && is_ident(bytes[start - 1]) {
+        start -= 1;
+    }
+    let mut end = col;
+    while end < bytes.len() && is_ident(bytes[end]) {
+        end += 1;
+    }
+    if start == end {
+        return Ok(None);
+    }
+    Ok(Some(line[start..end].to_string()))
+}
+
+fn is_ident(ch: u8) -> bool {
+    ch.is_ascii_alphanumeric() || ch == b'_'
+}
+
+fn scan_code<F>(root: &Path, mut mapper: F) -> Vec<String>
+where
+    F: FnMut(&Path, usize, &str) -> Option<String>,
+{
+    let mut files = Vec::new();
+    walk_code_files(root, &mut files);
+    let mut hits = Vec::new();
+    for file in files {
+        let Ok(content) = std::fs::read_to_string(&file) else {
+            continue;
+        };
+        for (idx, line) in content.lines().enumerate() {
+            if let Some(hit) = mapper(&file, idx + 1, line) {
+                hits.push(hit);
+                if hits.len() >= LSP_MAX_RESULTS {
+                    return hits;
+                }
+            }
+        }
+    }
+    hits
+}
+
+fn walk_code_files(root: &Path, out: &mut Vec<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if path.is_dir() {
+            if name.starts_with('.') || LSP_SKIP_DIRS.contains(&name.as_ref()) {
+                continue;
+            }
+            walk_code_files(&path, out);
+        } else if is_lsp_code_file(&path) {
+            out.push(path);
+        }
+    }
+}
+
+fn is_lsp_code_file(path: &Path) -> bool {
+    matches!(
+        path.extension().and_then(|e| e.to_str()),
+        Some("rs" | "py" | "js" | "jsx" | "ts" | "tsx" | "go" | "java" | "c" | "h" | "cpp" | "hpp")
+    )
+}
+
+fn rel_path(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
 }
 
 // ─── REPL ──────────────────────────────────────────────────────────────────────
