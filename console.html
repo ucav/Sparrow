@@ -3610,6 +3610,7 @@ async function runTask(){
   try{
     const runBody={task:payload};
     if(selectedModel)runBody.model_override=selectedModel;
+    if(ACTIVE_AGENT)runBody.agent_name=ACTIVE_AGENT;
     const r=await fetch('/run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(runBody)});
     const j=await r.json();
     if(!j.ok)showError('Run failed',j.message,'Check the command channel and retry.');
@@ -3772,7 +3773,7 @@ async function planTask(task){
   updateContextMeter();
   line(`<span class="prompt">sparrow ›</span> <span class="cmd">/plan ${esc(task)}</span>`);
   try{
-    const r=await fetch('/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task:payload})});
+    const r=await fetch('/plan',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task:payload,agent_name:ACTIVE_AGENT||undefined})});
     const j=await r.json();
     if(!j.ok||!j.plan){showError('Plan failed',j.message,'Try a more specific task or check provider configuration.');return;}
     renderPlan(j.plan,task);
