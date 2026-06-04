@@ -103,6 +103,7 @@ fn estimate_content_tokens(blocks: &[ContentBlock]) -> u64 {
                 estimate_text_tokens(name) + estimate_text_tokens(&input.to_string())
             }
             ContentBlock::ToolResult { content, .. } => 8 + estimate_content_tokens(content),
+            ContentBlock::Reasoning { text } => estimate_text_tokens(text),
         })
         .sum()
 }
@@ -667,27 +668,39 @@ impl Engine {
 
         let mut chain = self.router.select(&need, &budget);
 
-        // Apply WebView model override: keep only the requested brain if found.
-        // If the model isn't in the routing chain, look it up directly (the user
-        // explicitly picked it, so it should be used even if it's not in the tier).
-        if let Some(ref override_id) = model_override {
-            let filtered: Vec<_> = chain
-                .iter()
-                .filter(|b| b.id() == override_id.as_str())
-                .cloned()
-                .collect();
-            if !filtered.is_empty() {
-                chain = filtered;
-            } else if let Some(brain) = self.router.find_brain_by_id(override_id) {
-                chain = vec![brain];
+        // Apply WebView model override:
+        //  1) Keep the brain in the chain if found there.
+        //  2) Otherwise, look it up directly via the router — the user explicitly
+        //     picked it, so we honour it even if the tier-based selection didn't
+        //     include it.
+        //  3) This must be re-applied after any chain mutation (e.g. §3.6
+        //     refinement) or the auto-router silently overrides the manual pick.
+        let router_ref = &self.router;
+        let apply_override = |chain: &mut Vec<Arc<dyn Brain>>| {
+            if let Some(ref override_id) = model_override {
+                let filtered: Vec<_> = chain
+                    .iter()
+                    .filter(|b| b.id() == override_id.as_str())
+                    .cloned()
+                    .collect();
+                if !filtered.is_empty() {
+                    *chain = filtered;
+                } else if let Some(brain) = router_ref.find_brain_by_id(override_id) {
+                    *chain = vec![brain];
+                }
             }
-        }
+        };
+        apply_override(&mut chain);
 
         // §3.6: model-assisted refinement for genuinely ambiguous tasks. Only the
         // length-based Medium guess qualifies — short tasks stay Trivial without
         // the extra round-trip, keeping the common path fast. Uses the cheapest
         // already-selected brain, bounded to a 6-token call.
-        if ambiguous
+        //
+        // Skip refinement entirely when the user has pinned a specific model:
+        // the whole point of the manual pick is to bypass the router's judgment.
+        if model_override.is_none()
+            && ambiguous
             && matches!(tier, TaskTier::Medium)
             && !self.is_routing_question(&task.description)
         {
@@ -705,10 +718,7 @@ impl Engine {
                     let _ = event_tx.send(Event::Message {
                         run: run_id.clone(),
                         role: "router".into(),
-                        text: format!(
-                            "classification (cached): {}",
-                            t.as_str()
-                        ),
+                        text: format!("classification (cached): {}", t.as_str()),
                     });
                     Some(t)
                 }
@@ -749,6 +759,8 @@ impl Engine {
                         prefer_local: false,
                     };
                     chain = self.router.select(&need, &budget);
+                    // Re-apply manual override after the chain mutation.
+                    apply_override(&mut chain);
                 }
             }
         }
@@ -766,6 +778,24 @@ impl Engine {
             task: task.description.clone(),
             agent: agent_name,
         });
+
+        // PreRun lifecycle hook. Allows operators to gate run start (blocking
+        // hooks can veto by exiting non-zero), warm caches, etc.
+        let pre_run_results = self
+            .hooks
+            .execute(&HookEvent::PreRun, &task.description)
+            .await;
+        if let Some(reason) = pre_run_results
+            .iter()
+            .find(|r| r.veto)
+            .and_then(|r| r.veto_reason.clone())
+        {
+            let _ = event_tx.send(Event::Error {
+                run: run_id.clone(),
+                message: format!("PreRun hook vetoed run: {}", reason),
+            });
+            anyhow::bail!("PreRun hook vetoed run: {}", reason);
+        }
 
         let _ = event_tx.send(Event::Message {
             run: run_id.clone(),
@@ -1058,6 +1088,12 @@ impl Engine {
                     .sum();
                 if transcript_chars > COMPACT_TRANSCRIPT_CHARS && messages.len() > COMPACT_KEEP_LAST
                 {
+                    // PreCompact lifecycle hook: lets operators dump state /
+                    // back up the transcript before compaction discards it.
+                    let _ = self
+                        .hooks
+                        .execute(&HookEvent::PreCompact, &task.description)
+                        .await;
                     let before = transcript_chars;
                     let compacted =
                         context_manager.compact_messages(&messages, 0, COMPACT_KEEP_LAST);
@@ -1088,6 +1124,10 @@ impl Engine {
                         after_chars: after,
                         handoff_path: Some(handoff_path.to_string_lossy().to_string()),
                     });
+                    let _ = self
+                        .hooks
+                        .execute(&HookEvent::PostCompact, &task.description)
+                        .await;
                 }
             }
             // Iteration cap: stop runaway loops independently of budget.
@@ -1103,14 +1143,22 @@ impl Engine {
 
             // Budget check: hard stop if exceeded
             if cost_usd + estimated_cost_unconfirmed >= budget_session {
+                let msg = format!(
+                    "Budget exceeded: ${:.4} of ${:.2} session cap",
+                    cost_usd + estimated_cost_unconfirmed,
+                    budget_session
+                );
                 send(Event::Error {
                     run: run_id.clone(),
-                    message: format!(
-                        "Budget exceeded: ${:.4} of ${:.2} session cap",
-                        cost_usd + estimated_cost_unconfirmed,
-                        budget_session
-                    ),
+                    message: msg.clone(),
                 });
+                // OnBudgetThreshold lifecycle: fired on hard cap. Operators can
+                // configure a hook to e.g. page on-call when this triggers.
+                let _ = self
+                    .hooks
+                    .execute(&HookEvent::OnBudgetThreshold, &msg)
+                    .await;
+                let _ = self.hooks.execute(&HookEvent::OnError, &msg).await;
                 had_error = true;
                 last_error = Some("budget exceeded".into());
                 break;
@@ -1297,6 +1345,14 @@ impl Engine {
                     let mut stop_after_tool_result = false;
                     let mut assistant_text = String::new();
                     let mut tool_output_seen_this_completion = false;
+                    // Tools invoked during this completion — fed to the hallucination
+                    // guard so it knows whether the assistant has actually inspected
+                    // any code/state before making a claim.
+                    let mut tools_called_this_turn: Vec<String> = Vec::new();
+                    // Accumulated reasoning_content (DeepSeek / Moonshot / Qwen
+                    // thinking mode). Must be echoed back on the next turn or the
+                    // provider returns 400.
+                    let mut reasoning_buf: String = String::new();
 
                     while let Some(event) = stream.next().await {
                         match event {
@@ -1328,13 +1384,26 @@ impl Engine {
                                     text: text.clone(),
                                 });
                             }
+                            BrainEvent::ReasoningDelta(rtext) => {
+                                // Accumulate for the assistant message we'll push at
+                                // end-of-turn. We don't surface it as text on screen —
+                                // the engine's normal TextDelta path handles visible
+                                // text, this is opaque thinking content the provider
+                                // wants echoed back.
+                                reasoning_buf.push_str(&rtext);
+                            }
                             BrainEvent::ToolUseStart { id, name } => {
                                 current_tool_name = name.clone();
+                                tools_called_this_turn.push(name.clone());
                                 current_tool_json.clear();
                                 let risk = tools
                                     .get(&name)
                                     .map(|tool| tool.risk())
                                     .unwrap_or(RiskLevel::ReadOnly);
+                                // Placeholder ToolUseProposed with empty args so the
+                                // UI can open the card immediately. Real args follow
+                                // at ToolUseEnd (see below) once the streamed JSON
+                                // is complete.
                                 let _ = event_tx.send(Event::ToolUseProposed {
                                     run: run_id.clone(),
                                     id: id.clone(),
@@ -1363,6 +1432,19 @@ impl Engine {
                                     .as_ref()
                                     .map(|tool| tool.risk())
                                     .unwrap_or(RiskLevel::ReadOnly);
+
+                                // Re-emit ToolUseProposed with the REAL args now
+                                // that the streamed JSON is complete. The first
+                                // emission at ToolUseStart used `{}` because the
+                                // arguments hadn't streamed yet — the UI updates
+                                // the existing card with these real arguments.
+                                let _ = event_tx.send(Event::ToolUseProposed {
+                                    run: run_id.clone(),
+                                    id: id.clone(),
+                                    name: tool_name.clone(),
+                                    args: args.clone(),
+                                    risk: risk.clone(),
+                                });
                                 let proposed = crate::autonomy::ProposedAction {
                                     tool_name: tool_name.clone(),
                                     risk: risk.clone(),
@@ -1399,6 +1481,13 @@ impl Engine {
                                         id: id.clone(),
                                         summary: summary.clone(),
                                     });
+                                    // OnApprovalRequested hook so external
+                                    // notifiers (Slack, email, …) can ping the
+                                    // operator.
+                                    let _ = self
+                                        .hooks
+                                        .execute(&HookEvent::OnApprovalRequested, &summary)
+                                        .await;
                                     if let Some(handler) = &self.approval_handler {
                                         decision = handler
                                             .request_approval(ApprovalRequest {
@@ -1828,11 +1917,18 @@ impl Engine {
                                         }
                                         if !assistant_text.trim().is_empty() {
                                             produced_any_output = true;
+                                            let mut blocks = Vec::new();
+                                            if !reasoning_buf.is_empty() {
+                                                blocks.push(ContentBlock::Reasoning {
+                                                    text: reasoning_buf.clone(),
+                                                });
+                                            }
+                                            blocks.push(ContentBlock::Text {
+                                                text: assistant_text.clone(),
+                                            });
                                             let assistant_msg = Msg {
                                                 role: "assistant".into(),
-                                                content: vec![ContentBlock::Text {
-                                                    text: assistant_text.clone(),
-                                                }],
+                                                content: blocks,
                                             };
                                             let turn_messages = vec![assistant_msg.clone()];
                                             let has_verified_tool_context =
@@ -1866,9 +1962,66 @@ impl Engine {
                                                 break;
                                             }
 
+                                            // Hallucination guard: catch claims about
+                                            // code structure made without first calling
+                                            // fs_read / search this turn.
+                                            if self.reasoning.hallucination_guard {
+                                                if let Some(correction) =
+                                                    crate::reasoning::HallucinationGuard::verify(
+                                                        &assistant_text,
+                                                        &tools_called_this_turn,
+                                                    )
+                                                {
+                                                    let mut blocks2 = Vec::new();
+                                                    if !reasoning_buf.is_empty() {
+                                                        blocks2.push(ContentBlock::Reasoning {
+                                                            text: reasoning_buf.clone(),
+                                                        });
+                                                    }
+                                                    blocks2.push(ContentBlock::Text {
+                                                        text: assistant_text.clone(),
+                                                    });
+                                                    let assistant_msg2 = Msg {
+                                                        role: "assistant".into(),
+                                                        content: blocks2,
+                                                    };
+                                                    messages.push(assistant_msg2);
+                                                    let _ = event_tx.send(Event::Message {
+                                                        run: run_id.clone(),
+                                                        role: "guard".into(),
+                                                        text: correction.clone(),
+                                                    });
+                                                    messages.push(Msg {
+                                                        role: "user".into(),
+                                                        content: vec![ContentBlock::Text {
+                                                            text: format!("SYSTEM: {}. Call fs_read or search to verify the file/symbol first, then re-state the claim with the raw evidence.", correction),
+                                                        }],
+                                                    });
+                                                    continue_agent_loop = true;
+                                                    break;
+                                                }
+                                            }
+
                                             skill_evidence.push_str(&assistant_text);
                                             skill_evidence.push('\n');
                                             messages.push(assistant_msg);
+                                        }
+
+                                        // ── Pre-mutation self-critique (reasoning §) ─
+                                        // If we mutated files this turn, emit a
+                                        // structured self-review of the change set
+                                        // so the operator/UI can see the agent's
+                                        // own checklist before auto-verify runs.
+                                        if had_mutation && self.reasoning.self_critique && !diffs.is_empty() {
+                                            let review = crate::reasoning::SelfCritique::pre_mutation_review(
+                                                &diffs,
+                                                Some(&task.description),
+                                            );
+                                            let _ = event_tx.send(Event::Message {
+                                                run: run_id.clone(),
+                                                role: "self-critique".into(),
+                                                text: review,
+                                            });
                                         }
 
                                         // ── Auto-verify (§10 testing) ───────────
@@ -1971,17 +2124,29 @@ impl Engine {
                                         }
                                     }
                                     crate::event::StopReason::ToolUse => {
-                                        // Feed tool results back
+                                        // Feed tool results back. The assistant
+                                        // message that triggered the tool MUST also
+                                        // carry the reasoning_content so DeepSeek
+                                        // thinking-mode accepts the next turn.
+                                        let mut first = true;
                                         for (tool_id, tool_name, args, text, is_error) in
                                             tool_results_pending.drain(..)
                                         {
+                                            let mut blocks = Vec::new();
+                                            if first && !reasoning_buf.is_empty() {
+                                                blocks.push(ContentBlock::Reasoning {
+                                                    text: reasoning_buf.clone(),
+                                                });
+                                            }
+                                            blocks.push(ContentBlock::ToolUse {
+                                                id: tool_id.clone(),
+                                                name: tool_name,
+                                                input: args,
+                                            });
+                                            first = false;
                                             messages.push(Msg {
                                                 role: "assistant".into(),
-                                                content: vec![ContentBlock::ToolUse {
-                                                    id: tool_id.clone(),
-                                                    name: tool_name,
-                                                    input: args,
-                                                }],
+                                                content: blocks,
                                             });
                                             messages.push(Msg {
                                                 role: "user".into(),
@@ -2008,15 +2173,25 @@ impl Engine {
                                     run: run_id.clone(),
                                     message: msg.clone(),
                                 });
+                                let _ = self.hooks.execute(&HookEvent::OnError, &msg).await;
                                 let next_idx = current_chain_idx + 1;
                                 if next_idx < brain_policy.chain.len() {
                                     current_chain_idx = next_idx;
+                                    let switch_ctx = format!(
+                                        "{} -> {}",
+                                        brain.id(),
+                                        brain_policy.chain[current_chain_idx].id()
+                                    );
                                     let _ = event_tx.send(Event::ModelSwitched {
                                         run: run_id.clone(),
                                         from: brain.id().to_string(),
                                         to: brain_policy.chain[current_chain_idx].id().to_string(),
                                         reason: msg,
                                     });
+                                    let _ = self
+                                        .hooks
+                                        .execute(&HookEvent::OnModelSwitched, &switch_ctx)
+                                        .await;
                                     continue_agent_loop = true;
                                 } else {
                                     had_error = true;
@@ -2134,10 +2309,15 @@ impl Engine {
                     &skill_evidence,
                     skills.as_ref(),
                 ) {
+                    let skill_name = candidate.name.clone();
                     let _ = event_tx.send(Event::SkillLearned {
                         run: run_id.clone(),
-                        name: candidate.name.clone(),
+                        name: skill_name.clone(),
                     });
+                    let _ = self
+                        .hooks
+                        .execute(&HookEvent::OnSkillLearned, &skill_name)
+                        .await;
                     let _ = skills.add(candidate);
                 }
             }
@@ -2156,6 +2336,12 @@ impl Engine {
             run: run_id.clone(),
             outcome: outcome.clone(),
         });
+
+        // PostRun lifecycle hook (best-effort, non-blocking semantics).
+        let _ = self
+            .hooks
+            .execute(&HookEvent::PostRun, &task.description)
+            .await;
 
         Ok(outcome)
     }
