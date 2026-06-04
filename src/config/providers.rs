@@ -1233,7 +1233,88 @@ pub fn infer_caps_from_name(model_name: &str) -> ModelCaps {
         || n.contains("8b")
         || n.contains("9b");
 
-    let (latency, context_window) = if is_large {
+    // Vendor-specific long-context families. These take precedence over the
+    // generic size heuristic so a discovered "deepseek-v4-pro" (which the
+    // vendor ships with 1M context) doesn't get clamped to the small default.
+    // Order matters: most specific match first.
+    let vendor_ctx: Option<u64> = if n.contains("gemini")
+        && (n.contains("1.5") || n.contains("2.0") || n.contains("2.5") || n.contains("3."))
+    {
+        Some(2_000_000) // Gemini 1.5+ Pro family ships 1M–2M context
+    } else if n.contains("deepseek-v4-pro")
+        || n.contains("deepseek-v4.5")
+        || n.contains("deepseek-v5")
+        || (n.contains("deepseek") && n.contains("pro"))
+    {
+        Some(1_000_000) // DeepSeek V4 Pro and successors
+    } else if n.contains("deepseek-v4")
+        || n.contains("deepseek-r1")
+        || n.contains("deepseek-reasoner")
+    {
+        Some(131_072) // DeepSeek V4 flash / R1: 128k
+    } else if n.contains("deepseek-chat") || n.contains("deepseek-coder") || n.contains("deepseek-v3")
+    {
+        Some(65_536) // Older DeepSeek V3 chat/coder: 64k
+    } else if n.contains("qwen3") && (n.contains("235b") || n.contains("max") || n.contains("plus"))
+    {
+        Some(1_000_000) // Qwen3 Max / Plus: 1M
+    } else if n.contains("qwen") && (n.contains("turbo") || n.contains("plus") || n.contains("max"))
+    {
+        Some(1_000_000) // Qwen Turbo / Plus / Max
+    } else if n.contains("qwen3") || n.contains("qwen2.5") {
+        Some(131_072)
+    } else if n.contains("gpt-4.1") || n.contains("gpt-5") || n.contains("o1") || n.contains("o3") || n.contains("o4") {
+        Some(1_000_000) // GPT-4.1, GPT-5, o-series
+    } else if n.contains("gpt-4o") || n.contains("gpt-4-turbo") {
+        Some(128_000)
+    } else if n.contains("claude-sonnet-4") || n.contains("claude-opus-4") || n.contains("claude-haiku-4") {
+        Some(200_000)
+    } else if n.contains("claude-3.5") || n.contains("claude-3-5") {
+        Some(200_000)
+    } else if n.contains("claude") {
+        Some(200_000)
+    } else if n.contains("llama-3.3") || n.contains("llama3.3") || n.contains("llama-4") {
+        Some(128_000)
+    } else if n.contains("mistral-large") || n.contains("mixtral") || n.contains("codestral") {
+        Some(128_000)
+    } else if n.contains("grok-3") || n.contains("grok-4") {
+        Some(131_072)
+    } else if n.contains("kimi-k2") || n.contains("moonshot-v1-128k") {
+        Some(200_000)
+    } else if n.contains("kimi") || n.contains("moonshot") {
+        Some(128_000)
+    } else if n.contains("minimax-m") || n.contains("minimax-text-01") {
+        Some(1_000_000)
+    } else if n.contains("step-3") || n.contains("stepfun") {
+        Some(131_072)
+    } else if n.contains("glm-4.6") || n.contains("glm-5") {
+        Some(200_000)
+    } else if n.contains("glm-4") || n.contains("glm-z1") {
+        Some(131_072)
+    } else if n.contains("longctx") || n.contains("long-ctx") || n.contains("1m") {
+        Some(1_000_000)
+    } else if n.contains("128k") {
+        Some(128_000)
+    } else if n.contains("200k") {
+        Some(200_000)
+    } else if n.contains("256k") {
+        Some(262_144)
+    } else if n.contains("512k") {
+        Some(524_288)
+    } else {
+        None
+    };
+
+    let (latency, context_window) = if let Some(ctx) = vendor_ctx {
+        let lat = if is_small {
+            LatencyClass::Fast
+        } else if is_large || ctx >= 200_000 {
+            LatencyClass::Slow
+        } else {
+            LatencyClass::Medium
+        };
+        (lat, ctx)
+    } else if is_large {
         (LatencyClass::Slow, 131_072)
     } else if is_small {
         (LatencyClass::Fast, 32_768)
@@ -1241,9 +1322,13 @@ pub fn infer_caps_from_name(model_name: &str) -> ModelCaps {
         (LatencyClass::Medium, 65_536)
     };
 
+    // max_output scales with context but caps at 32k tokens to avoid
+    // accidentally requesting more output than any current provider supports.
+    let max_output = (context_window / 8).clamp(4_096, 32_000);
+
     ModelCaps {
         context_window,
-        max_output: 8_192,
+        max_output,
         tools,
         vision,
         cost_input_per_mtok: 0.0,

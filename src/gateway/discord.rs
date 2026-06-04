@@ -58,6 +58,12 @@ impl GatewayTransport for DiscordTransport {
         let gateway_url = self.get_gateway_url().await?;
 
         tokio::spawn(async move {
+            // Bot's own user id. Captured from the READY dispatch so we can skip
+            // our own MESSAGE_CREATE events (which would otherwise turn the bot
+            // into an infinite-loop generator). The previous code compared
+            // `author_id != token`, which can never match: the bot token is a
+            // secret, not the bot user id.
+            let mut self_user_id: Option<String> = None;
             match connect_async(&gateway_url).await {
                 Ok((mut ws_stream, _)) => {
                     // Wait for Hello (opcode 10)
@@ -106,11 +112,31 @@ impl GatewayTransport for DiscordTransport {
                                             tracing::trace!("Discord sequence: {:?}", seq);
                                             let event_type = payload["t"].as_str().unwrap_or("");
 
+                                            // READY: capture our own user id so we
+                                            // can later filter out our own messages.
+                                            // Discord also emits a bot.bot=true flag
+                                            // on the author of our own messages, but
+                                            // matching on user id is the strict check.
+                                            if event_type == "READY" {
+                                                if let Some(uid) =
+                                                    payload["d"]["user"]["id"].as_str()
+                                                {
+                                                    tracing::info!(
+                                                        "Discord READY — bot user id {}",
+                                                        uid
+                                                    );
+                                                    self_user_id = Some(uid.to_string());
+                                                }
+                                            }
+
                                             if event_type == "MESSAGE_CREATE" {
                                                 let author_id = payload["d"]["author"]["id"]
                                                     .as_str()
                                                     .unwrap_or("")
                                                     .to_string();
+                                                let is_bot_author = payload["d"]["author"]["bot"]
+                                                    .as_bool()
+                                                    .unwrap_or(false);
                                                 let channel_id = payload["d"]["channel_id"]
                                                     .as_str()
                                                     .unwrap_or("")
@@ -123,14 +149,28 @@ impl GatewayTransport for DiscordTransport {
                                                     .as_str()
                                                     .map(|s| s.to_string());
 
-                                                // Ignore bot's own messages
+                                                // Ignore our own messages (self-loop).
+                                                let is_self = self_user_id
+                                                    .as_deref()
+                                                    .map(|uid| uid == author_id)
+                                                    .unwrap_or(false);
+                                                if is_self {
+                                                    continue;
+                                                }
+                                                // Optionally ignore any bot author
+                                                // when no explicit allow-list is set.
+                                                if is_bot_author && allowed.is_empty() {
+                                                    continue;
+                                                }
+                                                // Allow-list (if configured) gates
+                                                // who can talk to the bot.
                                                 if !allowed.is_empty()
                                                     && !allowed.contains(&author_id)
                                                 {
                                                     continue;
                                                 }
 
-                                                if !content.is_empty() && author_id != token {
+                                                if !content.is_empty() {
                                                     let _ = tx.send(GatewayMessage {
                                                         surface: "discord".into(),
                                                         user_id: author_id,
