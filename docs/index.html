@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sparrow — Local-first Rust agent cockpit</title>
+<meta name="description" content="Route, run, replay, rewind. Single-binary CLI agent in Rust. 30+ providers, WebView cockpit, Git checkpoints.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='28' font-size='28'>🐦</text></svg>">
+<style>
+  :root{--bg:#0e0b08;--panel:#16120d;--line:#2c251c;--dim:#897d6c;--dimmer:#5c5346;--fg:#ece2cf;--brand:#f2a93c;--coral:#f0674a;--add:#74c258;--steel:#b9b0a3}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'IBM Plex Mono',ui-monospace,SF Mono,monospace;background:var(--bg);color:var(--fg);min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:40px 20px}
+  .logo{font-size:64px;margin-bottom:8px}
+  h1{font-size:32px;font-weight:600;margin-bottom:6px;color:var(--fg)}
+  .tagline{color:var(--dim);font-size:15px;margin-bottom:32px;text-align:center;max-width:500px;line-height:1.5}
+  .downloads{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-bottom:40px}
+  .btn{display:inline-flex;align-items:center;gap:8px;padding:12px 24px;border-radius:8px;font-size:13px;font-weight:500;text-decoration:none;cursor:pointer;border:1px solid var(--line);color:var(--fg);background:var(--panel);transition:all .15s}
+  .btn:hover{border-color:var(--brand);color:var(--brand);background:#1a140d}
+  .btn.primary{background:var(--brand);color:#0e0b08;border-color:var(--brand);font-weight:600}
+  .btn.primary:hover{background:#f4b44e}
+  .install{border:1px solid var(--line);border-radius:10px;padding:24px 32px;max-width:580px;width:100%;margin-bottom:40px;background:var(--panel)}
+  .install code{display:block;background:#0a0806;padding:14px 18px;border-radius:6px;font-size:13px;color:var(--add);margin-top:10px;overflow-x:auto}
+  .features{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;max-width:720px;width:100%;margin-bottom:48px}
+  .feat{border:1px solid var(--line);border-radius:8px;padding:16px;background:var(--panel)}
+  .feat h3{font-size:13px;color:var(--brand);margin-bottom:6px}
+  .feat p{font-size:12px;color:var(--dim);line-height:1.5}
+  .nav{display:flex;gap:20px;margin-bottom:32px;font-size:12px}
+  .nav a{color:var(--dim);text-decoration:none}
+  .nav a:hover{color:var(--fg)}
+  footer{margin-top:auto;padding:24px;color:var(--dimmer);font-size:11px;text-align:center}
+  footer a{color:var(--dim)}
+  @media(max-width:500px){h1{font-size:24px}.downloads{flex-direction:column}.btn{justify-content:center}}
+</style>
+</head>
+<body>
+
+<div class="nav">
+  <a href="https://github.com/ucav/Sparrow">GitHub</a>
+  <a href="https://github.com/ucav/Sparrow#docs">Docs</a>
+  <a href="https://github.com/ucav/Sparrow/releases">Releases</a>
+</div>
+
+<div class="logo">🐦</div>
+<h1>Sparrow</h1>
+<p class="tagline">A local-first Rust agent cockpit — route, run, replay, rewind. One binary. 30+ providers. Zero setup.</p>
+
+<div class="downloads">
+  <a href="https://github.com/ucav/Sparrow/releases/latest/download/sparrow-linux-x86_64" class="btn">🐧 Linux x64</a>
+  <a href="https://github.com/ucav/Sparrow/releases/latest/download/sparrow-macos-arm64" class="btn">🍎 macOS ARM</a>
+  <a href="https://github.com/ucav/Sparrow/releases/latest/download/sparrow-windows-x86_64.exe" class="btn">🪟 Windows x64</a>
+  <a href="https://github.com/ucav/Sparrow" class="btn primary">⭐ Star on GitHub</a>
+</div>
+
+<div class="install">
+  <strong style="font-size:13px">$ curl one-liner</strong>
+  <code>curl -sSL https://raw.githubusercontent.com/ucav/Sparrow/master/install.sh | bash</code>
+</div>
+
+<div class="features">
+  <div class="feat"><h3>🎯 Smart Routing</h3><p>Budget-aware fallback across 30+ providers. Local Ollama first, cloud when needed.</p></div>
+  <div class="feat"><h3>🖥️ WebView Cockpit</h3><p>Live token/cost/context with typed event cards, themes, slash palette.</p></div>
+  <div class="feat"><h3>🔄 Rewind & Replay</h3><p>Git-backed checkpoints. Rewind any run. Replay from transcripts.</p></div>
+  <div class="feat"><h3>🧠 Persistent Memory</h3><p>SQLite facts + knowledge graph. Learns across sessions.</p></div>
+  <div class="feat"><h3>🔌 Gateway</h3><p>Telegram, Discord, Slack, WebSocket. One binary, all surfaces.</p></div>
+  <div class="feat"><h3>🦀 Rust Native</h3><p>Single binary. No Python, no Node. Cross-platform.</p></div>
+</div>
+
+<footer>
+  Sparrow is <a href="https://github.com/ucav/Sparrow/blob/master/LICENSE">MIT licensed</a>.
+  Built by <a href="https://github.com/ucav">ucav</a>.
+  <br>Rust 1.96+ · 34k lines · 186 tests · CI green on 3 platforms
+</footer>
+
+</body>
+</html>
