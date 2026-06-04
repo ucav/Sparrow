@@ -218,6 +218,82 @@ fn extract_href(line: &str) -> Option<String> {
     Some(url)
 }
 
+/// Reject non-http(s) schemes and any URL whose host resolves to a private,
+/// loopback, link-local, multicast, or unspecified address (SSRF defence).
+/// Also rejects bare IPs in those ranges and the AWS/GCP metadata endpoints.
+pub(crate) fn validate_public_url(url: &str) -> Result<(), &'static str> {
+    let parsed = url::Url::parse(url).map_err(|_| "invalid URL")?;
+    match parsed.scheme() {
+        "http" | "https" => {}
+        _ => return Err("only http(s) is allowed"),
+    }
+    let host = parsed.host_str().ok_or("missing host")?;
+
+    // Block obvious well-known metadata / loopback hostnames.
+    let lc = host.to_ascii_lowercase();
+    if matches!(
+        lc.as_str(),
+        "localhost"
+            | "ip6-localhost"
+            | "ip6-loopback"
+            | "metadata.google.internal"
+            | "metadata"
+    ) || lc.ends_with(".localhost")
+        || lc.ends_with(".local")
+        || lc.ends_with(".internal")
+    {
+        return Err("host points to local/internal network");
+    }
+
+    // If the host parses as an IP literal, check the ranges directly.
+    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
+        if is_blocked_ip(&ip) {
+            return Err("IP belongs to a private/loopback/link-local range");
+        }
+        return Ok(());
+    }
+
+    // Hostname: best-effort DNS check. We can't await here without making the
+    // fn async, so we resolve synchronously via the std API. A single resolution
+    // is cheap and prevents the most common SSRF payloads (`127.0.0.1`-aliasing
+    // domains, hosts file tricks, etc.).
+    let port = parsed.port_or_known_default().unwrap_or(0);
+    if let Ok(addrs) = std::net::ToSocketAddrs::to_socket_addrs(&(host, port)) {
+        for sa in addrs {
+            if is_blocked_ip(&sa.ip()) {
+                return Err("hostname resolves to a private/loopback IP");
+            }
+        }
+    }
+    Ok(())
+}
+
+fn is_blocked_ip(ip: &std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            v4.is_loopback()
+                || v4.is_private()
+                || v4.is_link_local()
+                || v4.is_broadcast()
+                || v4.is_multicast()
+                || v4.is_unspecified()
+                || v4.octets() == [169, 254, 169, 254] // AWS/GCP/Azure metadata
+                // Carrier-grade NAT 100.64.0.0/10
+                || (v4.octets()[0] == 100 && (v4.octets()[1] & 0xC0) == 0x40)
+        }
+        std::net::IpAddr::V6(v6) => {
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || v6.is_multicast()
+                // fc00::/7 (unique local), fe80::/10 (link-local)
+                || (v6.segments()[0] & 0xfe00) == 0xfc00
+                || (v6.segments()[0] & 0xffc0) == 0xfe80
+                // IPv4-mapped: re-check the embedded v4
+                || v6.to_ipv4_mapped().map(|m| is_blocked_ip(&std::net::IpAddr::V4(m))).unwrap_or(false)
+        }
+    }
+}
+
 fn strip_html(s: &str) -> String {
     let mut result = String::new();
     let mut in_tag = false;
@@ -285,9 +361,23 @@ impl Tool for WebFetch {
         let url = args["url"].as_str().unwrap_or("");
         let format = args["format"].as_str().unwrap_or("text");
 
+        if let Err(why) = validate_public_url(url) {
+            return Ok(ToolResult::error(format!("Refused URL ({}): {}", why, url)));
+        }
+
         let client = reqwest::Client::builder()
             .user_agent("sparrow/0.1")
             .timeout(std::time::Duration::from_secs(30))
+            // Belt-and-suspenders: re-validate after redirects to block private-IP redirect attacks.
+            .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                if validate_public_url(attempt.url().as_str()).is_err() {
+                    attempt.stop()
+                } else if attempt.previous().len() >= 5 {
+                    attempt.stop()
+                } else {
+                    attempt.follow()
+                }
+            }))
             .build()?;
 
         let resp = client.get(url).send().await?;

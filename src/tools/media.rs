@@ -72,12 +72,13 @@ impl Tool for ImageGen {
         let size = args["size"].as_str().unwrap_or("1024x1024");
         let filename = args["filename"].as_str().unwrap_or("generated.png");
 
+        let endpoint = format!("{}/images/generations", self.base_url.trim_end_matches('/'));
+        if let Err(why) = crate::tools::search_and_web::validate_public_url(&endpoint) {
+            return Ok(ToolResult::error(format!("Refused IMAGE_API_BASE ({}): {}", why, endpoint)));
+        }
         let client = reqwest::Client::new();
         let resp = client
-            .post(format!(
-                "{}/images/generations",
-                self.base_url.trim_end_matches('/')
-            ))
+            .post(&endpoint)
             .bearer_auth(&key)
             .json(&json!({
                 "model": self.model,
@@ -170,12 +171,13 @@ impl Tool for Tts {
         let voice = args["voice"].as_str().unwrap_or("alloy");
         let filename = args["filename"].as_str().unwrap_or("speech.mp3");
 
+        let endpoint = format!("{}/audio/speech", self.base_url.trim_end_matches('/'));
+        if let Err(why) = crate::tools::search_and_web::validate_public_url(&endpoint) {
+            return Ok(ToolResult::error(format!("Refused TTS_API_BASE ({}): {}", why, endpoint)));
+        }
         let client = reqwest::Client::new();
         let resp = client
-            .post(format!(
-                "{}/audio/speech",
-                self.base_url.trim_end_matches('/')
-            ))
+            .post(&endpoint)
             .bearer_auth(&key)
             .json(&json!({ "model": self.model, "input": text, "voice": voice }))
             .send()
@@ -277,12 +279,13 @@ impl Tool for Transcribe {
             }
         }
 
+        let endpoint = format!("{}/audio/transcriptions", self.base_url.trim_end_matches('/'));
+        if let Err(why) = crate::tools::search_and_web::validate_public_url(&endpoint) {
+            return Ok(ToolResult::error(format!("Refused TRANSCRIBE_API_BASE ({}): {}", why, endpoint)));
+        }
         let client = reqwest::Client::new();
         let resp = client
-            .post(format!(
-                "{}/audio/transcriptions",
-                self.base_url.trim_end_matches('/')
-            ))
+            .post(&endpoint)
             .bearer_auth(&key)
             .multipart(form)
             .send()

@@ -3,6 +3,23 @@ use std::process::Command as StdCommand;
 
 use super::{Command, ExecResult, FsNetPolicy, Limits, Sandbox};
 
+/// POSIX single-quote escaping. Wraps `s` in single quotes and escapes any embedded
+/// single quote by closing-quote, escaped-quote, reopening-quote: `'\''`.
+/// Safe against `;`, `|`, `&`, `$()`, backticks, newlines.
+fn sh_quote(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for c in s.chars() {
+        if c == '\'' {
+            out.push_str("'\\''");
+        } else {
+            out.push(c);
+        }
+    }
+    out.push('\'');
+    out
+}
+
 // ─── Docker sandbox ─────────────────────────────────────────────────────────────
 
 pub struct DockerSandbox {
@@ -90,11 +107,14 @@ impl SshSandbox {
 #[async_trait::async_trait]
 impl Sandbox for SshSandbox {
     async fn exec(&self, cmd: &Command, _limits: &Limits) -> anyhow::Result<ExecResult> {
+        // Quote every component to defeat shell-injection (`;`, `|`, `&`, `$()`, backticks).
+        // The remote sh sees a single argv string, so we must build it safely here.
+        let quoted_args: Vec<String> = cmd.args.iter().map(|a| sh_quote(a)).collect();
         let full_cmd = format!(
             "cd {} && {} {}",
-            cmd.workdir.display(),
-            cmd.program,
-            cmd.args.join(" ")
+            sh_quote(&cmd.workdir.to_string_lossy()),
+            sh_quote(&cmd.program),
+            quoted_args.join(" ")
         );
 
         let output = StdCommand::new("ssh")
