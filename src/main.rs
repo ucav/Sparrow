@@ -4171,19 +4171,20 @@ async fn handle_webview(
             // Apply agent identity override: __agent:NAME__ROLE__BASE64__
             if let Some(rest) = task.strip_prefix("__agent:") {
                 if let Some((id_part, rest2)) = rest.split_once("__") {
-                    if let Some((role_part, b64_part)) = rest2.split_once("__") {
-                        use base64::{Engine as _, engine::general_purpose::STANDARD};
-                        let personality = String::from_utf8(
-                            STANDARD.decode(b64_part.as_bytes()).unwrap_or_default()
-                        ).unwrap_or_default();
-                        engine = engine.with_identity(Identity {
-                            name: id_part.to_string(),
-                            role: role_part.to_string(),
-                            personality,
-                        });
-                        // Strip the agent prefix from the task.
-                        let skip = b64_part.len() + 2; // +2 for the trailing __
-                        task = rest2[skip..].trim_start_matches(' ').to_string();
+                    if let Some((role_part, rest3)) = rest2.split_once("__") {
+                        // rest3 = "<base64>__ <actual task>"
+                        if let Some((b64_part, clean_task)) = rest3.split_once("__ ") {
+                            use base64::{Engine as _, engine::general_purpose::STANDARD};
+                            let personality = String::from_utf8(
+                                STANDARD.decode(b64_part.as_bytes()).unwrap_or_default()
+                            ).unwrap_or_default();
+                            engine = engine.with_identity(Identity {
+                                name: id_part.to_string(),
+                                role: role_part.to_string(),
+                                personality,
+                            });
+                            task = clean_task.to_string();
+                        }
                     }
                 }
             }
