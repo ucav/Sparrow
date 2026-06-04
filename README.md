@@ -34,6 +34,7 @@ The project focuses on a narrow product promise: a Rust-native local cockpit whe
 - **Prompt caching controls**: Anthropic Messages and OpenAI-compatible/Responses requests now carry cache controls for stable Sparrow prefixes.
 - **Reasoning-state continuity**: DeepSeek/Qwen/Moonshot-style `reasoning_content` is captured, persisted, and re-injected without showing it as visible assistant text.
 - **Persistent knowledge graph**: SQLite memory now stores typed graph nodes/edges with a `knowledge_graph` tool and optional Neo4j sync.
+- **Playwright browser/computer-use**: real headless browser automation plus screenshot/click/type computer actions gated as sandboxed exec.
 - **Safer plan flow**: WebView `/plan` has explicit run, edit, and reject actions before execution.
 - **Per-hunk diff review UI**: diff cards and the side panel group patches by hunk with accept/reject review states.
 - **No metric spam**: high-frequency token/cost events update live meters without flooding the transcript.
@@ -52,6 +53,7 @@ The project focuses on a narrow product promise: a Rust-native local cockpit whe
 | **Terminal-native** | Animated TUI cockpit, `sparrow run`, `sparrow chat`, `--json` output, replay, memory, gateway |
 | **Rollback safety** | Auto-checkpoint before any mutating action; `sparrow rewind <id>` to restore |
 | **Persistent context** | SQLite facts + knowledge graph, SOUL-style `.agent.md` files, guarded skill registry, full transcripts |
+| **Browser/computer-use** | Playwright-backed browser tool and gated screenshot/click/type computer primitive |
 | **Gateway** | Telegram, Discord, Slack, WebSocket API — wired with honest errors, not silent failures |
 
 ---
@@ -76,6 +78,7 @@ Sparrow is **alpha software** with a green cross-platform CI baseline. The kerne
 | Declarative agents | ✅ Stable | SOUL TOML + Markdown frontmatter; `agent run`, `agent mention`, CRUD |
 | Skills / plugins | ✅ Stable | Progressive references + templates; plugin manifests; CLI install/list/remove |
 | Toolsets | ✅ Stable | Toolset/risk/auth/mutation/network/exec metadata; surface filtering |
+| Browser / computer-use | 🔶 Alpha | Playwright driver, screenshot blocks, click/type, Linux `bwrap` wrapper when available |
 | Security audit CLI | ✅ Stable | `sparrow security audit [--json]`, WebView `/security` |
 | Sandbox policy | ✅ Stable | Protected paths, env allowlist; Docker/SSH/Worktree backends; honest vendor errors |
 | Media tools | ✅ Stable | `vision`, `image_generate`, `text_to_speech`, `transcribe`; WebView upload/artifacts |
@@ -242,6 +245,7 @@ Custom slash commands can be declared as Markdown files in `.sparrow/commands/*.
 | [docs/routing.md](docs/routing.md) | Routing and provider chains |
 | [docs/autonomy.md](docs/autonomy.md) | Permission modes and hooks |
 | [docs/sandboxing.md](docs/sandboxing.md) | Sandbox policy and backends |
+| [docs/browser-computer.md](docs/browser-computer.md) | Playwright browser and computer-use tools |
 | [docs/replay.md](docs/replay.md) | Replay and checkpoints |
 | [docs/swarm.md](docs/swarm.md) | Multi-agent swarm |
 | [docs/keyboard.md](docs/keyboard.md) | Keyboard shortcuts |

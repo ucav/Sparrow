@@ -25,6 +25,19 @@ fn python_rpc_is_terminal_not_mcp() {
 }
 
 #[test]
+fn browser_and_computer_have_separate_risk_profiles() {
+    let browser = metadata_for("browser", sparrow::event::RiskLevel::Network);
+    assert_eq!(browser.toolset, "web");
+    assert!(browser.network);
+    assert!(!browser.exec);
+
+    let computer = metadata_for("computer", sparrow::event::RiskLevel::Exec);
+    assert_eq!(computer.toolset, "terminal");
+    assert!(computer.exec);
+    assert!(!surface_allows("gateway", &computer));
+}
+
+#[test]
 fn todo_is_safe_toolset() {
     let meta = metadata_for("todo", sparrow::event::RiskLevel::ReadOnly);
     assert_eq!(meta.toolset, "safe");

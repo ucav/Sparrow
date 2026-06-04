@@ -1,0 +1,13 @@
+{
+  "name": "sparrow-browser-runtime",
+  "private": true,
+  "version": "0.3.5",
+  "description": "Optional Playwright runtime for Sparrow browser/computer-use tools",
+  "scripts": {
+    "browser:install": "playwright install chromium",
+    "browser:smoke": "node scripts/playwright-driver.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.52.0"
+  }
+}

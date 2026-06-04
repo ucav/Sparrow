@@ -1070,6 +1070,8 @@ impl Engine {
         registry.register(Arc::new(crate::tools::search_and_web::Search));
         registry.register(Arc::new(crate::tools::search_and_web::WebSearch));
         registry.register(Arc::new(crate::tools::search_and_web::WebFetch));
+        registry.register(Arc::new(crate::tools::browser_sandbox::BrowserTool));
+        registry.register(Arc::new(crate::tools::browser_sandbox::ComputerTool));
         registry.register(Arc::new(crate::tools::git::Git));
         registry.register(Arc::new(crate::tools::todo::Todo::new()));
         registry.register(Arc::new(crate::tools::exec::Exec::new(sandbox.clone())));

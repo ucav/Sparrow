@@ -142,6 +142,8 @@ pub const KNOWN_TOOLS: &[(&str, RiskLevel)] = &[
     ("search", RiskLevel::Network),
     ("web_search", RiskLevel::Network),
     ("web_fetch", RiskLevel::Network),
+    ("browser", RiskLevel::Network),
+    ("computer", RiskLevel::Exec),
     ("git", RiskLevel::Exec),
     ("todo", RiskLevel::ReadOnly),
     ("exec", RiskLevel::Exec),
@@ -169,8 +171,13 @@ pub fn metadata_for(name: &str, risk: RiskLevel) -> ToolMetadata {
         "file"
     } else if matches!(lower.as_str(), "fs_write" | "edit" | "multi_edit") {
         "file"
-    } else if matches!(lower.as_str(), "search" | "web_search" | "web_fetch") {
+    } else if matches!(
+        lower.as_str(),
+        "search" | "web_search" | "web_fetch" | "browser"
+    ) {
         "web"
+    } else if lower == "computer" {
+        "terminal"
     } else if lower == "exec" || lower == "git" {
         "terminal"
     } else if matches!(lower.as_str(), "image_gen" | "tts") {
