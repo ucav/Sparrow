@@ -318,7 +318,7 @@ fn truncate_chars(text: &str, limit: usize) -> String {
 pub trait Memory: Send + Sync {
     fn repo_map(&self, root: &Path) -> RepoMap;
     fn identity(&self, agent: &str) -> Option<Identity>;
-    fn save_identity(&self, identity: &Identity) -> anyhow::Result<()>;
+    fn save_identity(&self, agent: &str, identity: &Identity) -> anyhow::Result<()>;
     fn task(&self, run: &RunId) -> Option<TaskMem>;
     fn save_task(&self, task: &TaskMem) -> anyhow::Result<()>;
     fn shared_signals(&self) -> Vec<SharedSignal>;
@@ -554,11 +554,11 @@ impl Memory for SqliteMemory {
         .ok()
     }
 
-    fn save_identity(&self, identity: &Identity) -> anyhow::Result<()> {
+    fn save_identity(&self, agent: &str, identity: &Identity) -> anyhow::Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT OR REPLACE INTO identities (agent, name, role, personality) VALUES (?1, ?2, ?3, ?4)",
-            params![identity.name, identity.name, identity.role, identity.personality],
+            params![agent, identity.name, identity.role, identity.personality],
         )?;
         Ok(())
     }
@@ -684,22 +684,33 @@ impl Memory for SqliteMemory {
 
     fn recall(&self, q: &str, k: usize) -> Vec<Fact> {
         let conn = self.conn.lock().unwrap();
-        // FTS5 full-text search with LIKE fallback
-        let pattern = q
+
+        // Build a safe FTS5 MATCH expression. FTS5 chokes on unescaped tokens
+        // containing punctuation, hyphens, quotes, or its reserved keywords
+        // (AND, OR, NOT, NEAR). Strategy: split on whitespace, drop non-word
+        // chars from each token, double-quote it, and append a prefix wildcard.
+        // Example: `users.id rm -rf` -> `"usersid"* "rm"* "rf"*`.
+        let tokens: Vec<String> = q
             .split_whitespace()
-            .map(|w| format!("{}*", w))
-            .collect::<Vec<_>>()
-            .join(" ");
+            .map(|w| {
+                w.chars()
+                    .filter(|c| c.is_alphanumeric() || *c == '_')
+                    .collect::<String>()
+            })
+            .filter(|w| !w.is_empty())
+            .map(|w| format!("\"{}\"*", w))
+            .collect();
 
-        let result = conn.prepare(
-            "SELECT f.id, f.key, f.value, f.created_at, f.updated_at FROM facts f
-             INNER JOIN facts_fts ft ON f.rowid = ft.rowid
-             WHERE facts_fts MATCH ?1 ORDER BY rank LIMIT ?2",
-        );
-
-        match result {
-            Ok(mut stmt) => stmt
-                .query_map(params![pattern, k as i64], |row| {
+        // No usable tokens (e.g. query was only punctuation) — go straight to LIKE.
+        let try_fts = !tokens.is_empty();
+        if try_fts {
+            let pattern = tokens.join(" ");
+            if let Ok(mut stmt) = conn.prepare(
+                "SELECT f.id, f.key, f.value, f.created_at, f.updated_at FROM facts f
+                 INNER JOIN facts_fts ft ON f.rowid = ft.rowid
+                 WHERE facts_fts MATCH ?1 ORDER BY rank LIMIT ?2",
+            ) {
+                if let Ok(rows) = stmt.query_map(params![pattern, k as i64], |row| {
                     Ok(Fact {
                         id: row.get(0)?,
                         key: row.get(1)?,
@@ -707,30 +718,39 @@ impl Memory for SqliteMemory {
                         created_at: row.get(3)?,
                         updated_at: row.get(4)?,
                     })
-                })
-                .unwrap()
-                .filter_map(|r| r.ok())
-                .collect(),
-            Err(_) => {
-                // Fallback to LIKE
-                let like_pattern = format!("%{}%", q);
-                let mut stmt = conn.prepare(
-                    "SELECT id, key, value, created_at, updated_at FROM facts WHERE key LIKE ?1 OR value LIKE ?1 LIMIT ?2"
-                ).unwrap();
-                stmt.query_map(params![like_pattern, k as i64], |row| {
-                    Ok(Fact {
-                        id: row.get(0)?,
-                        key: row.get(1)?,
-                        value: row.get(2)?,
-                        created_at: row.get(3)?,
-                        updated_at: row.get(4)?,
-                    })
-                })
-                .unwrap()
-                .filter_map(|r| r.ok())
-                .collect()
+                }) {
+                    let facts: Vec<Fact> = rows.filter_map(|r| r.ok()).collect();
+                    if !facts.is_empty() {
+                        return facts;
+                    }
+                    // Fall through to LIKE if FTS returned nothing — LIKE catches
+                    // substring matches inside larger tokens that FTS won't.
+                }
             }
         }
+
+        // LIKE fallback. Escape % and _ in the user pattern so they don't act
+        // as wildcards. Use ESCAPE '\' so the literal characters survive.
+        let escaped = q.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+        let like_pattern = format!("%{}%", escaped);
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT id, key, value, created_at, updated_at FROM facts \
+             WHERE key LIKE ?1 ESCAPE '\\' OR value LIKE ?1 ESCAPE '\\' LIMIT ?2",
+        ) else {
+            return Vec::new();
+        };
+        let Ok(rows) = stmt.query_map(params![like_pattern, k as i64], |row| {
+            Ok(Fact {
+                id: row.get(0)?,
+                key: row.get(1)?,
+                value: row.get(2)?,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        }) else {
+            return Vec::new();
+        };
+        rows.filter_map(|r| r.ok()).collect()
     }
 
     fn all_facts(&self) -> Vec<Fact> {
@@ -866,10 +886,14 @@ impl Memory for SqliteMemory {
 
     fn get_discovered_models(&self, provider_id: &str) -> Vec<String> {
         let conn = self.conn.lock().unwrap();
+        // Discovered model lists are stable for weeks at a time — vendors don't
+        // rotate the catalogue daily. The previous 24-hour TTL silently dropped
+        // a working scan after one day, forcing the user to redo it. Keep the
+        // cache for 30 days; an explicit `sparrow scan` always overwrites it.
         let Ok(mut stmt) = conn.prepare(
             "SELECT model_name FROM discovered_models
              WHERE provider_id = ?1
-               AND datetime(fetched_at) >= datetime('now', '-24 hours')
+               AND datetime(fetched_at) >= datetime('now', '-30 days')
              ORDER BY model_name ASC",
         ) else {
             return Vec::new();

@@ -231,7 +231,7 @@ impl AgentStore for FsAgentStore {
 
         // Persist to memory if available
         if let Some(mem) = &self.memory {
-            mem.save_identity(&soul.to_identity())?;
+            mem.save_identity(&soul.name, &soul.to_identity())?;
         }
         Ok(())
     }
@@ -263,7 +263,7 @@ impl AgentStore for FsAgentStore {
         std::fs::write(&path, content)?;
 
         if let Some(mem) = &self.memory {
-            mem.save_identity(&soul.to_identity())?;
+            mem.save_identity(&soul.name, &soul.to_identity())?;
         }
         Ok(())
     }

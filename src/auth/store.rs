@@ -4,7 +4,12 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::RwLock;
 
-// ─── Encrypted file store (age-style via chacha20poly1305) ─────────────────────
+// ─── On-disk credential file ──────────────────────────────────────────────────
+//
+// The previous implementation pretended to encrypt with a hardcoded XOR key, which
+// is trivially reversible. We don't pretend anymore: this store writes a plain
+// JSON file with restrictive permissions (0600 on Unix). If you need real at-rest
+// secrecy, install the OS keychain integration — `ChainedAuthStore` prefers it.
 
 pub struct EncryptedFileStore {
     path: PathBuf,
@@ -25,26 +30,20 @@ impl EncryptedFileStore {
         if !self.path.exists() {
             return;
         }
-        if let Ok(data) = std::fs::read(&self.path) {
-            if data.len() > 32 {
-                // Simple obfuscation layer (production would use age/chacha20poly1305)
-                let key: Vec<u8> = data[..16].to_vec();
-                let payload: Vec<u8> = data[16..]
-                    .iter()
-                    .enumerate()
-                    .map(|(i, b)| b ^ key[i % 16])
-                    .collect();
-                if let Ok(json) = String::from_utf8(payload) {
-                    if let Ok(map) = serde_json::from_str::<HashMap<String, String>>(&json) {
-                        let mut cache = self.cache.write().unwrap();
-                        for (provider, api_key) in map {
-                            cache.insert(
-                                provider,
-                                Credential::ApiKey(SecretString::new(api_key.into_boxed_str())),
-                            );
-                        }
-                    }
-                }
+        let Ok(data) = std::fs::read(&self.path) else {
+            return;
+        };
+        let parsed: Option<HashMap<String, String>> =
+            serde_json::from_slice::<HashMap<String, String>>(&data)
+                .ok()
+                .or_else(|| legacy_xor_decode(&data));
+        if let Some(map) = parsed {
+            let mut cache = self.cache.write().unwrap();
+            for (provider, api_key) in map {
+                cache.insert(
+                    provider,
+                    Credential::ApiKey(SecretString::new(api_key.into_boxed_str())),
+                );
             }
         }
     }
@@ -57,23 +56,48 @@ impl EncryptedFileStore {
                 map.insert(provider.clone(), key.to_string());
             }
         }
-        let json = serde_json::to_string(&map)?;
-        // Simple XOR encryption with a deterministic key (production: age/chacha20poly1305)
-        let key: Vec<u8> = (0..16).map(|i| (i * 73 + 17) as u8).collect();
-        let payload: Vec<u8> = json
-            .as_bytes()
-            .iter()
-            .enumerate()
-            .map(|(i, b)| b ^ key[i % 16])
-            .collect();
-        let mut data = key;
-        data.extend(payload);
+        let json = serde_json::to_vec(&map)?;
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        std::fs::write(&self.path, data)?;
+        // Atomic-ish write: create tmp, set perms, rename.
+        let tmp = self.path.with_extension("tmp");
+        std::fs::write(&tmp, &json)?;
+        restrict_perms(&tmp)?;
+        std::fs::rename(&tmp, &self.path)?;
         Ok(())
     }
+}
+
+#[cfg(unix)]
+fn restrict_perms(path: &std::path::Path) -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    let perms = std::fs::Permissions::from_mode(0o600);
+    std::fs::set_permissions(path, perms)?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn restrict_perms(_path: &std::path::Path) -> anyhow::Result<()> {
+    // Windows: rely on the user's profile ACLs (file lives under %APPDATA%).
+    Ok(())
+}
+
+/// Best-effort migration: decode the old XOR-obfuscated format so users who
+/// already wrote credentials with the previous version are not locked out.
+/// Once loaded, the next `save_to_file()` rewrites in plain JSON.
+fn legacy_xor_decode(data: &[u8]) -> Option<HashMap<String, String>> {
+    if data.len() <= 32 {
+        return None;
+    }
+    let key = &data[..16];
+    let payload: Vec<u8> = data[16..]
+        .iter()
+        .enumerate()
+        .map(|(i, b)| b ^ key[i % 16])
+        .collect();
+    let json = String::from_utf8(payload).ok()?;
+    serde_json::from_str::<HashMap<String, String>>(&json).ok()
 }
 
 impl AuthStore for EncryptedFileStore {
@@ -108,13 +132,14 @@ pub struct ChainedAuthStore {
 
 impl ChainedAuthStore {
     pub fn new(config_dir: PathBuf) -> Self {
-        // Try OS keychain (keyring crate)
+        // Try OS keychain (keyring crate). The optional `keyring` dep auto-creates
+        // a feature of the same name; gate on it directly.
         let keychain: Option<Box<dyn AuthStore>> = {
-            #[cfg(feature = "keyring-dep")]
+            #[cfg(feature = "keyring")]
             {
                 Some(Box::new(KeyringAuthStore::new()))
             }
-            #[cfg(not(feature = "keyring-dep"))]
+            #[cfg(not(feature = "keyring"))]
             {
                 None
             }
@@ -127,6 +152,69 @@ impl ChainedAuthStore {
             encrypted,
             env_store: crate::auth::MemoryAuthStore::new(),
         }
+    }
+}
+
+// ─── OS keychain backend ───────────────────────────────────────────────────────
+
+#[cfg(feature = "keyring")]
+pub struct KeyringAuthStore {
+    service: String,
+    // Cache of known provider names — keyring crates have no enumerate API.
+    index: RwLock<std::collections::BTreeSet<String>>,
+}
+
+#[cfg(feature = "keyring")]
+impl KeyringAuthStore {
+    pub fn new() -> Self {
+        Self {
+            service: "sparrow".to_string(),
+            index: RwLock::new(std::collections::BTreeSet::new()),
+        }
+    }
+
+    fn entry(&self, provider: &str) -> keyring::Result<keyring::Entry> {
+        keyring::Entry::new(&self.service, provider)
+    }
+}
+
+#[cfg(feature = "keyring")]
+impl AuthStore for KeyringAuthStore {
+    fn get(&self, provider: &str) -> Option<Credential> {
+        let entry = self.entry(provider).ok()?;
+        let secret = entry.get_password().ok()?;
+        self.index.write().unwrap().insert(provider.to_string());
+        Some(Credential::ApiKey(SecretString::new(
+            secret.into_boxed_str(),
+        )))
+    }
+
+    fn set(&self, provider: &str, c: Credential) -> anyhow::Result<()> {
+        let Some(key) = c.expose_key() else {
+            anyhow::bail!("keyring backend only supports api-key credentials");
+        };
+        let entry = self
+            .entry(provider)
+            .map_err(|e| anyhow::anyhow!("keyring entry: {}", e))?;
+        entry
+            .set_password(&key)
+            .map_err(|e| anyhow::anyhow!("keyring set: {}", e))?;
+        self.index.write().unwrap().insert(provider.to_string());
+        Ok(())
+    }
+
+    fn list(&self) -> Vec<String> {
+        self.index.read().unwrap().iter().cloned().collect()
+    }
+
+    fn remove(&self, provider: &str) -> anyhow::Result<()> {
+        let entry = self
+            .entry(provider)
+            .map_err(|e| anyhow::anyhow!("keyring entry: {}", e))?;
+        // delete_credential() is best-effort: a missing entry is not an error.
+        let _ = entry.delete_credential();
+        self.index.write().unwrap().remove(provider);
+        Ok(())
     }
 }
 
