@@ -56,20 +56,32 @@ fn build_responses_body(model: &str, req: &BrainRequest) -> serde_json::Value {
     }
 
     for msg in &req.messages {
+        let mut reasoning_buf = String::new();
         let content: String = msg
             .content
             .iter()
             .filter_map(|b| match b {
                 super::ContentBlock::Text { text } => Some(text.clone()),
+                super::ContentBlock::Reasoning { text } => {
+                    if !reasoning_buf.is_empty() {
+                        reasoning_buf.push('\n');
+                    }
+                    reasoning_buf.push_str(text);
+                    None
+                }
                 _ => None,
             })
             .collect::<Vec<_>>()
             .join("\n");
 
-        input.push(json!({
+        let mut item = json!({
             "role": msg.role,
             "content": content,
-        }));
+        });
+        if msg.role == "assistant" && !reasoning_buf.is_empty() {
+            item["reasoning_content"] = json!(reasoning_buf);
+        }
+        input.push(item);
     }
 
     let mut body = json!({
@@ -88,6 +100,63 @@ fn build_responses_body(model: &str, req: &BrainRequest) -> serde_json::Value {
     }
 
     body
+}
+
+fn push_responses_events(val: &serde_json::Value, events: &mut Vec<BrainEvent>) {
+    let event_type = val["type"].as_str().unwrap_or("");
+    if let Some(delta) = val["delta"].as_str() {
+        if event_type.contains("reasoning") || event_type.contains("thinking") {
+            events.push(BrainEvent::ReasoningDelta(delta.to_string()));
+        } else {
+            events.push(BrainEvent::TextDelta(delta.to_string()));
+        }
+    }
+
+    for key in [
+        "reasoning_content",
+        "reasoning",
+        "thinking",
+        "reasoning_summary_text",
+    ] {
+        if let Some(text) = val.get(key).and_then(|v| v.as_str()) {
+            if !text.is_empty() {
+                events.push(BrainEvent::ReasoningDelta(text.to_string()));
+            }
+        }
+    }
+
+    if let Some(response) = val.get("response") {
+        collect_nested_reasoning(response, events);
+    }
+    if event_type == "response.completed" {
+        events.push(BrainEvent::Done(crate::event::StopReason::EndTurn));
+    }
+}
+
+fn collect_nested_reasoning(value: &serde_json::Value, events: &mut Vec<BrainEvent>) {
+    match value {
+        serde_json::Value::Array(items) => {
+            for item in items {
+                collect_nested_reasoning(item, events);
+            }
+        }
+        serde_json::Value::Object(map) => {
+            for (key, value) in map {
+                if matches!(
+                    key.as_str(),
+                    "reasoning_content" | "reasoning" | "thinking" | "reasoning_summary_text"
+                ) {
+                    if let Some(text) = value.as_str() {
+                        if !text.is_empty() {
+                            events.push(BrainEvent::ReasoningDelta(text.to_string()));
+                        }
+                    }
+                }
+                collect_nested_reasoning(value, events);
+            }
+        }
+        _ => {}
+    }
 }
 
 #[async_trait]
@@ -145,13 +214,7 @@ impl Brain for OpenAIResponsesAdapter {
                                 continue;
                             }
                             if let Ok(val) = serde_json::from_str::<serde_json::Value>(data) {
-                                if let Some(delta) = val["delta"].as_str() {
-                                    events.push(BrainEvent::TextDelta(delta.to_string()));
-                                }
-                                if val["type"].as_str() == Some("response.completed") {
-                                    events
-                                        .push(BrainEvent::Done(crate::event::StopReason::EndTurn));
-                                }
+                                push_responses_events(&val, &mut events);
                             }
                         }
                         Some((futures::stream::iter(events), (stream, false, buf)))
@@ -269,5 +332,45 @@ mod tests {
         let body = build_responses_body("gpt-test", &req);
         assert_eq!(body["prompt_cache_key"], "sparrow-repo-abc");
         assert_eq!(body["prompt_cache_retention"], "in_memory");
+    }
+
+    #[test]
+    fn responses_body_reinjects_assistant_reasoning_content() {
+        let req = BrainRequest {
+            messages: vec![Msg {
+                role: "assistant".into(),
+                content: vec![
+                    ContentBlock::Reasoning {
+                        text: "private reasoning state".into(),
+                    },
+                    ContentBlock::Text {
+                        text: "visible answer".into(),
+                    },
+                ],
+            }],
+            ..BrainRequest::default()
+        };
+
+        let body = build_responses_body("gpt-test", &req);
+        assert_eq!(body["input"][0]["content"], "visible answer");
+        assert_eq!(
+            body["input"][0]["reasoning_content"],
+            "private reasoning state"
+        );
+    }
+
+    #[test]
+    fn responses_events_capture_reasoning_delta_without_visible_text() {
+        let event = json!({
+            "type": "response.reasoning_summary_text.delta",
+            "delta": "reasoning chunk"
+        });
+        let mut events = Vec::new();
+        push_responses_events(&event, &mut events);
+
+        assert!(matches!(
+            events.as_slice(),
+            [BrainEvent::ReasoningDelta(text)] if text == "reasoning chunk"
+        ));
     }
 }

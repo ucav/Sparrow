@@ -15,6 +15,7 @@ use crate::event::{
 };
 use crate::extras::Distiller;
 use crate::hooks::{HookEvent, HookRegistry};
+use crate::instructions::InstructionDoc;
 use crate::memory::{Fact, Memory, MemoryDoc, MemoryDocKind};
 use crate::permissions::PermissionContext;
 use crate::provider::{
@@ -162,6 +163,7 @@ fn build_system_prompt(
     workspace_root: &PathBuf,
     facts: &[Fact],
     memory_docs: &[MemoryDoc],
+    instruction_docs: &[InstructionDoc],
     skills: &[crate::capabilities::Skill],
 ) -> String {
     let mut parts = vec![format!(
@@ -202,6 +204,16 @@ exists just because the current brain is a single selected model.
         );
         for doc in memory_docs {
             parts.push(format!("### {}\n{}", doc.kind.as_str(), doc.content));
+        }
+    }
+
+    if !instruction_docs.is_empty() {
+        parts.push(
+            "## Project instructions\nThe following AGENTS.md, CLAUDE.md, and .sparrow/INSTRUCTIONS.md files were discovered from the user/workspace hierarchy. Treat them as project operating instructions. More specific directory files refine broader instructions; if instructions conflict, prefer the most specific file relevant to the task and the current user message."
+                .to_string(),
+        );
+        for doc in instruction_docs {
+            parts.push(format!("### {}\n{}", doc.relative_path, doc.content));
         }
     }
 
@@ -1031,6 +1043,10 @@ impl Engine {
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default(),
+            &crate::instructions::discover_workspace_instructions(
+                &workspace.root,
+                &task.description,
+            ),
             &relevant_skills,
         );
         let mut system = format!(

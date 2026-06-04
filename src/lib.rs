@@ -39,6 +39,7 @@ pub mod extras;
 pub mod gateway;
 pub mod github;
 pub mod hooks;
+pub mod instructions;
 pub mod memory;
 pub mod onboarding;
 pub mod orchestrator;
