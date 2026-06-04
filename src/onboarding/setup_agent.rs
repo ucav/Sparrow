@@ -5,8 +5,14 @@
 //! updates, validates against the registry, prompts for missing secrets,
 //! and writes config.toml.
 
-use std::io::{self, Write};
+use std::io::{self, IsTerminal, Write};
 use std::sync::Arc;
+
+/// `true` when stdin is connected to a real terminal, so it's safe to prompt
+/// for a password / interactive line. CI / piped invocations get `false`.
+fn is_stdin_tty() -> bool {
+    io::stdin().is_terminal()
+}
 
 use crate::auth::{AuthStore, Credential};
 use crate::config::{Config, ConfigStore, FsConfigStore, ProviderConfig};
@@ -98,19 +104,34 @@ pub async fn run_setup_agent(
         .unwrap_or_default();
     if !missing.is_empty() {
         let auth = crate::auth::store::ChainedAuthStore::new(updated.config_dir.clone());
+        // In non-interactive contexts (CI, piped stdin) we MUST NOT block on a
+        // hidden-password prompt: rpassword fails over to stdin and blocks
+        // forever. Detect once up-front and print actionable instructions
+        // instead.
+        let interactive = is_stdin_tty();
         for env_var in &missing {
             // Heuristic: env var like `ANTHROPIC_API_KEY` → provider id `anthropic`
             let provider_id = env_var.to_lowercase().replace("_api_key", "");
+            if !interactive {
+                println!(
+                    "\nSkipping API key prompt for {} ({}) — stdin is not a TTY. \
+                     Set the env var or run `sparrow setup` in an interactive shell.",
+                    provider_id, env_var
+                );
+                continue;
+            }
             print!("\nPaste API key for {} ({}): ", provider_id, env_var);
             io::stdout().flush().ok();
-            let key = rpassword::read_password()
-                .or_else(|_| {
-                    let mut key = String::new();
-                    io::stdin().read_line(&mut key)?;
-                    Ok::<_, std::io::Error>(key)
-                })?
-                .trim()
-                .to_string();
+            let key = match rpassword::read_password() {
+                Ok(k) => k.trim().to_string(),
+                Err(e) => {
+                    eprintln!(
+                        "\nwarning: could not read API key for {}: {}. Skipping.",
+                        provider_id, e
+                    );
+                    continue;
+                }
+            };
             if !key.is_empty() {
                 auth.set(&provider_id, Credential::api_key(key))?;
                 println!("  ✓ Credential stored for {}", provider_id);

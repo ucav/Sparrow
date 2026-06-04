@@ -46,8 +46,13 @@ impl GatewayTransport for WhatsAppTransport {
         "whatsapp"
     }
     async fn start(&self, _tx: mpsc::UnboundedSender<GatewayMessage>) -> anyhow::Result<()> {
-        tracing::info!(
-            "WhatsApp gateway ready (webhook mode — configure Meta Business webhook URL)"
+        // OUTBOUND-ONLY. We have no embedded HTTP server to receive Meta's
+        // webhook callbacks, so inbound messages are dropped. Be loud about it
+        // instead of pretending to be "ready".
+        tracing::warn!(
+            "WhatsApp transport: outbound send() works, but inbound webhooks are NOT wired \
+             (no embedded HTTP server). Configure your own webhook receiver to push messages \
+             into Sparrow if you need bidirectional chat."
         );
         Ok(())
     }
@@ -79,11 +84,14 @@ impl GatewayTransport for SignalTransport {
         "signal"
     }
     async fn start(&self, _tx: mpsc::UnboundedSender<GatewayMessage>) -> anyhow::Result<()> {
-        tracing::info!("Signal gateway requires signal-cli REST API or similar bridge");
-        Ok(())
+        anyhow::bail!(
+            "Signal transport is not implemented. Both inbound and outbound require an external \
+             signal-cli bridge that this binary does not embed. Run a signal-cli daemon and write \
+             a small adapter that calls Sparrow's API directly."
+        )
     }
     async fn send(&self, _response: GatewayResponse) -> anyhow::Result<()> {
-        anyhow::bail!("Signal transport requires a configured signal-cli bridge")
+        anyhow::bail!("Signal transport is not implemented (no signal-cli bridge embedded).")
     }
     async fn stop(&self) -> anyhow::Result<()> {
         Ok(())
@@ -127,7 +135,13 @@ impl GatewayTransport for EmailTransport {
         "email"
     }
     async fn start(&self, _tx: mpsc::UnboundedSender<GatewayMessage>) -> anyhow::Result<()> {
-        tracing::info!("Email gateway ready (SMTP for sending, IMAP for receiving via polling)");
+        // OUTBOUND-ONLY via the Mailgun HTTP API. Inbound IMAP polling is NOT
+        // wired here despite the previous log message. Use the dedicated
+        // `gateway::email` module (feature = "email") for real IMAP receive.
+        tracing::warn!(
+            "Email transport (Mailgun): outbound send() works, inbound is NOT wired. \
+             Enable the `email` cargo feature and use gateway::email for IMAP polling."
+        );
         Ok(())
     }
     async fn send(&self, response: GatewayResponse) -> anyhow::Result<()> {
@@ -178,7 +192,11 @@ impl GatewayTransport for FeishuTransport {
         "feishu"
     }
     async fn start(&self, _tx: mpsc::UnboundedSender<GatewayMessage>) -> anyhow::Result<()> {
-        tracing::info!("Feishu gateway ready (configure bot webhook in Feishu admin)");
+        // OUTBOUND-ONLY. Feishu inbound requires hosting an event-subscription
+        // webhook receiver, which this binary does not embed.
+        tracing::warn!(
+            "Feishu transport: outbound send() works, inbound webhook subscription is NOT wired."
+        );
         Ok(())
     }
     async fn send(&self, response: GatewayResponse) -> anyhow::Result<()> {
@@ -224,11 +242,12 @@ impl GatewayTransport for WeComTransport {
         "wecom"
     }
     async fn start(&self, _tx: mpsc::UnboundedSender<GatewayMessage>) -> anyhow::Result<()> {
-        tracing::info!("WeCom gateway ready (configure bot in WeCom admin)");
-        Ok(())
+        anyhow::bail!(
+            "WeCom transport is not implemented (missing access-token exchange + message API wiring)."
+        )
     }
     async fn send(&self, _response: GatewayResponse) -> anyhow::Result<()> {
-        anyhow::bail!("WeCom transport requires access-token exchange and message API wiring")
+        anyhow::bail!("WeCom transport is not implemented.")
     }
     async fn stop(&self) -> anyhow::Result<()> {
         Ok(())
@@ -259,11 +278,12 @@ impl GatewayTransport for QQBotTransport {
         "qqbot"
     }
     async fn start(&self, _tx: mpsc::UnboundedSender<GatewayMessage>) -> anyhow::Result<()> {
-        tracing::info!("QQBot gateway ready (configure in QQ Open Platform)");
-        Ok(())
+        anyhow::bail!(
+            "QQBot transport is not implemented (missing QQ Open Platform send API wiring)."
+        )
     }
     async fn send(&self, _response: GatewayResponse) -> anyhow::Result<()> {
-        anyhow::bail!("QQBot transport requires QQ Open Platform send API wiring")
+        anyhow::bail!("QQBot transport is not implemented.")
     }
     async fn stop(&self) -> anyhow::Result<()> {
         Ok(())
@@ -294,11 +314,12 @@ impl GatewayTransport for TeamsTransport {
         "teams"
     }
     async fn start(&self, _tx: mpsc::UnboundedSender<GatewayMessage>) -> anyhow::Result<()> {
-        tracing::info!("Teams gateway ready (configure bot in Azure Bot Service)");
-        Ok(())
+        anyhow::bail!(
+            "Teams transport is not implemented (missing Azure Bot Framework adapter wiring)."
+        )
     }
     async fn send(&self, _response: GatewayResponse) -> anyhow::Result<()> {
-        anyhow::bail!("Teams transport requires Azure Bot Framework adapter wiring")
+        anyhow::bail!("Teams transport is not implemented.")
     }
     async fn stop(&self) -> anyhow::Result<()> {
         Ok(())
