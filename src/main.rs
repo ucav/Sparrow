@@ -1117,7 +1117,21 @@ fn migrate_inline_provider_keys(config: &mut sparrow::config::Config, store: &Fs
             continue;
         };
 
-        if auth.set(name, Credential::api_key(inline_key)).is_err() {
+        if let Err(err) = auth.set(name, Credential::api_key(inline_key)) {
+            // Hard failure: do NOT keep the inline key in the config (it would
+            // sit there in plaintext) but DO leave the field intact so the
+            // operator can retry. Log loudly so the failure isn't silent.
+            eprintln!(
+                "warning: failed to migrate inline API key for provider '{}' into the credential \
+                 store: {}. The inline key remains in config.toml — fix the store and re-run \
+                 `sparrow setup` to migrate, or remove the key from config.toml manually.",
+                name, err
+            );
+            tracing::warn!(
+                provider = %name,
+                error = %err,
+                "inline api-key migration failed; key left in config"
+            );
             continue;
         }
 
@@ -1127,7 +1141,15 @@ fn migrate_inline_provider_keys(config: &mut sparrow::config::Config, store: &Fs
     }
 
     if changed {
-        let _ = store.save(config);
+        if let Err(err) = store.save(config) {
+            eprintln!(
+                "warning: migrated inline API keys into the credential store but FAILED to \
+                 update config.toml: {}. Re-run `sparrow setup` to retry, or the inline keys \
+                 may reappear on next start.",
+                err
+            );
+            tracing::warn!(error = %err, "config save after key migration failed");
+        }
     }
 }
 
@@ -3627,21 +3649,105 @@ fn current_repo_head() -> Option<String> {
 }
 
 fn redacted_config_snapshot(config: &sparrow::config::Config) -> serde_json::Value {
-    fn has_secret_prefix(value: &str) -> bool {
-        let trimmed = value.trim();
-        trimmed.starts_with("sk-")
-            || trimmed.starts_with("nvapi-")
-            || trimmed.starts_with("gsk_")
-            || trimmed.starts_with("sk-or-")
+    /// Returns true if `value` matches a vendor-specific secret pattern.
+    /// Each pattern is anchored on a recognisable prefix and a plausible
+    /// length so we don't false-positive UUIDs, hex hashes, or commit SHAs.
+    fn looks_like_known_secret(value: &str) -> bool {
+        let v = value.trim();
+        // OpenAI / OpenRouter / fine-tuned-org keys: sk-..., sk-or-..., sk-proj-...
+        if v.starts_with("sk-") && v.len() >= 20 {
+            return true;
+        }
+        // Anthropic: sk-ant-api03-..., sk-ant-...
+        if v.starts_with("sk-ant-") && v.len() >= 20 {
+            return true;
+        }
+        // Groq, NVIDIA NIM, OpenRouter, DeepSeek, Mistral, xAI variants
+        if (v.starts_with("gsk_")
+            || v.starts_with("nvapi-")
+            || v.starts_with("xai-")
+            || v.starts_with("mr-"))
+            && v.len() >= 20
+        {
+            return true;
+        }
+        // GitHub personal / fine-grained / app tokens
+        if (v.starts_with("ghp_")
+            || v.starts_with("gho_")
+            || v.starts_with("ghu_")
+            || v.starts_with("ghs_")
+            || v.starts_with("ghr_")
+            || v.starts_with("github_pat_"))
+            && v.len() >= 30
+        {
+            return true;
+        }
+        // GitLab personal access tokens
+        if v.starts_with("glpat-") && v.len() >= 20 {
+            return true;
+        }
+        // Slack: xoxb-/xoxa-/xoxp-/xoxs-, plus webhook URLs
+        if (v.starts_with("xoxb-")
+            || v.starts_with("xoxa-")
+            || v.starts_with("xoxp-")
+            || v.starts_with("xoxs-"))
+            && v.len() >= 20
+        {
+            return true;
+        }
+        if v.starts_with("https://hooks.slack.com/") {
+            return true;
+        }
+        // AWS access key id (AKIA/ASIA + 16 base32 chars = 20 total)
+        if (v.starts_with("AKIA") || v.starts_with("ASIA"))
+            && v.len() == 20
+            && v.chars().all(|c| c.is_ascii_alphanumeric())
+        {
+            return true;
+        }
+        // Stripe live/test secret keys
+        if (v.starts_with("sk_live_") || v.starts_with("sk_test_") || v.starts_with("rk_live_"))
+            && v.len() >= 24
+        {
+            return true;
+        }
+        // Google API keys
+        if v.starts_with("AIza") && v.len() >= 35 && v.len() <= 45 {
+            return true;
+        }
+        // JWT (header.payload.signature, all base64url)
+        if v.matches('.').count() == 2 && v.len() >= 30 {
+            let parts: Vec<&str> = v.split('.').collect();
+            if parts.len() == 3
+                && parts
+                    .iter()
+                    .all(|p| p.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+                && v.starts_with("eyJ") // JWT header always decodes to {"...
+            {
+                return true;
+            }
+        }
+        false
     }
 
-    fn looks_secret_field_value(value: &str) -> bool {
-        let trimmed = value.trim();
-        has_secret_prefix(trimmed)
-            || trimmed.len() > 40
-                && !trimmed
-                    .chars()
-                    .all(|c| c.is_ascii_uppercase() || c == '_' || c.is_ascii_digit())
+    /// Heuristic for *any* high-entropy-looking string in a secret-named field.
+    /// We require length >= 32 AND mixed case OR digits, so a label like
+    /// "API_KEY_NAME" stays visible while a real opaque key gets masked.
+    fn looks_like_opaque_secret(value: &str) -> bool {
+        let v = value.trim();
+        if v.len() < 32 {
+            return false;
+        }
+        let has_lower = v.chars().any(|c| c.is_ascii_lowercase());
+        let has_upper = v.chars().any(|c| c.is_ascii_uppercase());
+        let has_digit = v.chars().any(|c| c.is_ascii_digit());
+        // Reject pure-uppercase identifiers and pure-hex hashes that look like
+        // commit SHAs / UUIDs.
+        if !has_lower && !has_digit {
+            return false; // looks like an UPPER_SNAKE identifier
+        }
+        let entropy_chars = has_lower as u8 + has_upper as u8 + has_digit as u8;
+        entropy_chars >= 2
     }
 
     fn redact(value: &mut serde_json::Value) {
@@ -3649,14 +3755,29 @@ fn redacted_config_snapshot(config: &sparrow::config::Config) -> serde_json::Val
             serde_json::Value::Object(map) => {
                 for (key, val) in map.iter_mut() {
                     let key_lc = key.to_lowercase();
-                    if key_lc.contains("key")
+                    let key_is_secret = key_lc.contains("key")
                         || key_lc.contains("token")
                         || key_lc.contains("secret")
                         || key_lc.contains("password")
-                    {
-                        if val.as_str().map(looks_secret_field_value).unwrap_or(true) {
-                            *val = serde_json::Value::String("<redacted>".into());
-                            continue;
+                        || key_lc.contains("passwd")
+                        || key_lc.contains("auth")
+                        || key_lc.contains("credential")
+                        || key_lc.contains("apikey");
+                    if key_is_secret {
+                        match val {
+                            serde_json::Value::String(s) => {
+                                if looks_like_known_secret(s) || looks_like_opaque_secret(s) {
+                                    *val = serde_json::Value::String("<redacted>".into());
+                                }
+                                // else: probably a placeholder label, leave visible.
+                                continue;
+                            }
+                            serde_json::Value::Null => continue,
+                            // Nested object/array under a "secret" key: redact aggressively.
+                            _ => {
+                                *val = serde_json::Value::String("<redacted>".into());
+                                continue;
+                            }
                         }
                     }
                     redact(val);
@@ -3667,7 +3788,7 @@ fn redacted_config_snapshot(config: &sparrow::config::Config) -> serde_json::Val
                     redact(item);
                 }
             }
-            serde_json::Value::String(s) if has_secret_prefix(s) => {
+            serde_json::Value::String(s) if looks_like_known_secret(s) => {
                 *value = serde_json::Value::String("<redacted>".into());
             }
             _ => {}
@@ -3827,6 +3948,37 @@ async fn handle_webview(
                 drop(guard);
                 if let Some(store) = &session_for_loop {
                     let _ = store.save("webview", &[], Some("WebView console"));
+                }
+                continue;
+            }
+            // Sentinel: switch the conversation context to a stored session.
+            // Format: `__load_session__:<session_id>`.
+            if let Some(target_id) = task.strip_prefix("__load_session__:") {
+                if let Some(store) = &session_for_loop {
+                    if let Some(session) = store.load(target_id) {
+                        let parsed: Vec<sparrow::provider::Msg> =
+                            serde_json::from_str(&session.messages_json).unwrap_or_default();
+                        let turn_count = parsed.len();
+                        {
+                            let mut guard =
+                                conv_for_runs.lock().expect("conv lock poisoned");
+                            *guard = parsed;
+                        }
+                        let _ = events_for_runs.send(sparrow::event::Event::Message {
+                            run: sparrow::event::RunId("webview".into()),
+                            role: "system".into(),
+                            text: format!(
+                                "loaded session {} ({} turns)",
+                                session.name.as_deref().unwrap_or(&session.id),
+                                turn_count
+                            ),
+                        });
+                    } else {
+                        let _ = events_for_runs.send(sparrow::event::Event::Error {
+                            run: sparrow::event::RunId("webview".into()),
+                            message: format!("session not found: {}", target_id),
+                        });
+                    }
                 }
                 continue;
             }
