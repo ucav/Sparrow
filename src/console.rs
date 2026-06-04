@@ -407,11 +407,15 @@ async fn run_task(
         if let Some(ref store) = state.agent_store {
             if let Some(soul) = store.get(agent_name) {
                 let identity = soul.to_identity();
+                // Base64-encode the personality to avoid delimiter collisions
+                use base64::{Engine as _, engine::general_purpose::STANDARD};
+                let b64 = STANDARD.encode(identity.personality.as_bytes());
                 format!(
-                    "__identity:{}__{}__{}__ {dispatch}",
+                    "__agent:{}__{}__{}__ {}",
                     identity.name,
                     identity.role,
-                    identity.personality.replace('\n', "\\n").replace(' ', "\u{00A0}")
+                    b64,
+                    dispatch
                 )
             } else {
                 dispatch
