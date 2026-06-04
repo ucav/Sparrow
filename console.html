@@ -1777,6 +1777,9 @@ function activateAgent(name) {
     inp.value = '@' + name + ' ' + inp.value.replace(/^@\S+\s*/, '');
     inp.focus();
   }
+  // Update the coder lane label to show the agent's name
+  const coderWho = document.querySelector('#swarm-coder .who');
+  if (coderWho) coderWho.textContent = name;
 }
 
 async function loadCrewPanel(){
