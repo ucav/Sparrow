@@ -19,7 +19,7 @@ use crate::instructions::InstructionDoc;
 use crate::memory::{Fact, Memory, MemoryDoc, MemoryDocKind};
 use crate::permissions::PermissionContext;
 use crate::provider::{
-    Brain, BrainEvent, BrainRequest, ContentBlock, Msg, PromptCacheConfig, ToolSpec,
+    Brain, BrainEvent, BrainRequest, ContentBlock, ImageSource, Msg, PromptCacheConfig, ToolSpec,
 };
 use crate::reasoning::ReasoningEngine;
 use crate::redaction::RedactionFilter;
@@ -128,6 +128,92 @@ fn estimate_request_tokens(req: &BrainRequest) -> u64 {
         })
         .sum();
     system + messages + tools
+}
+
+fn base64_encode(data: &[u8]) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+        out.push(CHARS[((triple >> 18) & 63) as usize] as char);
+        out.push(CHARS[((triple >> 12) & 63) as usize] as char);
+        out.push(if chunk.len() > 1 {
+            CHARS[((triple >> 6) & 63) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            CHARS[(triple & 63) as usize] as char
+        } else {
+            '='
+        });
+    }
+    out
+}
+
+fn image_block_from_path(path: &std::path::Path) -> Option<ContentBlock> {
+    let mime = mime_guess::from_path(path).first_or_octet_stream();
+    if !mime.type_().as_str().eq_ignore_ascii_case("image") {
+        return None;
+    }
+    let data = std::fs::read(path).ok()?;
+    Some(ContentBlock::Image {
+        source: ImageSource::Base64 {
+            media_type: mime.to_string(),
+            data: base64_encode(&data),
+        },
+    })
+}
+
+fn collect_uploaded_paths(description: &str) -> Vec<String> {
+    let mut paths = Vec::new();
+    for line in description.lines() {
+        let Some(idx) = line.find("uploaded:") else {
+            continue;
+        };
+        let rest = line[idx + "uploaded:".len()..].trim();
+        let path = rest
+            .strip_prefix('[')
+            .unwrap_or(rest)
+            .split(']')
+            .next()
+            .unwrap_or(rest)
+            .trim()
+            .trim_matches('"')
+            .trim_matches('\'');
+        if !path.is_empty() {
+            paths.push(path.to_string());
+        }
+    }
+    paths
+}
+
+fn initial_user_content_blocks(
+    workspace_root: &std::path::Path,
+    description: &str,
+) -> Vec<ContentBlock> {
+    let mut blocks = vec![ContentBlock::Text {
+        text: description.to_string(),
+    }];
+    let mut seen = std::collections::HashSet::new();
+    for raw_path in collect_uploaded_paths(description) {
+        let path = std::path::PathBuf::from(&raw_path);
+        let full_path = if path.is_absolute() {
+            path
+        } else {
+            workspace_root.join(path)
+        };
+        if !seen.insert(full_path.clone()) {
+            continue;
+        }
+        if let Some(block) = image_block_from_path(&full_path) {
+            blocks.push(block);
+        }
+    }
+    blocks
 }
 
 pub fn summarize_model_chain(chain_ids: &[String], limit: usize) -> String {
@@ -240,6 +326,25 @@ fn tool_result_text(blocks: &[Block]) -> String {
         }
     }
     out.join("\n")
+}
+
+fn tool_result_content_blocks(blocks: &[Block]) -> Vec<ContentBlock> {
+    let mut out = Vec::new();
+    let text = tool_result_text(blocks);
+    if !text.trim().is_empty() {
+        out.push(ContentBlock::Text { text });
+    }
+    for block in blocks {
+        if let Block::Image { data, mime } = block {
+            out.push(ContentBlock::Image {
+                source: ImageSource::Base64 {
+                    media_type: mime.clone(),
+                    data: base64_encode(data),
+                },
+            });
+        }
+    }
+    out
 }
 
 /// Reconstruct an Event view from a finished conversation so the Distiller can
@@ -1074,9 +1179,7 @@ impl Engine {
         // Build initial messages
         messages.push(Msg {
             role: "user".into(),
-            content: vec![ContentBlock::Text {
-                text: task.description.clone(),
-            }],
+            content: initial_user_content_blocks(&workspace.root, &task.description),
         });
 
         let mut total_input: u64 = 0;
@@ -1087,8 +1190,13 @@ impl Engine {
         let mut cost_usd: f64 = 0.0;
         let diffs: Vec<crate::event::FileDiff> = Vec::new();
         let mut current_chain_idx = 0usize;
-        let mut tool_results_pending: Vec<(String, String, serde_json::Value, String, bool)> =
-            Vec::new();
+        let mut tool_results_pending: Vec<(
+            String,
+            String,
+            serde_json::Value,
+            Vec<ContentBlock>,
+            bool,
+        )> = Vec::new();
         let budget_session = self.config.budget.session_usd;
         let _budget_daily = self.config.budget.daily_usd;
         let redaction = &self.redaction;
@@ -1643,7 +1751,7 @@ impl Engine {
                                                 id.clone(),
                                                 proposed.tool_name.clone(),
                                                 args.clone(),
-                                                reason,
+                                                vec![ContentBlock::Text { text: reason }],
                                                 true,
                                             ));
                                             continue;
@@ -1707,6 +1815,7 @@ impl Engine {
 
                                         let blocks = result.content.clone();
                                         let text = tool_result_text(&blocks);
+                                        let content_blocks = tool_result_content_blocks(&blocks);
                                         let is_error = result.is_error;
                                         skill_evidence.push_str(&text);
                                         skill_evidence.push('\n');
@@ -1724,7 +1833,7 @@ impl Engine {
                                             id.clone(),
                                             proposed.tool_name.clone(),
                                             args.clone(),
-                                            text,
+                                            content_blocks,
                                             is_error,
                                         ));
                                     }
@@ -1829,7 +1938,7 @@ impl Engine {
                                                     approval_id,
                                                     approval_name,
                                                     approval_args,
-                                                    reason,
+                                                    vec![ContentBlock::Text { text: reason }],
                                                     true,
                                                 ));
                                                 continue;
@@ -1860,6 +1969,8 @@ impl Engine {
                                             };
                                             let blocks = result.content.clone();
                                             let text = tool_result_text(&blocks);
+                                            let content_blocks =
+                                                tool_result_content_blocks(&blocks);
                                             let is_error = result.is_error;
                                             skill_evidence.push_str(&text);
                                             skill_evidence.push('\n');
@@ -1877,7 +1988,7 @@ impl Engine {
                                                 approval_id,
                                                 approval_name,
                                                 approval_args,
-                                                text,
+                                                content_blocks,
                                                 is_error,
                                             ));
                                         } else {
@@ -1891,7 +2002,9 @@ impl Engine {
                                                 approval_id,
                                                 approval_name,
                                                 approval_args,
-                                                "Denied by user".into(),
+                                                vec![ContentBlock::Text {
+                                                    text: "Denied by user".into(),
+                                                }],
                                                 true,
                                             ));
                                         }
@@ -1911,7 +2024,9 @@ impl Engine {
                                             id.clone(),
                                             proposed.tool_name.clone(),
                                             args.clone(),
-                                            "Denied by autonomy policy".into(),
+                                            vec![ContentBlock::Text {
+                                                text: "Denied by autonomy policy".into(),
+                                            }],
                                             true,
                                         ));
                                     }
@@ -2191,7 +2306,7 @@ impl Engine {
                                         // carry the reasoning_content so DeepSeek
                                         // thinking-mode accepts the next turn.
                                         let mut first = true;
-                                        for (tool_id, tool_name, args, text, is_error) in
+                                        for (tool_id, tool_name, args, content, is_error) in
                                             tool_results_pending.drain(..)
                                         {
                                             let mut blocks = Vec::new();
@@ -2214,7 +2329,7 @@ impl Engine {
                                                 role: "user".into(),
                                                 content: vec![ContentBlock::ToolResult {
                                                     tool_use_id: tool_id,
-                                                    content: vec![ContentBlock::Text { text }],
+                                                    content,
                                                     is_error: Some(is_error),
                                                 }],
                                             });
@@ -2414,5 +2529,61 @@ impl Engine {
             .await;
 
         Ok(outcome)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn initial_user_content_blocks_embeds_uploaded_images() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let image = tmp.path().join("shot.png");
+        std::fs::write(
+            &image,
+            [
+                0x89, b'P', b'N', b'G', b'\r', b'\n', 0x1a, b'\n', 0, 0, 0, 0,
+            ],
+        )
+        .expect("write image");
+        let description = format!(
+            "analyse this\n\n[Attached files]\n### file: shot.png\n[uploaded: {}]",
+            image.display()
+        );
+
+        let blocks = initial_user_content_blocks(tmp.path(), &description);
+        assert!(matches!(blocks.first(), Some(ContentBlock::Text { .. })));
+        assert!(blocks.iter().any(|block| matches!(
+            block,
+            ContentBlock::Image {
+                source: ImageSource::Base64 {
+                    media_type,
+                    data,
+                }
+            } if media_type == "image/png" && !data.is_empty()
+        )));
+    }
+
+    #[test]
+    fn tool_result_content_blocks_preserves_images() {
+        let blocks = tool_result_content_blocks(&[
+            Block::Text("screenshot captured".into()),
+            Block::Image {
+                data: vec![1, 2, 3],
+                mime: "image/png".into(),
+            },
+        ]);
+
+        assert!(matches!(blocks.first(), Some(ContentBlock::Text { .. })));
+        assert!(blocks.iter().any(|block| matches!(
+            block,
+            ContentBlock::Image {
+                source: ImageSource::Base64 {
+                    media_type,
+                    data,
+                }
+            } if media_type == "image/png" && data == "AQID"
+        )));
     }
 }

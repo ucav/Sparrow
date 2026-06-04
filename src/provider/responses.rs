@@ -57,22 +57,48 @@ fn build_responses_body(model: &str, req: &BrainRequest) -> serde_json::Value {
 
     for msg in &req.messages {
         let mut reasoning_buf = String::new();
-        let content: String = msg
-            .content
-            .iter()
-            .filter_map(|b| match b {
-                super::ContentBlock::Text { text } => Some(text.clone()),
+        let mut content_blocks: Vec<serde_json::Value> = Vec::new();
+        for block in &msg.content {
+            match block {
+                super::ContentBlock::Text { text } => {
+                    if msg.role == "assistant" {
+                        content_blocks.push(json!({
+                            "type": "output_text",
+                            "text": text,
+                        }));
+                    } else {
+                        content_blocks.push(json!({
+                            "type": "input_text",
+                            "text": text,
+                        }));
+                    }
+                }
+                super::ContentBlock::Image { source } => {
+                    content_blocks.push(json!({
+                        "type": "input_image",
+                        "image_url": image_source_url(source),
+                    }));
+                }
                 super::ContentBlock::Reasoning { text } => {
                     if !reasoning_buf.is_empty() {
                         reasoning_buf.push('\n');
                     }
                     reasoning_buf.push_str(text);
-                    None
                 }
-                _ => None,
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
+                _ => {}
+            }
+        }
+        let content = if content_blocks.len() == 1
+            && content_blocks[0]["type"].as_str() == Some("input_text")
+        {
+            content_blocks[0]["text"].clone()
+        } else if content_blocks.len() == 1
+            && content_blocks[0]["type"].as_str() == Some("output_text")
+        {
+            content_blocks[0]["text"].clone()
+        } else {
+            json!(content_blocks)
+        };
 
         let mut item = json!({
             "role": msg.role,
@@ -100,6 +126,15 @@ fn build_responses_body(model: &str, req: &BrainRequest) -> serde_json::Value {
     }
 
     body
+}
+
+fn image_source_url(source: &super::ImageSource) -> String {
+    match source {
+        super::ImageSource::Base64 { media_type, data } => {
+            format!("data:{};base64,{}", media_type, data)
+        }
+        super::ImageSource::Url { url } => url.clone(),
+    }
 }
 
 fn push_responses_events(val: &serde_json::Value, events: &mut Vec<BrainEvent>) {
@@ -356,6 +391,35 @@ mod tests {
         assert_eq!(
             body["input"][0]["reasoning_content"],
             "private reasoning state"
+        );
+    }
+
+    #[test]
+    fn responses_body_serializes_image_blocks() {
+        let req = BrainRequest {
+            messages: vec![Msg {
+                role: "user".into(),
+                content: vec![
+                    ContentBlock::Text {
+                        text: "describe this".into(),
+                    },
+                    ContentBlock::Image {
+                        source: crate::provider::ImageSource::Base64 {
+                            media_type: "image/png".into(),
+                            data: "iVBORw0KGgo=".into(),
+                        },
+                    },
+                ],
+            }],
+            ..BrainRequest::default()
+        };
+
+        let body = build_responses_body("gpt-test", &req);
+        assert_eq!(body["input"][0]["content"][0]["type"], "input_text");
+        assert_eq!(body["input"][0]["content"][1]["type"], "input_image");
+        assert_eq!(
+            body["input"][0]["content"][1]["image_url"],
+            "data:image/png;base64,iVBORw0KGgo="
         );
     }
 

@@ -85,6 +85,14 @@ fn build_chat_body(model: &str, req: &BrainRequest) -> serde_json::Value {
                 ContentBlock::Text { text } => {
                     content.push(json!({"type": "text", "text": text}));
                 }
+                ContentBlock::Image { source } => {
+                    content.push(json!({
+                        "type": "image_url",
+                        "image_url": {
+                            "url": image_source_url(source),
+                        }
+                    }));
+                }
                 ContentBlock::Reasoning { text } => {
                     // DeepSeek / Moonshot / Qwen "thinking mode" require the
                     // model's previous reasoning_content to be echoed back
@@ -127,7 +135,6 @@ fn build_chat_body(model: &str, req: &BrainRequest) -> serde_json::Value {
                     emitted_tool_result = true;
                     continue; // tool results are separate messages
                 }
-                _ => {}
             }
         }
 
@@ -197,6 +204,15 @@ fn build_chat_body(model: &str, req: &BrainRequest) -> serde_json::Value {
     }
 
     body
+}
+
+fn image_source_url(source: &super::ImageSource) -> String {
+    match source {
+        super::ImageSource::Base64 { media_type, data } => {
+            format!("data:{};base64,{}", media_type, data)
+        }
+        super::ImageSource::Url { url } => url.clone(),
+    }
 }
 
 #[async_trait]
@@ -488,5 +504,34 @@ mod tests {
         let body = build_chat_body("gpt-test", &req);
         assert_eq!(body["prompt_cache_key"], "sparrow-repo-abc");
         assert_eq!(body["prompt_cache_retention"], "in_memory");
+    }
+
+    #[test]
+    fn openai_chat_body_serializes_image_blocks() {
+        let req = BrainRequest {
+            messages: vec![Msg {
+                role: "user".into(),
+                content: vec![
+                    ContentBlock::Text {
+                        text: "what is in this image?".into(),
+                    },
+                    ContentBlock::Image {
+                        source: crate::provider::ImageSource::Base64 {
+                            media_type: "image/png".into(),
+                            data: "iVBORw0KGgo=".into(),
+                        },
+                    },
+                ],
+            }],
+            ..BrainRequest::default()
+        };
+
+        let body = build_chat_body("gpt-test", &req);
+        assert_eq!(body["messages"][0]["content"][0]["type"], "text");
+        assert_eq!(body["messages"][0]["content"][1]["type"], "image_url");
+        assert_eq!(
+            body["messages"][0]["content"][1]["image_url"]["url"],
+            "data:image/png;base64,iVBORw0KGgo="
+        );
     }
 }
