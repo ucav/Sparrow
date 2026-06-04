@@ -244,10 +244,12 @@
   .drawer h3:first-of-type{margin-top:0}
   .drawer h3 .count{margin-left:auto;background:color-mix(in srgb,var(--brand) 14%,transparent);
     color:var(--brand);padding:1px 6px;border-radius:4px;font-size:9px;letter-spacing:.8px}
-  /* All panels stacked, always visible (mockup behavior). Active panel
-     gets a brand-coloured left bar to mark the rail-icon focus. */
-  .drawer .panel{display:block;padding:6px 4px;border-left:2px solid transparent;transition:.18s}
-  .drawer .panel.active{border-left-color:var(--brand);background:color-mix(in srgb,var(--brand) 5%, transparent)}
+  /* Only the panel matching the clicked rail icon is shown — addresses
+     the user complaint "tout s'affiche". `!important` guards against
+     transient widget styles (drawer-in animation, etc.) leaking
+     display:block onto inactive panels. */
+  .drawer .panel{display:none !important;padding:6px 4px}
+  .drawer .panel.active{display:block !important;border-left:2px solid var(--brand);background:color-mix(in srgb,var(--brand) 5%, transparent)}
   .drawer .panel + .panel{margin-top:6px}
   @keyframes fade{from{opacity:0;transform:translateY(3px)}to{opacity:1;transform:none}}
   .drw-row{display:flex;flex-direction:column;gap:3px;padding:8px 10px;border-radius:7px;
@@ -876,7 +878,9 @@
     <span class="right">
       <button class="chip-btn" id="cmdkBtn" title="Cmd+K commands">⌘K commands</button>
       <button class="chip-btn solid" id="replayBtn" title="Replay last run">▸ replay</button>
+      <button class="chip-btn" id="abortChromeBtn" title="Abort the running task" style="display:none;color:var(--rem);background:color-mix(in srgb,var(--rem) 12%,transparent);border-color:color-mix(in srgb,var(--rem) 50%,transparent)">◼ abort</button>
       <button class="chip-btn" id="soundBtn" title="Cmd+M mute sounds">🔊</button>
+      <button class="chip-btn" id="verboseBtn" title="Verbose mode — show tool args, token ticks, internal reasoning" aria-pressed="false">⊕ verbose</button>
       <button class="chip-btn" id="themeBtn" title="Cmd+Shift+L toggle theme">☾</button>
       <button class="btn sm" id="cfgBtn">config</button>
       <span style="font-size:11px;color:var(--dimmer)">v0.3.0</span>
@@ -1133,6 +1137,33 @@ function startVerbCycle(elId){
 setInterval(()=>{document.querySelectorAll('.verb').forEach(v=>{v.textContent=FLIGHT_VERBS[_vi++%FLIGHT_VERBS.length]})},2200);
 const LEARNED_SKILLS=['fix_revoked_token','run_auth_suite','patch_session','audit_emit','write-and-fix-tests','refactor-safely','debug-systematically'];
 let _si=0;
+// Non-blocking toast for transient errors/notices. Replaces native alert().
+// kind: 'error' (red), 'ok' (green), or 'info' (neutral). Auto-dismiss after 4s.
+function toast(msg, kind){
+  kind = kind || 'info';
+  let host = document.getElementById('sparrow-toast-host');
+  if(!host){
+    host = document.createElement('div');
+    host.id = 'sparrow-toast-host';
+    host.style.cssText = 'position:fixed;bottom:18px;right:18px;z-index:99999;display:flex;flex-direction:column;gap:8px;pointer-events:none;max-width:380px';
+    document.body.appendChild(host);
+  }
+  const palette = {
+    error: ['var(--rem,#d44)', 'rgba(212,68,68,.12)', 'rgba(212,68,68,.45)'],
+    ok:    ['var(--add,#3a8)', 'rgba(58,168,136,.12)', 'rgba(58,168,136,.45)'],
+    info:  ['var(--fg,#888)', 'rgba(120,120,120,.10)', 'rgba(120,120,120,.40)'],
+  }[kind] || ['#888','rgba(120,120,120,.10)','rgba(120,120,120,.40)'];
+  const el = document.createElement('div');
+  el.style.cssText = `pointer-events:auto;padding:9px 13px;border-radius:8px;font:500 12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:${palette[0]};background:${palette[1]};border:1px solid ${palette[2]};box-shadow:0 4px 12px rgba(0,0,0,.18);opacity:0;transform:translateY(6px);transition:opacity .18s,transform .18s;cursor:pointer`;
+  el.textContent = String(msg);
+  el.addEventListener('click', ()=>el.remove());
+  host.appendChild(el);
+  requestAnimationFrame(()=>{el.style.opacity='1';el.style.transform='translateY(0)';});
+  setTimeout(()=>{
+    el.style.opacity='0';el.style.transform='translateY(6px)';
+    setTimeout(()=>el.remove(), 220);
+  }, 4000);
+}
 function pulseLearnToast(elId){
   const el=document.getElementById(elId);
   if(!el)return;
@@ -1583,10 +1614,22 @@ document.addEventListener('click',e=>{
   if(ico)openPanel(ico.dataset.panel);
 });
 function restoreActivePanel(){
-  const name=localStorage.getItem('sparrow-active-panel')||'sessions';
-  if(PANEL_LOADERS[name])openPanel(name);
-  // Load every panel once so the drawer renders real data, not "loading…".
+  const stored=localStorage.getItem('sparrow-active-panel');
+  const name=(stored&&PANEL_LOADERS[stored])?stored:'sessions';
+  openPanel(name);
+  // Belt-and-suspenders: pre-fetch data for every panel so switching tabs
+  // is instant, but make ABSOLUTELY sure exactly one panel has .active set
+  // after we're done — guard against any race that might add .active to
+  // more than one element (the user reported "tout s'affiche").
   Object.values(PANEL_LOADERS).forEach(fn=>fn().catch(()=>{}));
+  setTimeout(()=>{
+    const active=document.querySelectorAll('.drawer .panel.active');
+    if(active.length!==1){
+      document.querySelectorAll('.drawer .panel').forEach(p=>p.classList.remove('active'));
+      const target=document.querySelector(`.drawer .panel[data-panel-body="${name}"]`);
+      if(target)target.classList.add('active');
+    }
+  },0);
 }
 function escHtml(s){return String(s||'').replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 
@@ -1673,7 +1716,7 @@ async function newConversation(){
     banner.style.cssText='margin:10px 0;padding:8px 14px;border-radius:8px;background:color-mix(in srgb,var(--add) 10%,transparent);border:1px solid color-mix(in srgb,var(--add) 35%,transparent);color:var(--add);font-size:11px';
     banner.textContent='⟲ conversation cleared · context retained from this point forward';
     term.appendChild(banner);term.scrollTop=term.scrollHeight;
-  }catch(e){alert('reset failed: '+e.message);}
+  }catch(e){toast('reset failed: '+e.message,'error');}
 }
 async function loadCrewPanel(){
   const host=document.getElementById('drw-crew-list');
@@ -1710,8 +1753,23 @@ async function loadSessionsPanel(){
     host.innerHTML=sess.slice(0,20).map(s=>{
       const ts=s.updated_at?new Date(s.updated_at*1000).toLocaleString('fr-FR',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}):'';
       const turns=(s.messages_json||'[]').match(/"role":/g)?.length||0;
-      return `<div class="drw-row" title="${escHtml(s.id)}"><div class="ttl">${escHtml(s.name||s.id)}</div><div class="meta"><span><b>${turns}</b> turns</span><span>${escHtml(s.status||'')}</span><span>${ts}</span></div></div>`;
+      return `<div class="drw-row" data-session-id="${escHtml(s.id)}" title="Click to load · ${escHtml(s.id)}" style="cursor:pointer"><div class="ttl">${escHtml(s.name||s.id)}</div><div class="meta"><span><b>${turns}</b> turns</span><span>${escHtml(s.status||'')}</span><span>${ts}</span></div></div>`;
     }).join('');
+    // Wire click → POST /sessions/load. main.rs sees __load_session__:<id>
+    // and swaps the live conversation context.
+    host.querySelectorAll('.drw-row[data-session-id]').forEach(row=>{
+      row.addEventListener('click',async ()=>{
+        const id=row.getAttribute('data-session-id');
+        host.querySelectorAll('.drw-row').forEach(r=>r.classList.remove('cur'));
+        row.classList.add('cur');
+        try{
+          const rr=await fetch('/sessions/load',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
+          const jj=await rr.json();
+          if(jj.ok){toast(`session loaded · ${id.slice(0,8)}`,'ok');}
+          else{toast('load failed: '+(jj.message||''),'error');}
+        }catch(e){toast('load failed: '+e.message,'error');}
+      });
+    });
   }catch(_){host.innerHTML='<div class="drw-empty">_none yet_ · unable to load /sessions</div>';}
 }
 async function loadMemoryPanel(){
@@ -1882,6 +1940,11 @@ async function loadHistoryCache(){
 // ─── Model picker ─────────────────────────────────────────────────────────
 let selectedModel=localStorage.getItem('sparrow-model')||null;
 let modelsCache=null;
+let modelsCacheTs=0;
+// Cache /models for at most 30 s so a fresh scan done from CLI (or the
+// "rescan" affordance) shows up next time the picker opens, without
+// hammering the endpoint on every dropdown toggle.
+const MODELS_CACHE_TTL_MS=30_000;
 function fmtCtxShort(n){if(n>=1000000)return(n/1e6).toFixed(0)+'M';if(n>=1000)return Math.round(n/1000)+'k';return String(n);}
 function fmtCost(c){return c===0?'free':'$'+(c).toFixed(2)+'/Mtok';}
 function applyModelPickerLabel(){
@@ -1890,11 +1953,14 @@ function applyModelPickerLabel(){
   lbl.textContent=selectedModel?selectedModel.replace(/^[^:]+:/,'').slice(0,22):
     (document.getElementById('modelPickerLabel').dataset.live||'auto');
 }
-async function loadModels(){
-  if(modelsCache)return modelsCache;
-  try{const r=await fetch('/models');modelsCache=await r.json();}catch{modelsCache={providers:[]};}
+async function loadModels(force){
+  const fresh=modelsCache&&(Date.now()-modelsCacheTs<MODELS_CACHE_TTL_MS);
+  if(!force&&fresh)return modelsCache;
+  try{const r=await fetch('/models');modelsCache=await r.json();modelsCacheTs=Date.now();}
+  catch{modelsCache={providers:[]};modelsCacheTs=Date.now();}
   return modelsCache;
 }
+function invalidateModelsCache(){modelsCache=null;modelsCacheTs=0;}
 async function toggleModelPicker(e){
   e.stopPropagation();
   const drop=document.getElementById('modelPickerDrop');
@@ -1912,7 +1978,9 @@ async function toggleModelPicker(e){
       <div class="mp-provider" style="display:flex;align-items:center;gap:6px">${dot}${escHtml(p.label)}</div>
       ${p.models.map(m=>{
         const id=p.id+':'+m.name;const sel=selectedModel===id;
-        return `<div class="mp-item${sel?' selected':''}" onclick="setModelOverride('${escHtml(id)}','${escHtml(fmtCtxShort(m.context_window))}')">
+        // Pass the raw context_window in tokens so setModelOverride can resize
+        // the meter precisely (was getting truncated through fmtCtxShort).
+        return `<div class="mp-item${sel?' selected':''}" data-ctx-tokens="${m.context_window||0}" onclick="setModelOverride('${escHtml(id)}','${escHtml(fmtCtxShort(m.context_window))}',${m.context_window||0})">
           <span class="mp-name">${escHtml(m.label||m.name)}</span>
           <span class="mp-ctx">${escHtml(fmtCtxShort(m.context_window))}</span>
           <span class="mp-cost">${escHtml(m.cost_in===0?'free':'$'+m.cost_in+'/M')}</span>
@@ -1922,14 +1990,28 @@ async function toggleModelPicker(e){
     </div>`;
   }).join('');
 }
-function setModelOverride(id,ctxLabel){
+function setModelOverride(id,ctxLabel,ctxTokens){
   selectedModel=id;
   if(id)localStorage.setItem('sparrow-model',id);
   else localStorage.removeItem('sparrow-model');
   document.getElementById('modelPickerDrop').style.display='none';
   const lbl=document.getElementById('modelPickerLabel');
   if(lbl)lbl.textContent=id?id.replace(/^[^:]+:/,'').slice(0,22):'auto';
-  if(id&&ctxLabel){contextLimit=parseInt(ctxLabel)*1000||contextLimit;updateContextMeter();}
+  // Prefer the raw token count (precise, can be 1_000_000); fall back to the
+  // truncated label number (e.g. "1M"/"128k") which we have to re-parse.
+  if(id){
+    let limit=0;
+    if(typeof ctxTokens==='number' && ctxTokens>0)limit=ctxTokens;
+    else if(ctxLabel){
+      const m=String(ctxLabel).match(/([\d.]+)\s*([kKmM])?/);
+      if(m){
+        const n=parseFloat(m[1]);
+        const u=(m[2]||'').toLowerCase();
+        limit=u==='m'?n*1_000_000:u==='k'?n*1_000:n;
+      }
+    }
+    if(limit>0){contextLimit=Math.round(limit);updateContextMeter();}
+  }
 }
 document.addEventListener('click',e=>{
   if(!e.target.closest('#modelPickerBtn')&&!e.target.closest('#modelPickerDrop')){
@@ -2119,14 +2201,37 @@ connect();
 const TOOL_CARDS=new Map(); // tool_use_id → <details>
 function openToolCard(ev){
   const id=ev.id||ev.tool_use_id||ev.run||cryptoUid();
-  if(TOOL_CARDS.has(id))return;
-  const d=document.createElement('details');d.className='tool-card running';d.open=false;
   const argsStr=ev.args?(typeof ev.args==='string'?ev.args:JSON.stringify(ev.args,null,2)):'';
-  const ico=toolIcon(ev.name||'');
+  const meaningfulArgs=argsStr && argsStr!=='{}' && argsStr.trim().length>2;
+  let d=TOOL_CARDS.get(id);
+  if(d){
+    // Card already open — second emission with real arguments. The engine
+    // sends one at ToolUseStart with `{}` (card appears instantly) then
+    // a second at ToolUseEnd once the JSON has finished streaming. Patch
+    // the args section in place instead of returning early.
+    if(meaningfulArgs){
+      let det=d.querySelector('.det.tc-args');
+      if(!det){
+        det=document.createElement('div');det.className='det tc-args';
+        det.innerHTML='<div class="lbl">arguments</div><code></code>';
+        d.appendChild(det);
+      }
+      det.querySelector('code').textContent=argsStr;
+      if(ev.name && d.querySelector('.nm'))d.querySelector('.nm').textContent=ev.name;
+      if(typeof VERBOSE!=='undefined' && VERBOSE)d.open=true;
+    }
+    return;
+  }
+  d=document.createElement('details');
+  d.className='tool-card running';
+  d.open=!!(typeof VERBOSE!=='undefined' && VERBOSE);
+  // Track per-tool token baseline so the tool card can show delta usage.
   d.dataset.tokBaseIn=actualInV+estInV;
   d.dataset.tokBaseOut=actualOutV+estOutV;
+  // Use a tool-specific icon if available, otherwise fall back to the generic glyph.
+  const ico=(typeof toolIcon==='function')?toolIcon(ev.name||''):'⚒';
   d.innerHTML='<summary><span class="chev">▸</span><span class="tool-ico">'+ico+'</span><span class="nm">'+esc(ev.name||'tool')+'</span><span class="ok" data-status>running…</span></summary>'+
-    (argsStr?'<div class="det"><div class="lbl">arguments</div><code>'+esc(argsStr)+'</code></div>':'');
+    (meaningfulArgs?'<div class="det tc-args"><div class="lbl">arguments</div><code>'+esc(argsStr)+'</code></div>':'');
   term.appendChild(d);TOOL_CARDS.set(id,d);
   term.scrollTop=term.scrollHeight;
 }
@@ -2154,7 +2259,26 @@ function closeToolCard(ev){
   const isErr=ev.is_error||ev.error;
   d.classList.remove('running');d.classList.add(isErr?'error':'done');
   const st=d.querySelector('[data-status]');
-  const outRaw=(ev.output!==undefined)?ev.output:(ev.text||'');
+  // Extract result text. The engine emits `blocks: Vec<Block>` where each
+  // Block is a tagged variant (`{Text: "..."}`, `{Json: ...}`, etc.). Older
+  // code only checked ev.output / ev.text → tool result section never rendered.
+  let outRaw='';
+  if(ev.output!==undefined)outRaw=ev.output;
+  else if(ev.text)outRaw=ev.text;
+  else if(Array.isArray(ev.blocks)){
+    outRaw=ev.blocks.map(b=>{
+      if(typeof b==='string')return b;
+      if(b&&typeof b==='object'){
+        if(typeof b.Text==='string')return b.Text;
+        if(typeof b.text==='string')return b.text;
+        if(b.Json!==undefined)return JSON.stringify(b.Json,null,2);
+        if(b.Diff)return `[diff ${b.Diff.file||''}]\n${b.Diff.patch||''}`;
+        if(b.Image)return '[image]';
+        return JSON.stringify(b);
+      }
+      return String(b);
+    }).filter(Boolean).join('\n');
+  }
   const summary=isErr?'✗ error':(inferToolSummary(d.querySelector('.nm')?.textContent,outRaw)||'✓ done');
   if(st){
     const baseIn=parseInt(d.dataset.tokBaseIn||'0',10);
@@ -2168,10 +2292,16 @@ function closeToolCard(ev){
   }
   const out=outRaw;
   if(out){
-    const det=d.querySelector('.det')||(()=>{const x=document.createElement('div');x.className='det';d.appendChild(x);return x;})();
+    // Always put the result in its OWN .det.tc-result block so the args
+    // section above stays clean and identifiable.
+    let det=d.querySelector('.det.tc-result');
+    if(!det){
+      det=document.createElement('div');det.className='det tc-result';
+      d.appendChild(det);
+    }
     const outStr=typeof out==='string'?out:JSON.stringify(out,null,2);
     const truncated=outStr.length>1200?outStr.slice(0,1200)+'\n… ['+ (outStr.length-1200) +' more chars]':outStr;
-    det.insertAdjacentHTML('beforeend','<div class="lbl" style="margin-top:8px">result</div><code>'+esc(truncated)+'</code>');
+    det.innerHTML='<div class="lbl" style="margin-top:8px">result</div><code>'+esc(truncated)+'</code>';
   }
   TOOL_CARDS.delete(id);
 }
@@ -2282,48 +2412,230 @@ function showError(title,cause,fix,doc){
   term.scrollTop=term.scrollHeight;
 }
 
+// ─── Live streaming renderer with mid-stream code-fence detection ─────────
+//
+// The old design buffered the whole assistant turn into one .cmd span, then
+// retro-actively split out ``` fenced blocks on finalize. That meant:
+//   (1) the user saw raw triple-backticks scroll past as prose,
+//   (2) any non-ThinkingDelta event mid-stream chopped the buffer and lost
+//       the chance to detect a fence that spanned the split.
+// The new design is a small state machine: as deltas arrive, we tokenize
+// `\`\`\`` markers live and rewrite the active sink (prose span ↔ code card)
+// on the fly — the code card appears AS the model types, like Claude Code.
+
 let STREAM_BUF=null;
+let STREAM_STATE=null;
+
+// Filter helper: strip DeepSeek thinking-debris that occasionally leaks through
+// the adapter (raw XML tool calls, ANSI escapes). Returns the cleaned text, or
+// null to drop the chunk entirely when it's mostly garbage.
+function _cleanStreamChunk(text){
+  if(!text)return text;
+  if(text.indexOf('<tool_call')!==-1||text.indexOf('<function')!==-1
+     ||text.indexOf('\x1b[')!==-1||text.indexOf('\\033[')!==-1){
+    return null; // garbage delta — drop
+  }
+  return text;
+}
+
+function ensureStreamRoot(){
+  if(STREAM_BUF&&STREAM_BUF.isConnected)return;
+  STREAM_BUF=document.createElement('div');
+  STREAM_BUF.className='ln streaming-line';
+  term.appendChild(STREAM_BUF);
+  STREAM_STATE={mode:'prose',el:null,cardEl:null,lang:'',codeStarted:false,pending:''};
+  openProseSpan();
+}
+
+function openProseSpan(){
+  const span=document.createElement('span');
+  span.className='cmd streaming';
+  span.style.whiteSpace='pre-wrap';
+  STREAM_BUF.appendChild(span);
+  STREAM_STATE.el=span;
+  STREAM_STATE.cardEl=null;
+  STREAM_STATE.mode='prose';
+}
+
+function openCodeCard(){
+  const d=document.createElement('details');
+  d.className='code-card streaming-code';
+  d.open=true; // open while streaming so the user sees code arrive live
+  d.innerHTML='<summary><span class="cc-icon">▸</span>'+
+    '<span class="cc-lang">code</span>'+
+    '<span class="cc-meta live" style="color:var(--brand)">streaming…</span>'+
+    '<button class="cc-copy" onclick="navigator.clipboard.writeText(this.closest(\'.code-card\').querySelector(\'code\').textContent);this.textContent=\'copied ✓\'">copy</button>'+
+    '</summary><pre><code></code></pre>';
+  STREAM_BUF.appendChild(d);
+  STREAM_STATE.el=d.querySelector('code');
+  STREAM_STATE.cardEl=d;
+  STREAM_STATE.lang='';
+  STREAM_STATE.codeStarted=false; // need to consume lang hint up to first \n
+  STREAM_STATE.mode='code';
+}
+
+function closeCodeCard(){
+  const card=STREAM_STATE.cardEl;
+  if(card){
+    card.classList.remove('streaming-code');
+    const meta=card.querySelector('.cc-meta');
+    if(meta){
+      const codeEl=card.querySelector('code');
+      const lc=(codeEl?codeEl.textContent:'').split('\n').filter(l=>l.length).length;
+      meta.textContent=`${lc} lines`;
+      meta.style.color='';
+    }
+    card.open=false; // collapse once the closing fence is in
+  }
+  openProseSpan();
+}
+
+function appendToActive(text){
+  if(!text)return;
+  if(STREAM_STATE.mode==='code' && !STREAM_STATE.codeStarted){
+    // First line of a code block is the optional language hint.
+    const nl=text.indexOf('\n');
+    if(nl===-1){
+      STREAM_STATE.lang+=text;
+      return;
+    }
+    STREAM_STATE.lang+=text.slice(0,nl);
+    const langEl=STREAM_STATE.cardEl?.querySelector('.cc-lang');
+    if(langEl && STREAM_STATE.lang.trim())langEl.textContent=STREAM_STATE.lang.trim();
+    STREAM_STATE.codeStarted=true;
+    text=text.slice(nl+1);
+    if(!text)return;
+  }
+  STREAM_STATE.el.textContent+=text;
+}
+
 function streamDelta(text){
-  // Aggressively strip DeepSeek thinking debris: raw XML tool calls, ANSI escapes,
-  // and garbled internal monologue that leaks through the adapter.
-  var t=String(text||'');
-  if(t.indexOf('<tool_call')!==-1||t.indexOf('<function')!==-1||t.indexOf('\x1b[')!==-1||t.indexOf('\\033[')!==-1){
-    // DeepSeek thinking leak — show minimal indicator instead of raw garbage
-    if(!STREAM_BUF||!STREAM_BUF.isConnected){
-      STREAM_BUF=document.createElement('div');STREAM_BUF.className='ln streaming-line';
-      STREAM_BUF.innerHTML='<span class="cmd streaming">⏳</span>';
-      term.appendChild(STREAM_BUF);
+  // Drop chunks that look like DeepSeek thinking-debris (raw <tool_call> XML,
+  // ANSI escapes). Show a discreet hourglass instead of garbage.
+  const cleaned=_cleanStreamChunk(String(text||''));
+  if(cleaned===null){
+    ensureStreamRoot();
+    if(STREAM_STATE && STREAM_STATE.el && !STREAM_STATE.el.querySelector('.tk-stall')){
+      const s=document.createElement('span');s.className='tk-stall';s.textContent='⏳';s.style.opacity='.55';
+      STREAM_STATE.el.appendChild(s);
     }
     term.scrollTop=term.scrollHeight;
     return;
   }
-  if(!STREAM_BUF||!STREAM_BUF.isConnected){
-    STREAM_BUF=document.createElement('div');STREAM_BUF.className='ln streaming-line';
-    STREAM_BUF.innerHTML='<span class="cmd streaming"></span>';
-    term.appendChild(STREAM_BUF);
+  text=cleaned;
+  ensureStreamRoot();
+  // Hold trailing backticks across deltas in case ``` arrives in fragments
+  // (e.g. tokenizer emits "``" then "`python\n").
+  let buf=STREAM_STATE.pending+text;
+  STREAM_STATE.pending='';
+  while(buf.length>0){
+    const idx=buf.indexOf('```');
+    if(idx===-1){
+      // No full fence. If the tail looks like a partial fence, hold it for
+      // the next delta so we don't render a stray ` ` ` as prose.
+      const tail=buf.match(/(`{1,2})$/);
+      if(tail){
+        STREAM_STATE.pending=tail[1];
+        buf=buf.slice(0,buf.length-tail[1].length);
+      }
+      appendToActive(buf);
+      break;
+    }
+    if(idx>0)appendToActive(buf.slice(0,idx));
+    buf=buf.slice(idx+3); // consume the fence
+    if(STREAM_STATE.mode==='prose')openCodeCard();
+    else closeCodeCard();
   }
-  const tgt=STREAM_BUF.querySelector('.streaming');
-  if(tgt){tgt.textContent+=t;term.scrollTop=term.scrollHeight;}
+  term.scrollTop=term.scrollHeight;
 }
-function finalizeStreamBlock(block){
-  const tgt=block.querySelector('.streaming');if(!tgt)return;
-  const text=tgt.textContent||'';
-  // Detect code blocks: triple backticks, or >5 consecutive lines starting with spaces/tabs
-  const hasCode=text.includes('```')||(text.split('\n').filter(function(l){return /^[  ]{2,}/.test(l);}).length>4)||text.length>800;
-  if(!hasCode)return;
-  block.innerHTML='<details class="code-block">'+
-    '<summary class="cb-head"><span class="cb-ico">💻</span><span class="cb-lbl">code</span><span class="cb-size">'+(Math.round(text.length/1024*10)/10)+' KB</span><span class="cb-chev">▸</span></summary>'+
-    '<div class="cb-body"><pre><code>'+esc(text)+'</code></pre></div>'+
-    '</details>';
-}
+
 function cryptoUid(){return Math.random().toString(36).slice(2,10)}
 
+// Finalize: just turn off the streaming highlight and reset state. The live
+// renderer already produced the right DOM — no post-processing needed.
+function finalizeStreamBlock(buf){
+  if(!buf)return;
+  buf.querySelectorAll('.streaming').forEach(s=>s.classList.remove('streaming'));
+  const card=buf.querySelector('.streaming-code');
+  if(card){
+    card.classList.remove('streaming-code');
+    const meta=card.querySelector('.cc-meta');
+    if(meta){
+      const codeEl=card.querySelector('code');
+      const lc=(codeEl?codeEl.textContent:'').split('\n').filter(l=>l.length).length;
+      meta.textContent=`${lc} lines · partial`;
+      meta.style.color='';
+    }
+  }
+  STREAM_STATE=null;
+}
+// Events that ONLY update meters/side-panels and must NOT break the streaming
+// text buffer. Without this list, every CostUpdate/TokenUsage tick mid-stream
+// finalized the assistant's paragraph — splitting code fences across multiple
+// <details> cards (so they were never detected) and dropping the visual flow
+// into a jagged list of fragments.
+const STREAM_TRANSPARENT = new Set([
+  'ThinkingDelta',
+  'CostUpdate',
+  'TokenUsage',
+  'TokenUsageEstimated',
+  // Keep AgentStatus/RouteSelected/Message transparent too — they're flow
+  // indicators that the user explicitly wanted not to break the paragraph
+  // (this is the legacy STREAM_ENDERS allow-list approach inverted).
+  'AgentStatus',
+  'RouteSelected',
+  'Message',
+]);
+
+// ─── Verbose mode (Claude-Code-style firehose) ─────────────────────────────
+// When ON: tool args are shown inline as the call starts, token ticks emit a
+// dim status line, and every internal Message event is rendered (not just
+// router/system roles). Persists in localStorage so it survives reloads.
+let VERBOSE=localStorage.getItem('sparrow-verbose')==='1';
+function setVerbose(on){
+  VERBOSE=!!on;
+  localStorage.setItem('sparrow-verbose',VERBOSE?'1':'0');
+  const btn=document.getElementById('verboseBtn');
+  if(btn){
+    btn.classList.toggle('solid',VERBOSE);
+    btn.setAttribute('aria-pressed',VERBOSE?'true':'false');
+    btn.style.color=VERBOSE?'#fff':'';
+    btn.style.background=VERBOSE?'linear-gradient(180deg,var(--brand),var(--coral))':'';
+    btn.style.borderColor=VERBOSE?'var(--brand)':'';
+    btn.style.boxShadow=VERBOSE?'0 0 12px color-mix(in srgb,var(--brand) 45%,transparent)':'none';
+    btn.textContent=VERBOSE?'⊕ verbose ON':'⊕ verbose';
+  }
+  document.body.classList.toggle('verbose-on',VERBOSE);
+  if(VERBOSE && typeof toast==='function')toast('verbose mode ON · tool args + token ticks visible','ok');
+  else if(on===false && document.getElementById('verboseBtn') && typeof toast==='function')toast('verbose mode OFF','info');
+}
+// Bind immediately (this script runs at end of body, all elements parsed).
+{
+  const btn=document.getElementById('verboseBtn');
+  if(btn){
+    btn.addEventListener('click',()=>setVerbose(!VERBOSE));
+    // Apply persisted state without firing a toast on first paint.
+    if(VERBOSE){
+      btn.classList.add('solid');
+      btn.setAttribute('aria-pressed','true');
+      btn.style.color='#fff';
+      btn.style.background='linear-gradient(180deg,var(--brand),var(--coral))';
+      btn.style.borderColor='var(--brand)';
+      btn.style.boxShadow='0 0 12px color-mix(in srgb,var(--brand) 45%,transparent)';
+      btn.textContent='⊕ verbose ON';
+      document.body.classList.add('verbose-on');
+    }
+  }
+}
+function verboseLine(text,cls){
+  if(!VERBOSE)return;
+  line(`<span class="muted" style="font-size:10px;opacity:.85">${cls?`<span class="${cls}">`:''}∙ ${esc(text)}${cls?'</span>':''}</span>`);
+}
+
 function handleEvent(ev){
-  // Only finalize the streaming block on events that start a new content section.
-  // AgentStatus, Message, RouteSelected, and token/cost updates flow through
-  // without breaking the text line — prevents one-word-per-line display.
-  const STREAM_ENDERS=new Set(['ToolUseProposed','ToolUseStarted','ToolOutput','RunFinished','Error','DiffProposed','DiffApplied','ApprovalRequested','CheckpointCreated','SkillLearned']);
-  if(STREAM_BUF&&STREAM_ENDERS.has(ev.type)){
+  // End the streaming line only for events that actually change the visual
+  // flow. Metric ticks + status/route/message pass through transparently.
+  if(STREAM_BUF&&!STREAM_TRANSPARENT.has(ev.type)){
     const s=STREAM_BUF.querySelector('.streaming');if(s)s.classList.remove('streaming');
     finalizeStreamBlock(STREAM_BUF);
     STREAM_BUF=null;
@@ -2364,9 +2676,28 @@ function handleEvent(ev){
       else{line('<span class="muted">'+esc(ev.role)+':</span> <span class="cmd">'+esc(ev.text)+'</span>')}
       break;
     case 'ThinkingDelta':streamDelta(ev.text);break;
-    case 'ToolUseProposed':setSwarm('coder','working','using tool · '+ev.name);openToolCard(ev);break;
-    case 'ToolUseStarted':openToolCard(ev);break;
-    case 'ToolOutput':closeToolCard(ev);break;
+    case 'ToolUseProposed':
+      setSwarm('coder','working','using tool · '+ev.name);
+      openToolCard(ev);
+      if(VERBOSE){
+        const card=TOOL_CARDS.get(ev.id||ev.tool_use_id);
+        if(card)card.open=true;
+        verboseLine(`tool proposed · ${ev.name||'(unknown)'} · risk ${ev.risk||'n/a'}`);
+      }
+      break;
+    case 'ToolUseStarted':
+      openToolCard(ev);
+      if(VERBOSE)verboseLine(`tool started · id=${ev.id||'?'}`);
+      break;
+    case 'ToolOutput':
+      closeToolCard(ev);
+      if(VERBOSE){
+        const card=TOOL_CARDS.get(ev.id||ev.tool_use_id);
+        if(card)card.open=true;
+        const blocks=ev.blocks||[];
+        verboseLine(`tool output · ${blocks.length} block${blocks.length===1?'':'s'}`);
+      }
+      break;
     case 'DiffProposed':renderDiffCard(ev);break;
     case 'DiffApplied':renderDiffCard(ev);openDiffPanel(ev);runDiffsApplied++;break;
     case 'Compacted':renderCompactBanner(ev);break;
@@ -2389,9 +2720,18 @@ function handleEvent(ev){
     }
     case 'CheckpointCreated':line(`<span class="acc">● checkpoint:</span> <span class="muted">${esc(ev.label)}</span>`);addCheckpointNode(ev.label,ev.id);runCheckpoints++;chirp(1400,.07);break;
     case 'SkillLearned':line(`<span class="skill-pop">✦ skill learned · ${esc(ev.name)}</span>`);chirp(1100,.05);setTimeout(()=>chirp(1700,.07),80);break;
-    case 'CostUpdate':setCost(ev.usd);break;
-    case 'TokenUsageEstimated':addTokEstimate(ev.input,ev.output);break;
-    case 'TokenUsage':addTokActual(ev.input,ev.output);break;
+    case 'CostUpdate':
+      setCost(ev.usd);
+      if(VERBOSE&&typeof ev.usd==='number')verboseLine(`cost · $${ev.usd.toFixed(4)}`);
+      break;
+    case 'TokenUsageEstimated':
+      addTokEstimate(ev.input,ev.output);
+      if(VERBOSE)verboseLine(`tokens estimated · +${ev.input||0} in · +${ev.output||0} out${ev.reason?' · '+ev.reason:''}`);
+      break;
+    case 'TokenUsage':
+      addTokActual(ev.input,ev.output);
+      if(VERBOSE)verboseLine(`tokens actual · ${ev.input||0} in · ${ev.output||0} out`);
+      break;
     case 'AutonomyChanged':setAuto(ev.level.toLowerCase());break;
     case 'TestResult':
       setSwarm('verifier',ev.failed>0?'error':'done',ev.failed>0?`${ev.failed} failing tests`:`${ev.passed} tests passed`);
@@ -2497,8 +2837,75 @@ async function bootIntro(){
   typeCmd('status',term);
 }
 
+// ─── Run state (Stop button + mid-run injection hint) ───────────────
+let runActive=false;
+function setRunActive(active){
+  runActive=active;
+  const stop=$('stopBtn'),run=$('runBtn'),ta=$('taskInput'),chromeAbort=$('abortChromeBtn');
+  if(stop){
+    stop.style.display=active?'inline-flex':'none';
+    stop.style.boxShadow=active?'0 0 0 0 color-mix(in srgb,var(--rem) 60%,transparent)':'none';
+    stop.style.animation=active?'abort-pulse 1.4s ease-in-out infinite':'none';
+  }
+  // Mirror the abort affordance in the top-right chrome where it's always
+  // in view, regardless of scroll position or composer focus.
+  if(chromeAbort){
+    chromeAbort.style.display=active?'inline-flex':'none';
+    chromeAbort.style.animation=active?'abort-pulse 1.4s ease-in-out infinite':'none';
+  }
+  if(run){
+    run.textContent=active?'inject':'run';
+    run.style.opacity=active?'0.85':'1';
+  }
+  if(ta)ta.placeholder=active?'type to inject into the running task · Enter to send':'Type a task and press Enter…';
+  // Bottom-left floating abort badge, very high z-index so nothing covers it.
+  let badge=document.getElementById('abortBadge');
+  if(active){
+    if(!badge){
+      badge=document.createElement('button');
+      badge.id='abortBadge';
+      badge.type='button';
+      badge.title='Abort the running task';
+      badge.innerHTML='◼ abort run';
+      badge.style.cssText='position:fixed;left:64px;bottom:64px;z-index:9999;font-family:inherit;'+
+        'font-size:12px;font-weight:600;letter-spacing:.6px;padding:8px 16px;border-radius:999px;cursor:pointer;'+
+        'color:#fff;background:linear-gradient(180deg,#d44,#a22);'+
+        'border:1px solid #f55;'+
+        'box-shadow:0 0 18px rgba(212,68,68,.55), 0 2px 8px rgba(0,0,0,.35);'+
+        'animation:abort-pulse 1.4s ease-in-out infinite';
+      badge.addEventListener('click',stopRun);
+      document.body.appendChild(badge);
+    }
+    badge.style.display='inline-flex';
+  }else if(badge){
+    badge.style.display='none';
+  }
+}
+// Wire the chrome abort button to stopRun the moment it exists.
+document.addEventListener('DOMContentLoaded',()=>{
+  const cab=document.getElementById('abortChromeBtn');
+  if(cab)cab.addEventListener('click',stopRun);
+});
+{
+  const cab=document.getElementById('abortChromeBtn');
+  if(cab)cab.addEventListener('click',stopRun);
+}
+// Inject the pulse keyframes once.
+(function injectAbortPulse(){
+  if(document.getElementById('abort-pulse-kf'))return;
+  const st=document.createElement('style');st.id='abort-pulse-kf';
+  st.textContent='@keyframes abort-pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--rem) 55%,transparent)}50%{box-shadow:0 0 0 6px color-mix(in srgb,var(--rem) 0%,transparent)}}';
+  document.head.appendChild(st);
+})();
+async function stopRun(){
+  try{await fetch('/stop',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});}
+  catch(e){}
+  setRunActive(false);
+  if(typeof toast==='function')toast('run aborted','ok');
+}
 // ─── Input ─────────────────────────────────────────────────────────
 $('runBtn').addEventListener('click',runTask);
+const _stopBtn=$('stopBtn');if(_stopBtn)_stopBtn.addEventListener('click',stopRun);
 $('taskInput').addEventListener('keydown',composerKeydown);
 $('taskInput').addEventListener('input',composerInput);
 $('taskInput').addEventListener('paste',composerPaste);
@@ -2979,7 +3386,7 @@ function setModelDefault(id){
 async function saveProviderKey(name){
   const p=providers.find(p=>p.name===name);if(!p)return;
   const inp=document.getElementById('key-'+name);const key=inp.value.trim();
-  if(!key){alert('paste a key first');return;}
+  if(!key){toast('paste a key first','error');return;}
   const body={
     name,adapter:p.adapter||'openai-compatible',base_url:p.base_url||null,
     models:p.models||[],
@@ -2991,9 +3398,9 @@ async function saveProviderKey(name){
   try{
     const r=await fetch('/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const j=await r.json();
-    if(j.ok){inp.value='';await loadConfig();}
-    else alert('save failed: '+j.message);
-  }catch(e){alert('save failed: '+e.message);}
+    if(j.ok){inp.value='';await loadConfig();toast('key saved','ok');}
+    else toast('save failed: '+j.message,'error');
+  }catch(e){toast('save failed: '+e.message,'error');}
 }
 
 async function scanProviderModels(name, btn){
