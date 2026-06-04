@@ -10,6 +10,7 @@ pub mod discovery;
 pub mod ollama;
 pub mod openai_compat;
 pub mod responses;
+pub mod sse_buffer;
 
 // ─── Model capabilities ─────────────────────────────────────────────────────────
 
@@ -79,6 +80,13 @@ pub enum ContentBlock {
         content: Vec<ContentBlock>,
         is_error: Option<bool>,
     },
+    /// Chain-of-thought / reasoning content produced by reasoning-mode models
+    /// (DeepSeek v4 Pro / R1, OpenAI o-series via Responses API, etc.).
+    /// MUST be echoed back to the API on the next turn for some providers —
+    /// DeepSeek rejects the request with 400 "The `reasoning_content` in the
+    /// thinking mode must be passed back to the API" otherwise.
+    #[serde(rename = "reasoning")]
+    Reasoning { text: String },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -129,6 +137,10 @@ impl Default for BrainRequest {
 #[derive(Debug, Clone)]
 pub enum BrainEvent {
     TextDelta(String),
+    /// Reasoning / chain-of-thought delta (DeepSeek `reasoning_content`,
+    /// OpenAI Responses reasoning summaries, …). Must be re-sent on the
+    /// next turn for providers that require it.
+    ReasoningDelta(String),
     ToolUseStart { id: String, name: String },
     ToolUseDelta { id: String, json: String },
     ToolUseEnd { id: String },

@@ -137,6 +137,11 @@ impl Brain for AnthropicAdapter {
                         content.push(val);
                     }
                     ContentBlock::ToolUse { .. } => {}
+                    // Anthropic doesn't use the openai-style `reasoning_content`
+                    // field; thinking content is handled via the separate
+                    // `thinking` API parameter. Drop reasoning blocks here so
+                    // they don't leak as text — they're transcript-only.
+                    ContentBlock::Reasoning { .. } => {}
                 }
             }
 
@@ -198,14 +203,26 @@ impl Brain for AnthropicAdapter {
         let stream = response.bytes_stream();
         let model = self.model.clone();
 
+        // Tool-id map per content-block index + line buffer that survives
+        // chunk boundaries (see provider/sse_buffer.rs).
+        struct AnthropicSse {
+            tools: HashMap<u64, String>,
+            lines: super::sse_buffer::LineBuffer,
+        }
         let event_stream = stream
-            .scan(HashMap::<u64, String>::new(), move |tool_ids, chunk| {
+            .scan(
+                AnthropicSse {
+                    tools: HashMap::new(),
+                    lines: super::sse_buffer::LineBuffer::new(),
+                },
+                move |state, chunk| {
                 let _model = model.clone();
                 let events = match chunk {
                     Ok(bytes) => {
-                        let text = String::from_utf8_lossy(&bytes);
+                        let lines = state.lines.push(&bytes);
+                        let tool_ids = &mut state.tools;
                         let mut events = Vec::new();
-                        for line in text.lines() {
+                        for line in lines {
                             let line = line.trim();
                             if line.is_empty() || !line.starts_with("data: ") {
                                 continue;

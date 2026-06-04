@@ -169,12 +169,18 @@ impl Brain for OllamaAdapter {
 
         let stream = response.bytes_stream();
 
-        let event_stream = stream.flat_map(|chunk| {
+        // NDJSON across chunk boundaries needs the same line buffer the SSE
+        // providers use (see provider/sse_buffer.rs) — without it a JSON object
+        // split between two TCP chunks gets dropped silently.
+        let event_stream = stream.scan(
+            super::sse_buffer::LineBuffer::new(),
+            |line_buf, chunk| {
+            let result: Option<futures::stream::Iter<std::vec::IntoIter<BrainEvent>>> = (|| {
             let events: Vec<BrainEvent> = match chunk {
                 Ok(bytes) => {
-                    let text = String::from_utf8_lossy(&bytes);
+                    let lines = line_buf.push(&bytes);
                     let mut parsed = Vec::new();
-                    for line in text.lines() {
+                    for line in lines {
                         let line = line.trim();
                         if line.is_empty() {
                             continue;
@@ -248,8 +254,11 @@ impl Brain for OllamaAdapter {
                 }
                 Err(e) => vec![BrainEvent::Error(format!("Ollama stream error: {}", e))],
             };
-            stream::iter(events)
-        });
+            Some(stream::iter(events))
+            })();
+            async move { result }
+        })
+        .flatten();
 
         Ok(Box::pin(event_stream))
     }
