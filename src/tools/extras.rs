@@ -242,6 +242,9 @@ pub fn spawn_config_watcher(
 // ─── NDJSON output helper ───────────────────────────────────────────────────────
 
 pub fn ndjson_output(event: &crate::event::Event) -> String {
+    if !event.is_public() {
+        return String::new();
+    }
     match serde_json::to_string(event) {
         Ok(json) => format!("{}\n", json),
         Err(e) => format!("{{\"error\":\"{}\"}}\n", e),
@@ -280,5 +283,34 @@ impl SessionBridge {
 
     pub async fn drain_approvals(&self) -> Vec<crate::gateway::GatewayResponse> {
         self.pending_approvals.lock().await.drain(..).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ndjson_output;
+
+    #[test]
+    fn ndjson_output_suppresses_internal_reasoning_delta() {
+        let event = crate::event::Event::ReasoningDelta {
+            run: crate::event::RunId("run-1".into()),
+            text: " hidden provider state".into(),
+        };
+
+        assert_eq!(ndjson_output(&event), "");
+        assert!(!event.is_public());
+    }
+
+    #[test]
+    fn ndjson_output_keeps_public_events() {
+        let event = crate::event::Event::ThinkingDelta {
+            run: crate::event::RunId("run-1".into()),
+            text: "visible answer".into(),
+        };
+
+        let line = ndjson_output(&event);
+        assert!(line.contains("\"ThinkingDelta\""));
+        assert!(line.ends_with('\n'));
+        assert!(event.is_public());
     }
 }

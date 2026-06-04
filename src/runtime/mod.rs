@@ -176,6 +176,9 @@ impl SparrowRuntime {
                             loop {
                                 match rx.recv().await {
                                     Ok(event) => {
+                                        if !event.is_public() {
+                                            continue;
+                                        }
                                         if let Ok(json) = serde_json::to_string(&event) {
                                             let line = json + "\n";
                                             if stream.write_all(line.as_bytes()).await.is_err() {
@@ -230,6 +233,9 @@ impl SparrowRuntime {
                             loop {
                                 match rx.recv().await {
                                     Ok(event) => {
+                                        if !event.is_public() {
+                                            continue;
+                                        }
                                         if let Ok(json) = serde_json::to_string(&event) {
                                             let line = json + "\n";
                                             if stream.write_all(line.as_bytes()).await.is_err() {

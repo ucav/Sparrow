@@ -376,3 +376,15 @@ pub enum Event {
         handoff_path: Option<String>,
     },
 }
+
+impl Event {
+    /// Returns true for events that may be streamed to user-facing feeds.
+    ///
+    /// `ReasoningDelta` is provider-internal continuity state: the engine and
+    /// session stores consume it so reasoning-mode providers can receive the
+    /// required `reasoning_content` on the next turn, but exposing every delta
+    /// as NDJSON/WebSocket output floods users with opaque token fragments.
+    pub fn is_public(&self) -> bool {
+        !matches!(self, Self::ReasoningDelta { .. })
+    }
+}
