@@ -26,10 +26,13 @@ The project focuses on a narrow product promise: a Rust-native local cockpit whe
 
 ---
 
-## ✨ What's New — v0.3.5
+## ✨ What's New — v0.3.6
 
-> **Public polish pass** — WebView code output, repo hygiene, and release metadata are tightened for day-to-day use.
+> **Public distribution pass** — one-click installers, simplified launch, and release metadata are ready for broader testing.
 
+- **One-click installers**: Windows PowerShell plus macOS/Linux shell installers pull the latest GitHub release and fall back to source builds when needed.
+- **Simplified launch**: `sparrow launch` runs first-launch setup when needed, then opens the WebView cockpit; `sparrow launch --tui` keeps the terminal path.
+- **Release workflow hardening**: GitHub release publishing has explicit permissions and stable Windows asset naming for `sparrow-windows-x86_64.exe`.
 - **Syntax-highlighted code cards**: fenced code is rendered in compact collapsible cards with language labels, line counts, copy actions, and local editor-style highlighting.
 - **Prompt caching controls**: Anthropic Messages and OpenAI-compatible/Responses requests now carry cache controls for stable Sparrow prefixes.
 - **Reasoning-state continuity**: DeepSeek/Qwen/Moonshot-style `reasoning_content` is captured, persisted, and re-injected without showing it as visible assistant text.
@@ -40,7 +43,7 @@ The project focuses on a narrow product promise: a Rust-native local cockpit whe
 - **No metric spam**: high-frequency token/cost events update live meters without flooding the transcript.
 - **Cleaner typography**: WebView uses system UI fonts with `SF Mono`-style code rendering.
 - **Repo hygiene**: local handoffs, scratch files, and presentation-only artifacts are kept out of the public tree.
-- **Release metadata**: version, changelog, and README status align on v0.3.5.
+- **Release metadata**: version, changelog, and README status align on v0.3.6.
 
 ---
 

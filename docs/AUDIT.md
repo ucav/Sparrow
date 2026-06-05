@@ -1,6 +1,6 @@
 # Sparrow Audit
 
-This audit reflects the current `master` branch after the v0.3.5 finalisation pass. It is intentionally stricter than the product vision: a module is marked **REAL** only when there is compiled code and a tested or manually verified path.
+This audit reflects the current `master` branch after the v0.3.6 finalisation pass. It is intentionally stricter than the product vision: a module is marked **REAL** only when there is compiled code and a tested or manually verified path.
 
 ## Acceptance Evidence
 

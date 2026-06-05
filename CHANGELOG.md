@@ -2,6 +2,39 @@
 
 All notable changes to Sparrow will be documented in this file.
 
+## [0.3.6] — 2026-06-05
+
+Public distribution pass for one-click installation and simplified launch.
+
+### Added
+- `sparrow launch`: runs first-launch setup when needed, then opens the
+  WebView cockpit on port 9339. `sparrow launch --tui` keeps the same
+  onboarding path but starts the terminal cockpit.
+- Windows one-click installer (`install.ps1`) that installs to the user-local
+  Sparrow bin directory, adds it to the user PATH, and launches Sparrow.
+- Linux/macOS one-click installer (`install.sh`) that downloads the latest
+  release artifact from `ucav/Sparrow`, falls back to a source build when an
+  artifact is unavailable, and launches Sparrow.
+- Release/distribution regression tests that pin installer repository targets,
+  expected artifact names, and docs coverage for `sparrow launch`.
+
+### Fixed
+- The public installer no longer points at the old placeholder
+  `sparrow-dev/sparrow` repository.
+- The Release workflow now publishes `sparrow-windows-x86_64.exe` without
+  accidentally appending a second `.exe`.
+- The Release workflow explicitly grants `contents: write` for GitHub release
+  publishing.
+
+### Validation
+- `cargo fmt --all -- --check`
+- `cargo check --all-targets`
+- `cargo clippy --all-targets -- -D warnings`
+- `cargo build --release`
+- `cargo test`
+- `bash -n install.sh`
+- PowerShell parser validation for `install.ps1`
+
 ## [0.3.5] — 2026-06-04
 
 Public polish pass for the WebView cockpit and repository surface.
