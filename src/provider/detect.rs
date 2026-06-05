@@ -99,13 +99,6 @@ pub fn scan_environment() -> Vec<(&'static str, &'static str, String)> {
 /// by whether a key was found.
 pub fn detect_all_providers() -> Vec<DetectedProvider> {
     let env_keys = scan_environment();
-    let provider_map: std::collections::HashMap<&str, &(&str, &str, String)> = env_keys
-        .iter()
-        .map(|(pid, env, _)| (*pid, (pid, env, &String::new())))
-        .collect::<std::collections::HashMap<_, _>>()
-        // We actually need to keep the key values, so rebuild:
-        ;
-    // Rebuild properly
     let env_keys_map: std::collections::HashMap<&str, (&str, String)> = env_keys
         .iter()
         .map(|(pid, env, key)| (*pid, (*env, key.clone())))

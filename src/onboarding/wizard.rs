@@ -24,7 +24,7 @@ pub async fn run_wizard(
     config: &Config,
     store: &dyn ConfigStore,
 ) -> anyhow::Result<()> {
-    let auth = crate::auth::store::ChainedAuthStore::new(config.config_dir.clone());
+    let _auth = crate::auth::store::ChainedAuthStore::new(config.config_dir.clone());
 
     print_banner();
 
@@ -369,8 +369,8 @@ async fn handle_provider_key_prompt(
         Ok(()) => {
             println!("✓");
             auth.set(&provider.id, Credential::api_key(&key))?;
-            // Also set env var for this session
-            std::env::set_var(env_var_name, &key);
+            // SAFETY: single-threaded setup wizard
+            unsafe { std::env::set_var(env_var_name, &key); }
             add_provider_to_config(config, provider);
             println!("   ✓ {} configuré avec succès !", provider.label);
         }
@@ -383,7 +383,8 @@ async fn handle_provider_key_prompt(
             io::stdin().read_line(&mut answer)?;
             if matches!(answer.trim().to_lowercase().as_str(), "o" | "oui" | "y" | "yes") {
                 auth.set(&provider.id, Credential::api_key(&key))?;
-                std::env::set_var(env_var_name, &key);
+                // SAFETY: single-threaded setup wizard
+                unsafe { std::env::set_var(env_var_name, &key); }
                 add_provider_to_config(config, provider);
                 println!("   ✓ {} ajouté (clé non validée).", provider.label);
             }

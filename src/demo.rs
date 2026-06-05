@@ -12,8 +12,8 @@ use std::time::Duration;
 ///
 /// Simulates Sparrow's Planner → Coder → Verifier pipeline by generating
 /// a simple snake game in Rust, compiling it, and optionally running it.
-pub async fn run_demo(skills: Option<&dyn crate::capabilities::SkillLibrary>) -> anyhow::Result<()> {
-    use crossterm::style::{Color, Print, SetForegroundColor, ResetColor};
+pub async fn run_demo(_skills: Option<&dyn crate::capabilities::SkillLibrary>) -> anyhow::Result<()> {
+    use crossterm::style::{Color, SetForegroundColor, ResetColor};
     use crossterm::ExecutableCommand;
 
     let mut stdout = io::stdout();
@@ -153,7 +153,7 @@ fn phase_header(
     subtitle: &str,
     color: crossterm::style::Color,
 ) -> io::Result<()> {
-    use crossterm::style::{Attribute, Print, SetAttribute, SetForegroundColor, ResetColor};
+    use crossterm::style::{Attribute, SetAttribute, SetForegroundColor, ResetColor};
     use crossterm::ExecutableCommand;
 
     stdout.execute(SetForegroundColor(color))?;
