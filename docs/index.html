@@ -210,6 +210,41 @@
   .feat code{background:var(--bg-soft);padding:2px 6px;border-radius:4px;font-size:12px;color:var(--cream);
     border:1px solid var(--line)}
 
+  /* ============== docs hub ============== */
+  .docs-hub{display:grid;grid-template-columns:minmax(260px,.72fr) minmax(320px,1.28fr);gap:22px;align-items:start}
+  @media(max-width:960px){.docs-hub{grid-template-columns:1fr}}
+  .docs-panel{border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,#15110b,#100d09);overflow:hidden}
+  .docs-panel .head{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+  .docs-panel .head b{font-size:13px;letter-spacing:1.4px;text-transform:uppercase;color:var(--amber)}
+  .docs-panel .body{padding:16px 18px}
+  .docs-search{display:flex;gap:10px;align-items:center;border:1px solid var(--line);border-radius:10px;background:#0a0805;padding:10px 12px;margin-bottom:12px}
+  .docs-search input{flex:1;background:transparent;border:0;outline:0;color:var(--fg);font:500 14px 'Inter',system-ui,sans-serif}
+  .docs-search input::placeholder{color:var(--dim)}
+  .docs-result{display:block;padding:12px 0;border-top:1px solid var(--line);transition:.15s}
+  .docs-result:first-of-type{border-top:0}
+  .docs-result:hover{color:var(--amber)}
+  .docs-result .r-title{font-weight:700;font-size:14px;margin-bottom:4px}
+  .docs-result .r-body{font-size:12.5px;color:var(--fg-soft);line-height:1.45}
+  .docs-result .r-tags{margin-top:6px;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--dim)}
+  .example-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  @media(max-width:720px){.example-grid{grid-template-columns:1fr}}
+  .example-card,.api-card,.video-card{border:1px solid var(--line);border-radius:12px;background:var(--bg-elev);padding:16px;position:relative;overflow:hidden}
+  .example-card h4,.api-card h4,.video-card h4{font-size:15px;margin-bottom:8px;letter-spacing:-.2px}
+  .example-card p,.api-card p,.video-card p{font-size:13px;color:var(--fg-soft);line-height:1.5;margin-bottom:12px}
+  .example-card pre{background:#0a0805;border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto;font-size:12px;color:var(--cream)}
+  .copy-mini{position:absolute;top:12px;right:12px;border:1px solid var(--line);border-radius:7px;background:#0a0805;color:var(--amber);font-size:11px;padding:4px 8px;cursor:pointer}
+  .api-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:20px}
+  @media(max-width:920px){.api-grid{grid-template-columns:1fr}}
+  .api-card ul{display:flex;flex-direction:column;gap:7px;list-style:none;font-size:12.5px;color:var(--fg-soft)}
+  .api-card code{color:var(--cream);background:#0a0805;border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+  .video-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:20px}
+  @media(max-width:920px){.video-grid{grid-template-columns:1fr}}
+  .video-thumb{height:128px;border-radius:10px;border:1px solid var(--line);background:
+    radial-gradient(circle at 50% 50%,rgba(242,169,60,.22),transparent 34%),
+    linear-gradient(135deg,#1d1710,#0a0805);display:flex;align-items:center;justify-content:center;margin-bottom:12px}
+  .video-thumb .play{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--amber),var(--coral));color:var(--ink);font-weight:900}
+  .chapter-list{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--dim);line-height:1.8}
+
   /* ============== code block ============== */
   .code-wrap{max-width:920px;margin:0 auto;border:1px solid var(--line);border-radius:14px;
     background:linear-gradient(180deg,#15110b,#100d09);overflow:hidden}
@@ -374,6 +409,7 @@
   <div class="nav-links">
     <a href="#why">Why</a>
     <a href="#features">Features</a>
+    <a href="#docs">Docs</a>
     <a href="#how">How it works</a>
     <a href="#roadmap">Roadmap</a>
     <a href="#install">Install</a>
@@ -628,6 +664,118 @@
   </div>
 </section>
 
+<!-- =========== docs hub =========== -->
+<section class="wrap" id="docs">
+  <span class="sec-label">// docs that answer back</span>
+  <h2 class="section">Searchable docs. <span class="grad">Runnable examples.</span></h2>
+  <p class="lead">Sparrowdev.com is the public documentation surface: quick answers, CLI examples,
+    tool API references, and short video tutorials in one static page.</p>
+
+  <div class="docs-hub">
+    <aside class="docs-panel" aria-label="Search Sparrow documentation">
+      <div class="head">
+        <span class="dot" style="width:8px;height:8px;border-radius:50%;background:var(--agent);box-shadow:0 0 10px var(--agent)"></span>
+        <b>Search</b>
+      </div>
+      <div class="body">
+        <label class="docs-search">
+          <span style="color:var(--dim)">⌕</span>
+          <input id="docsSearch" type="search" placeholder="routing, memory graph, browser, permissions..." autocomplete="off" />
+        </label>
+        <div id="docsResults" data-testid="docs-search-results"></div>
+      </div>
+    </aside>
+
+    <div>
+      <div class="example-grid" id="examples">
+        <article class="example-card" data-doc-title="First run" data-doc-tags="setup run provider routing example">
+          <button class="copy-mini" data-copy="sparrow setup&#10;sparrow run &quot;explain this repository and list the risky files&quot;">copy</button>
+          <h4>First run</h4>
+          <p>Configure providers, then run a routed task with full transcript and cost tracking.</p>
+<pre>sparrow setup
+sparrow run "explain this repository and list the risky files"</pre>
+        </article>
+        <article class="example-card" data-doc-title="Rollback after edits" data-doc-tags="checkpoint rewind git safety example">
+          <button class="copy-mini" data-copy="sparrow checkpoint list&#10;sparrow rewind abc123">copy</button>
+          <h4>Rollback after edits</h4>
+          <p>Every mutating batch creates a checkpoint, so recovery is a command instead of a panic.</p>
+<pre>sparrow checkpoint list
+sparrow rewind abc123</pre>
+        </article>
+        <article class="example-card" data-doc-title="Knowledge graph" data-doc-tags="memory graph neo4j persistent sessions example">
+          <button class="copy-mini" data-copy="sparrow memory graph upsert-node project:sparrow Sparrow --kind project&#10;sparrow memory graph search sparrow">copy</button>
+          <h4>Knowledge graph</h4>
+          <p>Persist entities and relationships locally, then optionally sync them to Neo4j.</p>
+<pre>sparrow memory graph upsert-node project:sparrow Sparrow --kind project
+sparrow memory graph search sparrow</pre>
+        </article>
+        <article class="example-card" data-doc-title="Browser/computer-use" data-doc-tags="playwright computer screenshot click type browser example">
+          <button class="copy-mini" data-copy="npm install&#10;npm run browser:install&#10;sparrow run &quot;open the local webview and take a screenshot&quot;">copy</button>
+          <h4>Browser/computer-use</h4>
+          <p>Install the Playwright runtime and let gated tools screenshot, click, type, and inspect.</p>
+<pre>npm install
+npm run browser:install
+sparrow run "open the local webview and take a screenshot"</pre>
+        </article>
+      </div>
+
+      <div class="api-grid" id="api">
+        <article class="api-card" data-doc-title="CLI API" data-doc-tags="api reference cli commands run plan memory graph">
+          <h4>CLI API</h4>
+          <p>The commands agents and humans call most often.</p>
+          <ul>
+            <li><code>sparrow run &lt;task&gt;</code> route and execute a task</li>
+            <li><code>sparrow plan &lt;task&gt;</code> produce a read-only plan</li>
+            <li><code>sparrow memory graph ...</code> manage graph nodes/edges</li>
+            <li><code>sparrow console --port 9339</code> open the WebView cockpit</li>
+          </ul>
+        </article>
+        <article class="api-card" data-doc-title="Tool API" data-doc-tags="api reference tools browser computer knowledge_graph exec fs edit">
+          <h4>Tool API</h4>
+          <p>Core tool names and capabilities exposed to the engine.</p>
+          <ul>
+            <li><code>browser</code> navigate, screenshot, extract, click, type, evaluate</li>
+            <li><code>computer</code> screenshot, click, type, press with Exec gating</li>
+            <li><code>knowledge_graph</code> upsert/search/neighbors/export/sync_neo4j</li>
+            <li><code>exec</code>, <code>fs_read</code>, <code>edit</code>, <code>git</code></li>
+          </ul>
+        </article>
+        <article class="api-card" data-doc-title="WebView API" data-doc-tags="api reference webview endpoints slash commands websocket">
+          <h4>WebView API</h4>
+          <p>Local HTTP endpoints used by the cockpit and slash palette.</p>
+          <ul>
+            <li><code>GET /commands</code> slash commands with descriptions and usage</li>
+            <li><code>POST /run</code> submit a task to the active engine</li>
+            <li><code>POST /cli</code> run non-interactive Sparrow commands</li>
+            <li><code>GET /memory</code>, <code>/tools</code>, <code>/models</code>, <code>/status</code></li>
+          </ul>
+        </article>
+      </div>
+
+      <div class="video-grid" id="videos">
+        <article class="video-card" data-doc-title="Video tutorial: first launch" data-doc-tags="video tutorial setup providers onboarding">
+          <div class="video-thumb" aria-label="Video placeholder: first launch"><span class="play">▶</span></div>
+          <h4>First launch in 5 minutes</h4>
+          <p>Install, run setup, add providers, and start the WebView cockpit.</p>
+          <div class="chapter-list">00:00 install · 01:20 setup · 03:10 first run · 04:30 cockpit</div>
+        </article>
+        <article class="video-card" data-doc-title="Video tutorial: safe agent edits" data-doc-tags="video tutorial checkpoint rewind permissions sandbox">
+          <div class="video-thumb" aria-label="Video placeholder: safe edits"><span class="play">▶</span></div>
+          <h4>Safe edits and rewind</h4>
+          <p>Permissions, checkpoints, diffs, and restoring the workspace after a bad batch.</p>
+          <div class="chapter-list">00:00 autonomy · 01:15 checkpoint · 03:00 approval · 04:40 rewind</div>
+        </article>
+        <article class="video-card" data-doc-title="Video tutorial: memory graph and browser" data-doc-tags="video tutorial memory graph neo4j browser computer playwright">
+          <div class="video-thumb" aria-label="Video placeholder: memory and browser"><span class="play">▶</span></div>
+          <h4>Memory graph + browser-use</h4>
+          <p>Create graph entities, inspect neighbors, then use Playwright-backed browser actions.</p>
+          <div class="chapter-list">00:00 graph · 02:10 Neo4j sync · 03:30 screenshot · 05:00 click/type</div>
+        </article>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- =========== how it works / code =========== -->
 <section class="wrap" id="how">
   <span class="sec-label">// the loop</span>
@@ -810,5 +958,59 @@
   </div>
 </footer>
 
+<script>
+  const DOCS_INDEX = [
+    { title: "First run", href: "#examples", tags: "setup run provider routing", body: "Configure providers and run a routed task with transcript and cost tracking." },
+    { title: "Rollback after edits", href: "#examples", tags: "checkpoint rewind git safety", body: "List checkpoints and rewind the exact workspace tree after a bad edit." },
+    { title: "Knowledge graph", href: "#examples", tags: "memory graph neo4j persistent sessions", body: "Persist entities and relationships locally, then optionally sync to Neo4j." },
+    { title: "Browser/computer-use", href: "#examples", tags: "playwright browser computer screenshot click type", body: "Install Playwright and let gated tools screenshot, click, type, and inspect pages." },
+    { title: "CLI API", href: "#api", tags: "api reference cli commands run plan", body: "sparrow run, plan, console, and memory graph command references." },
+    { title: "Tool API", href: "#api", tags: "api reference tools browser computer knowledge_graph exec", body: "Engine tool names and capabilities exposed to models and surfaces." },
+    { title: "WebView API", href: "#api", tags: "api reference webview endpoints slash websocket", body: "Local HTTP endpoints used by the cockpit, slash palette, and panels." },
+    { title: "Video: first launch", href: "#videos", tags: "video tutorial setup providers onboarding", body: "Install, configure providers, run the first task, and open the cockpit." },
+    { title: "Video: safe edits", href: "#videos", tags: "video tutorial checkpoint rewind permissions sandbox", body: "Permissions, checkpoints, approvals, and restoring after a bad batch." },
+    { title: "Video: memory graph and browser", href: "#videos", tags: "video tutorial memory graph neo4j browser computer playwright", body: "Graph entities, Neo4j sync, screenshots, click and type actions." }
+  ];
+
+  function scoreDoc(doc, query) {
+    if (!query) return 1;
+    const hay = `${doc.title} ${doc.tags} ${doc.body}`.toLowerCase();
+    return query
+      .split(/\s+/)
+      .filter(Boolean)
+      .reduce((score, term) => score + (hay.includes(term) ? (doc.title.toLowerCase().includes(term) ? 4 : 1) : -2), 0);
+  }
+
+  function renderDocsSearch(query = "") {
+    const host = document.getElementById("docsResults");
+    if (!host) return;
+    const q = query.trim().toLowerCase();
+    const rows = DOCS_INDEX
+      .map(doc => ({ doc, score: scoreDoc(doc, q) }))
+      .filter(row => row.score > 0)
+      .sort((a, b) => b.score - a.score || a.doc.title.localeCompare(b.doc.title))
+      .slice(0, 6);
+    host.innerHTML = rows.length
+      ? rows.map(({ doc }) => `<a class="docs-result" href="${doc.href}"><div class="r-title">${doc.title}</div><div class="r-body">${doc.body}</div><div class="r-tags">${doc.tags}</div></a>`).join("")
+      : '<div class="docs-result"><div class="r-title">No result yet</div><div class="r-body">Try routing, browser, memory graph, API, or video.</div></div>';
+  }
+
+  document.getElementById("docsSearch")?.addEventListener("input", event => renderDocsSearch(event.target.value));
+  renderDocsSearch("");
+
+  document.querySelectorAll("[data-copy]").forEach(button => {
+    button.addEventListener("click", async () => {
+      const text = button.getAttribute("data-copy") || "";
+      try {
+        await navigator.clipboard.writeText(text);
+        const old = button.textContent;
+        button.textContent = "copied";
+        setTimeout(() => { button.textContent = old; }, 1100);
+      } catch {
+        button.textContent = "select";
+      }
+    });
+  });
+</script>
 </body>
 </html>
