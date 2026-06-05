@@ -81,6 +81,17 @@ pub enum Commands {
     /// Launch TUI
     Tui,
 
+    /// Launch first-run setup, then the WebView cockpit
+    Launch {
+        /// TCP port for the WebView HTTP/WS server
+        #[arg(long, default_value = "9339")]
+        port: u16,
+
+        /// Launch the terminal TUI instead of the WebView cockpit
+        #[arg(long)]
+        tui: bool,
+    },
+
     /// Launch webview console (HTTP + WebSocket)
     Console {
         /// TCP port for the webview HTTP/WS server

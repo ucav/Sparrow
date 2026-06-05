@@ -9,6 +9,8 @@ All planned Sparrow commands.
 | `sparrow` | ✅ | Launch TUI (default) |
 | `sparrow --tui` | ✅ | Launch terminal TUI explicitly |
 | `sparrow --web` | ✅ | Launch webview console (HTTP + WebSocket) |
+| `sparrow launch` | ✅ | Run first-launch setup if needed, then open the WebView cockpit |
+| `sparrow launch --tui` | ✅ | Run first-launch setup if needed, then open the terminal TUI |
 | `sparrow setup` | ✅ | Conversational onboarding |
 
 ## Run
