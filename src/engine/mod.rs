@@ -1636,10 +1636,16 @@ impl Engine {
                                         provider: Some(brain.id()),
                                         surface: Some("engine"),
                                     });
-                                let mut decision = match permission.decision.clone() {
-                                    Decision::Allow => autonomy.decide(&proposed),
-                                    other => other,
-                                };
+                                let autonomy_verdict =
+                                    if matches!(permission.decision, Decision::Allow) {
+                                        Some(autonomy.evaluate(&proposed))
+                                    } else {
+                                        None
+                                    };
+                                let mut decision = autonomy_verdict
+                                    .as_ref()
+                                    .map(|verdict| verdict.decision.clone())
+                                    .unwrap_or_else(|| permission.decision.clone());
                                 if !matches!(permission.decision, Decision::Allow) {
                                     let _ = event_tx.send(Event::Message {
                                         run: run_id.clone(),
@@ -1686,6 +1692,20 @@ impl Engine {
 
                                 match decision {
                                     Decision::Allow => {
+                                        if autonomy_verdict
+                                            .as_ref()
+                                            .map(|verdict| verdict.notify)
+                                            .unwrap_or(false)
+                                        {
+                                            let _ = event_tx.send(Event::Message {
+                                                run: run_id.clone(),
+                                                role: "autonomy".into(),
+                                                text: format!(
+                                                    "{} will run under trusted autonomy with checkpoint notification",
+                                                    proposed.tool_name
+                                                ),
+                                            });
+                                        }
                                         // Track mutations so we can auto-verify later.
                                         if matches!(
                                             proposed.risk,
@@ -1694,12 +1714,18 @@ impl Engine {
                                             had_mutation = true;
                                         }
                                         // Auto-checkpoint before mutating/exec/destructive
-                                        if matches!(
-                                            proposed.risk,
-                                            RiskLevel::Mutating
-                                                | RiskLevel::Exec
-                                                | RiskLevel::Destructive
-                                        ) {
+                                        let needs_checkpoint = autonomy_verdict
+                                            .as_ref()
+                                            .map(|verdict| verdict.needs_checkpoint)
+                                            .unwrap_or_else(|| {
+                                                matches!(
+                                                    proposed.risk,
+                                                    RiskLevel::Mutating
+                                                        | RiskLevel::Exec
+                                                        | RiskLevel::Destructive
+                                                )
+                                            });
+                                        if needs_checkpoint {
                                             let vetoes = self
                                                 .hooks
                                                 .execute(

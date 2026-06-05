@@ -29,7 +29,9 @@ This audit reflects the current `master` branch after the v0.3.5 finalisation pa
 | `src/provider/responses.rs` | REAL | Responses adapter serializes images/cache controls, captures reasoning deltas, and reinjects `reasoning_content`; Bedrock is an explicit unsupported-provider error, not a fake success. |
 | `src/router/mod.rs` | REAL | Budget-aware fallback routing with local/free preference, explicit provider override, tool/vision penalties, and regression coverage. |
 | `src/engine/mod.rs` | REAL | `Task`, `Engine`, and `drive()` exist. Signature: `drive(Task, UnboundedSender<Event>) -> anyhow::Result<OutcomeSummary>`. |
-| `src/autonomy/mod.rs` | REAL | Autonomy matrix covered by integration tests. |
+| `src/autonomy/mod.rs` | REAL | Autonomy matrix plus rich verdicts (`decision`, `needs_checkpoint`, `notify`, `reason`) are covered by tests and wired into the engine. |
+| `src/agent/mod.rs` | REAL | Persistent TOML and Markdown-frontmatter agents survive sessions; unsafe traversal names are rejected. |
+| `src/capabilities/*` | REAL | Skill library, curator, progressive references/templates/scripts/assets, plugins, and MCP stdio/HTTP clients are covered by focused tests; skill paths are traversal-safe and curator preserves assets. |
 | `src/redaction.rs` | REAL | Secret redaction has unit/integration coverage. |
 | `src/memory/mod.rs` | REAL | SQLite memory persistence covered by tests. |
 | `src/tools/*` | REAL | Core fs/edit/exec/git/search, LSP, media, browser/computer-use, symbols, memory, and knowledge graph tools compile and have focused tests. Unsupported integrations return explicit errors. |
@@ -71,6 +73,7 @@ Current reality:
 - DeepSeek/Qwen/Moonshot-style `reasoning_content` is captured and persisted, but public output suppresses raw `ReasoningDelta` fragments.
 - The daemon config watcher has a regression test proving changed config reloads while unchanged files do not spam reload events.
 - `treesitter` remains opt-in and the release build passes both with and without it.
+- Tier 2 is now locked by tests: trusted autonomy emits checkpoint/notify intent, persistent agents reject path traversal, skill invocation cannot escape its skill folder, and the curator no longer deletes progressive-disclosure assets.
 
 So the correct action is not to create a competing `src/engine.rs`; it is to document the actual engine signature, keep tests honest, and improve CI/readme trust.
 
