@@ -99,3 +99,30 @@ or use the tool shape directly in tests:
 The screenshot result is returned as a Sparrow `Block::Image` with MIME
 `image/png`, so vision-capable models and WebView artifacts can consume it
 without an extra file conversion step.
+
+## Verification
+
+The integration test can run in two modes:
+
+```bash
+cargo test --test browser_computer_e2e
+```
+
+If Node.js, Playwright, or Chromium is missing, the test reports a clear skip so
+regular CI does not fail on machines without the optional runtime. To force a
+real local E2E proof after `npm install && npm run browser:install`, run:
+
+```bash
+SPARROW_REQUIRE_PLAYWRIGHT_E2E=1 cargo test --test browser_computer_e2e -- --nocapture
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:SPARROW_REQUIRE_PLAYWRIGHT_E2E='1'
+cargo test --test browser_computer_e2e -- --nocapture
+```
+
+The forced test launches Chromium through the embedded driver, captures a real
+PNG screenshot, and executes `computer.type` plus `computer.click` against a
+local `data:` page.
