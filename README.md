@@ -9,10 +9,14 @@
 [![Release](https://img.shields.io/github/v/release/ucav/Sparrow?color=blue&label=release)](https://github.com/ucav/Sparrow/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Rust 1.96+](https://img.shields.io/badge/rust-1.96%2B-orange)](https://rust-lang.org)
+[![crates.io](https://img.shields.io/crates/v/sparrow-cli?color=orange)](https://crates.io/crates/sparrow-cli)
+[![docs.rs](https://img.shields.io/docsrs/sparrow-cli)](https://docs.rs/sparrow-cli)
 
 <img src="assets/brand/sparrow-mascot.svg" width="140" alt="Sparrow mascot" />
 
 *One event stream. Terminal UI, WebView cockpit, JSON output, or gateway — your choice.*
+
+[![asciicast](https://asciinema.org/a/PLEprnQSdv4lqOH2.svg)](https://asciinema.org/a/PLEprnQSdv4lqOH2)
 
 [Quick Start](#quick-start) · [Commands](#common-commands) · [Architecture](#architecture) · [Docs](#docs) · [Releases](https://github.com/ucav/Sparrow/releases)
 
@@ -26,24 +30,19 @@ The project focuses on a narrow product promise: a Rust-native local cockpit whe
 
 ---
 
-## ✨ What's New — v0.3.6
+## ✨ What's New — v0.4.0
 
-> **Public distribution pass** — one-click installers, simplified launch, and release metadata are ready for broader testing.
+> **Public launch readiness** — crates.io publish, first-run wizard, live demo, community skills, security hooks, and humanized error messages.
 
-- **One-click installers**: Windows PowerShell plus macOS/Linux shell installers pull the latest GitHub release and fall back to source builds when needed.
-- **Simplified launch**: `sparrow launch` runs first-launch setup when needed, then opens the WebView cockpit; `sparrow launch --tui` keeps the terminal path.
-- **Release workflow hardening**: GitHub release publishing has explicit permissions and stable Windows asset naming for `sparrow-windows-x86_64.exe`.
-- **Syntax-highlighted code cards**: fenced code is rendered in compact collapsible cards with language labels, line counts, copy actions, and local editor-style highlighting.
-- **Prompt caching controls**: Anthropic Messages and OpenAI-compatible/Responses requests now carry cache controls for stable Sparrow prefixes.
-- **Reasoning-state continuity**: DeepSeek/Qwen/Moonshot-style `reasoning_content` is captured, persisted, and re-injected without showing it as visible assistant text.
-- **Persistent knowledge graph**: SQLite memory now stores typed graph nodes/edges with a `knowledge_graph` tool and optional Neo4j sync.
-- **Playwright browser/computer-use**: real headless browser automation plus screenshot/click/type computer actions gated as sandboxed exec.
-- **Safer plan flow**: WebView `/plan` has explicit run, edit, and reject actions before execution.
-- **Per-hunk diff review UI**: diff cards and the side panel group patches by hunk with accept/reject review states.
-- **No metric spam**: high-frequency token/cost events update live meters without flooding the transcript.
-- **Cleaner typography**: WebView uses system UI fonts with `SF Mono`-style code rendering.
-- **Repo hygiene**: local handoffs, scratch files, and presentation-only artifacts are kept out of the public tree.
-- **Release metadata**: version, changelog, and README status align on v0.3.6.
+- **`cargo install sparrow-cli`** — now on crates.io. One command, no curl.
+- **First-run wizard** — auto-detects API keys, validates them, offers free providers (NVIDIA, Groq, Gemini) with one-click setup.
+- **`sparrow demo`** — self-contained snake game coding demo in 30 seconds. Live Planner→Coder→Verifier pipeline.
+- **`sparrow share`** — share session transcripts as GitHub Gists. One command.
+- **`sparrow hook install`** — pre-commit security scanner. Blocks commits with secrets, tokens, or private keys.
+- **10 community skills** — explain-error, generate-commit, write-unit-tests, review-my-pr, refactor-function, onboard-newbie, fix-bug, optimize-sql, api-docs, deploy-check.
+- **Humanized French errors** — HTTP 401 becomes "Ta clé API est invalide. Va sur https://... pour en créer une."
+- **Provider auto-detection** — scans 20+ env vars, validates keys, ranks by cost tier (free first).
+- **Release build verified** — `cargo build --release` green, 0 warnings, 9.3 MB binary.
 
 ---
 
@@ -109,6 +108,12 @@ See [docs/AUDIT.md](docs/AUDIT.md) for module-by-module proof.
 ---
 
 ## Quick Start
+
+**Install from crates.io (recommended):**
+
+```bash
+cargo install sparrow-cli
+```
 
 **One-click install:**
 
