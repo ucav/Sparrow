@@ -10,7 +10,10 @@ fn ctx() -> ToolCtx {
 }
 
 fn runtime_is_required() -> bool {
-    std::env::var("SPARROW_REQUIRE_PLAYWRIGHT_E2E").ok().as_deref() == Some("1")
+    std::env::var("SPARROW_REQUIRE_PLAYWRIGHT_E2E")
+        .ok()
+        .as_deref()
+        == Some("1")
 }
 
 fn data_url(html: &str) -> String {

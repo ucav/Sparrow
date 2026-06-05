@@ -49,8 +49,8 @@ fn docs_site_exposes_search_examples_api_and_video_tutorials() {
         );
     }
 
-    let transcript =
-        std::fs::read_to_string("docs/tutorials/README.md").expect("tutorial transcript must exist");
+    let transcript = std::fs::read_to_string("docs/tutorials/README.md")
+        .expect("tutorial transcript must exist");
     for marker in [
         "First Launch In 5 Minutes",
         "Safe Edits And Rewind",

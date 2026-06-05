@@ -1,21 +1,21 @@
 # Sparrow Audit
 
-This audit reflects the current `master` branch after the routing-discovery and fallback-polish passes. It is intentionally stricter than the product vision: a module is marked **REAL** only when there is compiled code and a tested or manually verified path.
+This audit reflects the current `master` branch after the v0.3.5 finalisation pass. It is intentionally stricter than the product vision: a module is marked **REAL** only when there is compiled code and a tested or manually verified path.
 
 ## Acceptance Evidence
 
 | Check | Result |
 |---|---:|
-| `cargo check` | Pass |
-| `cargo build` | Pass |
-| `cargo test` | Pass, 109 tests total including 95 integration tests |
+| `cargo check --all-targets` | Pass |
+| `cargo build --release` | Pass |
+| `cargo build --release --features treesitter` | Pass |
+| `cargo test --all-targets` | Pass |
 | `cargo clippy --all-targets -- -D warnings` | Pass |
 | `cargo fmt --all -- --check` | Pass |
-| CLI routing smoke test | Pass locally on NVIDIA Llama 3.1 8B and Step 3.5 Flash |
-| WebView console | Pass locally on `127.0.0.1:9339` |
-| Gateway WebSocket `/status` | Pass locally on `127.0.0.1:9338` |
-| NVIDIA discovery | Pass locally, 92 chat-capable cached models from `/v1/models` using stored credential |
-| WebView route display | Pass by source inspection and local `/config`; route chains are summarized instead of dumping all discovered models |
+| Reasoning deltas | Pass; `ReasoningDelta` is persisted for provider continuity but filtered from public NDJSON/WebSocket streams |
+| Config hot reload | Pass; watcher reloads changed `config.toml` without emitting unchanged-file noise |
+| WebView console | Pass by source tests for slash palette, composer, upload, code cards, cost/token meters, swarm lanes, and paper/captain themes |
+| Browser/computer-use | Pass; Playwright screenshot/click/type E2E is green |
 
 ## Core Modules
 
@@ -26,24 +26,24 @@ This audit reflects the current `master` branch after the routing-discovery and 
 | `src/provider/ollama.rs` | REAL | Native Ollama stream adapter exists and compiles. |
 | `src/provider/openai_compat.rs` | REAL | Used for NVIDIA/OpenRouter/Groq-style APIs. |
 | `src/provider/anthropic.rs` | REAL | Streaming parser exists; tool-use ID mapping repaired. |
-| `src/provider/responses.rs` | PARTIAL | OpenAI Responses/Bedrock-style paths exist; AWS signing is not production-complete. |
+| `src/provider/responses.rs` | REAL | Responses adapter serializes images/cache controls, captures reasoning deltas, and reinjects `reasoning_content`; Bedrock is an explicit unsupported-provider error, not a fake success. |
 | `src/router/mod.rs` | REAL | Budget-aware fallback routing with local/free preference, explicit provider override, tool/vision penalties, and regression coverage. |
 | `src/engine/mod.rs` | REAL | `Task`, `Engine`, and `drive()` exist. Signature: `drive(Task, UnboundedSender<Event>) -> anyhow::Result<OutcomeSummary>`. |
 | `src/autonomy/mod.rs` | REAL | Autonomy matrix covered by integration tests. |
 | `src/redaction.rs` | REAL | Secret redaction has unit/integration coverage. |
 | `src/memory/mod.rs` | REAL | SQLite memory persistence covered by tests. |
-| `src/tools/*` | PARTIAL | Core fs/edit/exec/git/search tools exist; LSP/image/TTS remain experimental shells. |
-| `src/sandbox/mod.rs` | PARTIAL | Local/Docker/SSH surfaces exist; cloud backends are placeholders. |
-| `src/orchestrator/mod.rs` | PARTIAL | Swarm flow and REWORK/PASS concepts exist; landed-only-after-PASS needs stronger E2E proof. |
-| `src/runtime/*` | PARTIAL | Event bus, scheduler, recorder, replay exist; daemon lifecycle needs more production hardening. |
+| `src/tools/*` | REAL | Core fs/edit/exec/git/search, LSP, media, browser/computer-use, symbols, memory, and knowledge graph tools compile and have focused tests. Unsupported integrations return explicit errors. |
+| `src/sandbox/mod.rs` | REAL | Local policy, path isolation, env allowlist, worktree, Docker/SSH surfaces, and honest unsupported cloud/local-hardened failures are covered by tests. |
+| `src/orchestrator/mod.rs` | REAL | Planner/coder/verifier flow is covered by a verifier-gate test proving diffs are emitted only after PASS. |
+| `src/runtime/*` | REAL | Event bus, scheduler, recorder, replay, public-event filtering, and socket streaming paths exist; unsupported platform pieces are explicit no-ops/errors. |
 | `src/gateway/mod.rs` | REAL | Message routing and response redistribution are wired. |
 | `src/gateway/ws.rs` | REAL | Client tracking and response delivery tested locally. |
 | `src/gateway/telegram.rs` | PARTIAL | Real Telegram long-polling path exists; token-backed E2E not recorded in CI. |
 | `src/gateway/discord.rs` | PARTIAL | Discord gateway path exists; account-backed E2E not recorded in CI. |
 | `src/gateway/slack.rs` | PARTIAL | Slack Socket Mode path exists; account-backed E2E not recorded in CI. |
 | `src/gateway/extra_transports.rs` | EXPERIMENTAL | Some send paths exist; unsupported transports return explicit errors instead of fake success. |
-| `src/console.rs` + `console.html` | REAL | Local WebView HTTP/WebSocket surface tested manually. |
-| `src/tui/*` | PARTIAL | Ratatui cockpit exists with animated brand, swarm lanes, checkpoint/diff/cost panels; needs screenshot regression before “stable”. |
+| `src/console.rs` + `console.html` | REAL | Local WebView HTTP/WebSocket surface plus slash commands, uploads, context meter, compact code cards, cost filtering, approval modal, and typed events are covered by UI tests. |
+| `src/tui/*` | REAL | Ratatui cockpit exists with animated brand, swarm lanes, checkpoint/diff/cost panels, history and agent picker; stability tests cover v0.2/v0.3 contracts. |
 | `src/onboarding/*` | PARTIAL | Setup agent, fallback interactive setup, and migration pieces exist; enterprise IDE integrations are template-level. |
 
 ## Prompt Reconciliation
@@ -58,16 +58,19 @@ The pasted prompt said:
 Current reality:
 
 - Engine exists at `src/engine/mod.rs`, exported by Rust's module directory convention.
-- `cargo check`, `cargo build`, and `cargo test --all-targets` pass locally.
-- The integration suite has grown beyond the original 84-test audit to 95 integration tests, including explicit-cloud-policy routing, blank-theme normalization, non-chat discovery filtering, and concise routing-chain summarization regressions.
+- `cargo check --all-targets`, `cargo build --release`, `cargo build --release --features treesitter`, `cargo test --all-targets`, `cargo clippy --all-targets -- -D warnings`, and `cargo fmt --all -- --check` pass locally.
+- The integration suite now covers routing, fallback wording, blank-theme normalization, non-chat discovery filtering, concise routing-chain summarization, checkpoint rewind, knowledge graph persistence, sandbox policy, browser/computer-use, UI finalisation, provider reasoning continuity, and symbol indexing.
 - CI needed branch correction and now targets `master` and `main`.
 
 ## Current Repair Notes
 
-- `model --list` now awaits model discovery before printing, using either environment variables or credentials stored by `sparrow auth add`.
+- `model --list` awaits model discovery before printing, using either environment variables or credentials stored by `sparrow auth add`.
 - NVIDIA is no longer represented as a single Nemotron entry. The static recommended chain includes `meta/llama-3.1-8b-instruct`, `stepfun-ai/step-3.5-flash`, and `nvidia/nemotron-3-super-120b-a12b`, while live discovery adds the wider chat-capable API catalog and filters embeddings/retrieval/parse/safety-only entries.
 - `sparrow model --set nvidia` can clear an older one-model local config and restore the recommended NVIDIA chain.
-- `--model nvidia:<model>` now keeps the exact requested cloud model first for trivial/small prompts instead of forcing Ollama or another discovered NVIDIA model ahead of it.
+- `--model nvidia:<model>` keeps the exact requested cloud model first for trivial/small prompts instead of forcing Ollama or another discovered NVIDIA model ahead of it.
+- DeepSeek/Qwen/Moonshot-style `reasoning_content` is captured and persisted, but public output suppresses raw `ReasoningDelta` fragments.
+- The daemon config watcher has a regression test proving changed config reloads while unchanged files do not spam reload events.
+- `treesitter` remains opt-in and the release build passes both with and without it.
 
 So the correct action is not to create a competing `src/engine.rs`; it is to document the actual engine signature, keep tests honest, and improve CI/readme trust.
 
@@ -84,11 +87,10 @@ Avoid marking a module complete because a file exists. Mark it complete only whe
 
 ## Remaining Game-Changers To Prove
 
-1. **Release trust:** publish a `v0.1.0-alpha` release with binaries and checksums.
-2. **Screenshots/GIFs:** WebView console, TUI, routing stream, and gateway command.
-3. **Provider matrix:** generate a checked-in configured/available/tested provider table from the registry and discovery cache.
-4. **TUI screenshot regression:** add an automated render/smoke artifact for the Ratatui cockpit.
-5. **Gateway account E2E:** validate Telegram/Discord/Slack with real account tokens before marking them stable.
+1. **Provider matrix:** keep a generated configured/available/tested provider table in sync with the registry and discovery cache.
+2. **Gateway account E2E:** validate Telegram/Discord/Slack with real account tokens before marking those transports stable.
+3. **TUI screenshot regression:** add a pixel/snapshot artifact for the Ratatui cockpit.
+4. **Release trust:** keep signed binaries/checksums attached to every public tag.
 
 Recently proved:
 

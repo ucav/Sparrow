@@ -4176,8 +4176,9 @@ async fn handle_webview(
                         if let Some((b64_part, clean_task)) = rest3.split_once("__ ") {
                             use base64::{Engine as _, engine::general_purpose::STANDARD};
                             let personality = String::from_utf8(
-                                STANDARD.decode(b64_part.as_bytes()).unwrap_or_default()
-                            ).unwrap_or_default();
+                                STANDARD.decode(b64_part.as_bytes()).unwrap_or_default(),
+                            )
+                            .unwrap_or_default();
                             engine = engine.with_identity(Identity {
                                 name: id_part.to_string(),
                                 role: role_part.to_string(),
