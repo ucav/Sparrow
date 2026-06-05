@@ -20,6 +20,9 @@ Thumbs.db
 auth.enc
 config.toml
 !config.example.toml
+
+# Nova — agent personnel (local only)
+agents/nova.*
 state/
 sparrow/
 *.db
