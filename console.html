@@ -566,6 +566,8 @@
   .palette .res.skill .src{background:color-mix(in srgb,var(--gold) 18%,transparent);color:var(--gold)}
   .palette .res.plugin .src{background:color-mix(in srgb,var(--agent) 18%,transparent);color:var(--agent)}
   .palette .res .desc{color:var(--dim);font-size:11px;line-height:1.35;overflow-wrap:anywhere;word-break:break-word}
+  .palette .res .desc b{display:block;color:var(--fg);font-size:11px;font-weight:500;margin-bottom:2px}
+  .palette .res .desc .usage{display:block;color:var(--dimmer);font-size:10px;font-family:var(--mono-font);line-height:1.35}
   @media(max-width:640px){.palette .res{grid-template-columns:1fr auto}.palette .res .desc{grid-column:1/-1}}
   .palette .pfoot{display:flex;gap:14px;padding:8px 16px;border-top:1px solid var(--line);
     font-size:10.5px;color:var(--dimmer);align-items:center}
@@ -1088,13 +1090,13 @@
   <div class="box">
     <div class="pinput">
       <svg width="22" height="22" aria-label="Sparrow"><use href="#sparrow"/></svg>
-      <input type="text" id="paletteInput" placeholder="Type / to filter commands, skills, agents…" autocomplete="off">
+      <input type="text" id="paletteInput" placeholder="Type / to filter commands, skills, agents; Shift+Enter runs…" autocomplete="off">
     </div>
     <div class="res-list" id="paletteResults"></div>
     <div class="pfoot">
       <span><kbd>↑↓</kbd> nav</span>
       <span><kbd>↵</kbd> insert</span>
-      <span><kbd>⇧↵</kbd> insert + run</span>
+      <span><kbd>⇧↵</kbd> run command</span>
       <span style="margin-left:auto"><kbd>esc</kbd> close</span>
     </div>
   </div>
@@ -2103,10 +2105,11 @@ function paletteFilter(q){
     const raw=display.replace(/^\//,'');
     const name=raw.toLowerCase();
     const desc=(c.description||'').toLowerCase();
+    const usage=(c.usage||'').toLowerCase();
     const source=(c.source||'').toLowerCase();
-    if(!norm||name.includes(norm)||desc.includes(norm)||source.includes(norm)){
-      const score=!norm?0:(name.startsWith(norm)?0:name.includes(norm)?1:desc.includes(norm)?2:3);
-      items.push({kind:c.source||'builtin',label:display,desc:c.description||'',insert:display+' ',score});
+    if(!norm||name.includes(norm)||desc.includes(norm)||usage.includes(norm)||source.includes(norm)){
+      const score=!norm?0:(name.startsWith(norm)?0:name.includes(norm)?1:desc.includes(norm)?2:usage.includes(norm)?3:4);
+      items.push({kind:c.source||'builtin',label:display,desc:c.description||'',usage:c.usage||'',insert:display+' ',score});
     }
   });
   // agents as @-mentions
@@ -2114,7 +2117,7 @@ function paletteFilter(q){
     const name=(a.name||'').toLowerCase();
     if(!norm||name.includes(norm)||(a.role||'').toLowerCase().includes(norm)){
       const score=!norm?4:(name.startsWith(norm)?4:name.includes(norm)?5:6);
-      items.push({kind:'agent',label:'@'+(a.name||''),desc:a.description||a.role||'',insert:'@'+(a.name||'')+' ',score});
+      items.push({kind:'agent',label:'@'+(a.name||''),desc:a.description||a.role||'',usage:'Mention this agent in the next task.',insert:'@'+(a.name||'')+' ',score});
     }
   });
   PALETTE_FILTERED=items.sort((a,b)=>(a.score??9)-(b.score??9)||a.label.localeCompare(b.label)).slice(0,40);
@@ -2125,11 +2128,24 @@ function paletteRender(){
   const host=document.getElementById('paletteResults');
   if(!PALETTE_FILTERED.length){host.innerHTML='<div class="pempty">No matches.</div>';return;}
   host.innerHTML=PALETTE_FILTERED.map((it,i)=>{
-    const kindClass=({builtin:'builtin',user:'builtin',project:'builtin',skill:'skill',plugin:'plugin',agent:'plugin'})[it.kind]||'';
-    return `<div class="res ${kindClass} ${i===PALETTE_SEL?'sel':''}" data-i="${i}"><div class="nm">${escHtml(it.label)}</div><div class="src">${escHtml(it.kind)}</div><div class="desc">${escHtml(it.desc)}</div></div>`;
+    const bucket=paletteKindBucket(it.kind);
+    const usage=it.usage?`<span class="usage">${escHtml(it.usage)}</span>`:'';
+    return `<div class="res ${bucket} ${i===PALETTE_SEL?'sel':''}" data-i="${i}"><div class="nm">${escHtml(it.label)}</div><div class="src">${escHtml(paletteSourceLabel(it.kind))}</div><div class="desc"><b>${escHtml(it.desc||'Run Sparrow command')}</b>${usage}</div></div>`;
   }).join('');
   const sel=host.querySelector('.res.sel');
   if(sel)sel.scrollIntoView({block:'nearest'});
+}
+function paletteKindBucket(kind){
+  const k=String(kind||'builtin').split(':')[0];
+  return ({builtin:'builtin',user:'builtin',project:'builtin',skill:'skill',plugin:'plugin',agent:'plugin'})[k]||'';
+}
+function paletteSourceLabel(kind){
+  const text=String(kind||'builtin');
+  if(text.startsWith('project:'))return 'project';
+  if(text.startsWith('user:'))return 'user';
+  if(text.startsWith('skill:'))return 'skill';
+  if(text.startsWith('plugin:'))return 'plugin';
+  return text;
 }
 function paletteAccept(submit){
   const it=PALETTE_FILTERED[PALETTE_SEL];if(!it)return;
@@ -3748,7 +3764,7 @@ async function showCommands(){
     if(!j.ok){showError('Commands failed',j.message,'Reload the WebView or run `sparrow commands` in the terminal.');return;}
     line('<span class="acc">/help</span> <span class="muted">available slash commands</span>');
     (j.commands||[]).forEach(cmd=>{
-      line(`<span class="planner">${esc(cmd.name)}</span> <span class="muted">— ${esc(cmd.description)} · ${esc(cmd.source)}</span>`);
+      line(`<span class="planner">${esc(cmd.name)}</span> <span class="cmd">— ${esc(cmd.description||'Run Sparrow command')}</span> <span class="muted">· ${esc(cmd.usage||'Usage: '+cmd.name)} · ${esc(cmd.source)}</span>`);
     });
   }catch(e){showError('Commands failed',e.message,'Reload the WebView or run `sparrow commands` in the terminal.')}
 }

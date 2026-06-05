@@ -223,6 +223,7 @@ struct PlanResponse {
 struct CommandView {
     name: String,
     description: String,
+    usage: String,
     source: String,
 }
 
@@ -650,6 +651,7 @@ async fn get_commands(
         .map(|cmd| CommandView {
             name: format!("/{}", cmd.name),
             description: cmd.description,
+            usage: cmd.body,
             source: match cmd.source {
                 crate::commands::SlashCommandSource::Builtin => "builtin".into(),
                 crate::commands::SlashCommandSource::Project(path) => {

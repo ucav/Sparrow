@@ -639,6 +639,48 @@ mod tests {
         assert!(results[0].contains("Rust"));
     }
 
+    #[test]
+    fn test_embeddings_have_stable_dimensions_and_scores() {
+        use sparrow::extras::Embeddings;
+
+        let mut emb = Embeddings::with_dimensions(64);
+        emb.add("local model routing with provider fallback");
+        emb.add("visual webview polish and code cards");
+        emb.add("persistent knowledge graph memory");
+
+        assert_eq!(emb.embed("provider routing").len(), 64);
+        assert!(emb.vectors.iter().all(|(_, vector)| vector.len() == 64));
+
+        let results = emb.search_scored("cheap model provider routing", 2);
+        assert_eq!(results.len(), 1);
+        assert!(results[0].0 > 0.0);
+        assert!(results[0].1.contains("model routing"));
+    }
+
+    #[test]
+    fn test_embeddings_persist_and_reload() {
+        use sparrow::extras::Embeddings;
+
+        let temp = std::env::temp_dir().join(format!(
+            "sparrow-embeddings-{}.json",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&temp);
+
+        let mut emb = Embeddings::with_dimensions(96);
+        emb.add_many([
+            "knowledge graph stores long term project facts",
+            "browser automation verifies webview interactions",
+        ]);
+        emb.save_to_path(&temp).unwrap();
+
+        let loaded = Embeddings::load_from_path(&temp).unwrap();
+        assert_eq!(loaded.embed("graph memory").len(), 96);
+        assert!(loaded.search("project knowledge graph", 1)[0].contains("knowledge graph"));
+
+        let _ = std::fs::remove_file(&temp);
+    }
+
     // ─── TaskTier Tests ──────────────────────────────────────────────────────
 
     #[test]

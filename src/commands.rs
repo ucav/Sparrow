@@ -56,6 +56,11 @@ const BUILTINS: &[(&str, &str, &str)] = &[
         "Open agent workflow.",
     ),
     (
+        "agent",
+        "Manage persistent Sparrow agents.",
+        "Usage: /agent <create|list|show|delete|edit|export|import|default|route|doctor|materialize> ...",
+    ),
+    (
         "sessions",
         "List or resume saved sessions.",
         "Open session workflow.",
@@ -120,7 +125,17 @@ const BUILTINS: &[(&str, &str, &str)] = &[
         "Inspect routing preferences and fallbacks.",
         "Usage: /routing",
     ),
+    (
+        "route",
+        "Configure intelligent auto-routing.",
+        "Usage: /route <show|set|reset|prefer|discover>",
+    ),
     ("auth", "Manage provider credentials.", "Usage: /auth list"),
+    (
+        "schedule",
+        "Schedule a periodic Sparrow task.",
+        "Usage: /schedule <task> --cron <expr>",
+    ),
     (
         "github",
         "Run GitHub workflow helpers.",
@@ -142,6 +157,41 @@ const BUILTINS: &[(&str, &str, &str)] = &[
         "Usage: /replay <run-id>",
     ),
     ("mcp", "Manage MCP connectors.", "Usage: /mcp <action>"),
+    (
+        "profile",
+        "Manage Sparrow profiles.",
+        "Usage: /profile <list|show|switch|create|delete> ...",
+    ),
+    (
+        "import",
+        "Import configuration from another agent CLI.",
+        "Usage: /import <openclaw>",
+    ),
+    (
+        "learn",
+        "Open the interactive Sparrow tutorial.",
+        "Usage: /learn",
+    ),
+    (
+        "init",
+        "Initialize .sparrow configuration in this project.",
+        "Usage: /init",
+    ),
+    (
+        "doctor",
+        "Run diagnostics for providers, config, tools, and workspace.",
+        "Usage: /doctor",
+    ),
+    (
+        "update",
+        "Check for a Sparrow self-update.",
+        "Usage: /update",
+    ),
+    (
+        "setup",
+        "Run the first-launch provider and routing setup.",
+        "Usage: /setup",
+    ),
     ("clear", "Clear the WebView transcript.", "Usage: /clear"),
     (
         "reset",
@@ -153,6 +203,26 @@ const BUILTINS: &[(&str, &str, &str)] = &[
         "upload",
         "Attach files to the next message.",
         "Use the paperclip button or drag files into the WebView.",
+    ),
+    (
+        "console",
+        "Launch the WebView console from a terminal.",
+        "Terminal only: `/console` is blocked inside the WebView to avoid nesting.",
+    ),
+    (
+        "tui",
+        "Launch the terminal TUI.",
+        "Terminal only: `/tui` is blocked inside the WebView because it is interactive.",
+    ),
+    (
+        "chat",
+        "Launch interactive multi-turn terminal chat.",
+        "Terminal only: `/chat` is blocked inside the WebView because it is interactive.",
+    ),
+    (
+        "daemon",
+        "Run the headless Sparrow runtime daemon.",
+        "Terminal only: `/daemon` is blocked inside the WebView because it keeps running.",
     ),
 ];
 
@@ -437,5 +507,18 @@ mod tests {
         }]));
         let commands = all_commands(Path::new("."), Path::new("."), Some(&skills));
         assert!(commands.iter().any(|c| c.name == "fix-ci"));
+    }
+
+    #[test]
+    fn webview_catalog_exposes_cli_top_level_commands_with_usage() {
+        let commands = builtin_commands();
+        for name in ["doctor", "setup", "init", "profile", "import", "agent"] {
+            let cmd = commands
+                .iter()
+                .find(|cmd| cmd.name == name)
+                .unwrap_or_else(|| panic!("missing builtin slash command `{name}`"));
+            assert!(!cmd.description.trim().is_empty());
+            assert!(!cmd.body.trim().is_empty());
+        }
     }
 }
