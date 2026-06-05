@@ -7,7 +7,6 @@
 //! The `scan` subcommand performs a one-off scan of staged files (or the
 //! entire working tree) for secrets and sensitive patterns.
 
-use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -213,7 +212,7 @@ fn scan_staged_files(repo_root: &std::path::Path) -> anyhow::Result<()> {
 
 /// Scan all files in a directory recursively.
 fn scan_directory(dir: &std::path::Path) -> anyhow::Result<()> {
-    use std::fs;
+    
 
     let mut issues_found = 0;
     let mut files_scanned = 0;
@@ -275,13 +274,13 @@ fn scan_directory(dir: &std::path::Path) -> anyhow::Result<()> {
 /// Patterns that indicate a potential secret leak.
 static SECRET_PATTERNS: &[(&str, &str)] = &[
     // API keys (generic)
-    (r"(?i)(?:api[_-]?key|api[_-]?secret|apikey)\s*[:=]\s*['\"]?\w{20,}['\"]?", "Clé API en clair"),
-    (r"(?i)(?:secret[_-]?key|secretkey)\s*[:=]\s*['\"]?\w{20,}['\"]?", "Clé secrète en clair"),
-    (r"(?i)(?:access[_-]?key|accesskey)\s*[:=]\s*['\"]?\w{16,}['\"]?", "Clé d'accès en clair"),
+    (r"(?i)(?:api[_-]?key|api[_-]?secret|apikey)\s*[:=]\s*[\x27\x22]?\w{20,}[\x27\x22]?", "Clé API en clair"),
+    (r"(?i)(?:secret[_-]?key|secretkey)\s*[:=]\s*[\x27\x22]?\w{20,}[\x27\x22]?", "Clé secrète en clair"),
+    (r"(?i)(?:access[_-]?key|accesskey)\s*[:=]\s*[\x27\x22]?\w{16,}[\x27\x22]?", "Clé d'accès en clair"),
 
     // AWS
     (r"AKIA[0-9A-Z]{16}", "AWS Access Key ID"),
-    (r"(?i)aws[_-]?secret[_-]?access[_-]?key\s*[:=]\s*['\"]?[0-9a-zA-Z/+]{40}['\"]?", "AWS Secret Key"),
+    (r"(?i)aws[_-]?secret[_-]?access[_-]?key\s*[:=]\s*[\x27\x22]?[0-9a-zA-Z/+]{40}[\x27\x22]?", "AWS Secret Key"),
 
     // GitHub
     (r"ghp_[0-9a-zA-Z]{36}", "GitHub Personal Access Token"),
@@ -296,8 +295,8 @@ static SECRET_PATTERNS: &[(&str, &str)] = &[
     (r"sk-ant-[0-9a-zA-Z]{32,}", "Anthropic API Key"),
 
     // Generic token patterns
-    (r"(?i)(?:password|passwd|pwd)\s*[:=]\s*['\"]?\S{4,}['\"]?", "Mot de passe en clair"),
-    (r"(?i)(?:token|auth[_-]?token)\s*[:=]\s*['\"]?\S{20,}['\"]?", "Token en clair"),
+    (r"(?i)(?:password|passwd|pwd)\s*[:=]\s*[\x27\x22]?\S{4,}[\x27\x22]?", "Mot de passe en clair"),
+    (r"(?i)(?:token|auth[_-]?token)\s*[:=]\s*[\x27\x22]?\S{20,}[\x27\x22]?", "Token en clair"),
 
     // Private keys
     (r"-----BEGIN (?:RSA|DSA|EC|OPENSSH|PGP) PRIVATE KEY-----", "Clé privée"),

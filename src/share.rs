@@ -4,7 +4,6 @@
 //! as a clean Markdown gist, and uploads it to GitHub Gist using either the
 //! `gh` CLI or a direct API call. Returns the shareable URL.
 
-use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::Command;
 

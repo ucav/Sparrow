@@ -109,7 +109,7 @@ fn humanize_unauthorized(provider_label: &str) -> String {
             "https://aistudio.google.com/app/apikey",
             " (gratuit jusqu'à 1500 requêtes/jour)",
         ),
-        "groq" | "groq" => (
+        "groq" => (
             "https://console.groq.com/keys",
             " (gratuit — généreux tier gratuit)",
         ),
