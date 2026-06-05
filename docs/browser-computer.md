@@ -21,6 +21,12 @@ npm install
 npm run browser:install
 ```
 
+When Sparrow is launched from a different working directory, set
+`SPARROW_PLAYWRIGHT_ROOT` to the directory containing the Playwright
+`node_modules` installation. The embedded driver is written to the OS temp
+directory, but it resolves `playwright` from `SPARROW_PLAYWRIGHT_ROOT` first and
+then from the current workspace.
+
 The tool returns an honest error if Node.js, the `playwright` package, or the
 Chromium browser is missing.
 
