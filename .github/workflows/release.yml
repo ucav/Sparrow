@@ -4,6 +4,9 @@ on:
   push:
     tags: ['v*']
 
+permissions:
+  contents: write
+
 env:
   CARGO_TERM_COLOR: always
 
@@ -34,9 +37,14 @@ jobs:
         shell: bash
         run: |
           cd target/${{ matrix.target }}/release
-          for f in sparrow sparrow.exe; do
-            [ -f "$f" ] && mv "$f" "${{ matrix.artifact }}${f##sparrow}" || true
-          done
+          if [ -f sparrow.exe ]; then
+            mv sparrow.exe "${{ matrix.artifact }}"
+          elif [ -f sparrow ]; then
+            mv sparrow "${{ matrix.artifact }}"
+          else
+            echo "sparrow binary not found" >&2
+            exit 1
+          fi
       - name: Generate checksums
         shell: bash
         run: |

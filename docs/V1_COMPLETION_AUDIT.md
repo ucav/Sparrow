@@ -21,7 +21,7 @@ This file tracks the current evidence for the user-facing V1 goal. It is not a v
 | Browser/computer-use works | Pass | `tests/browser_computer_e2e.rs` proves real Playwright screenshot plus click/type on a local page. |
 | Gateway WebSocket works | Pass | `gateway start` exposes `ws://127.0.0.1:9338`; `/status` returns ACK then `Engine: online`. |
 | TUI launches | Pass | Stability/UI tests cover v0.2/v0.3 contracts, theme lookup, cockpit controls, and agent picker behavior. |
-| Release workflow readiness | Pass | README/status target v0.3.5, release workflow/build metadata, and both local release builds are green; the final pushed commit can be tagged through the normal release workflow. |
+| Release workflow readiness | Pass | README/status target v0.3.6, release workflow/build metadata, and both local release builds are green; the final pushed commit can be tagged through the normal release workflow. |
 | Visual screenshots/GIFs exist | Pass | README references checked-in WebView screenshot assets and docs include tutorial videos. |
 | Account-backed gateways are proven | Partial | WebSocket is locally proven; Telegram, Discord, and Slack need real token-backed E2E validation. |
 
