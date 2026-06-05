@@ -55,6 +55,8 @@ tree-sitter-javascript = { version = "0.23", optional = true }
 axum = { version = "0.7", features = ["ws", "multipart"] }
 tower = "0.5"
 rpassword = "7"
+dialoguer = "0.11"
+walkdir = "2"
 lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "smtp-transport", "builder"], optional = true }
 imap = { version = "2", optional = true }
 native-tls = { version = "0.2", optional = true }
