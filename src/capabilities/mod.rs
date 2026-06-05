@@ -323,7 +323,7 @@ impl SkillLibrary for FsSkillLibrary {
 
     fn add(&self, skill: Skill) -> anyhow::Result<()> {
         // Create a directory for the skill
-        let skill_dir = self.skills_dir.join(&skill.name);
+        let skill_dir = self.skills_dir.join(safe_skill_dir_name(&skill.name)?);
         std::fs::create_dir_all(&skill_dir)?;
 
         let skill_file = skill_dir.join("SKILL.md");
@@ -358,7 +358,7 @@ impl SkillLibrary for FsSkillLibrary {
 
         for skill in &skills {
             if skill.score < min_score && skill.auto_generated {
-                let skill_dir = self.skills_dir.join(&skill.name);
+                let skill_dir = self.skills_dir.join(safe_skill_dir_name(&skill.name)?);
                 if skill_dir.exists() {
                     std::fs::remove_dir_all(&skill_dir)?;
                     removed += 1;
@@ -385,10 +385,9 @@ impl SkillLibrary for FsSkillLibrary {
         let load_files = |files: &[String]| -> Vec<(String, String)> {
             let mut loaded = Vec::new();
             for f in files {
-                let candidate = base.join(f);
-                if !candidate.starts_with(&base) || !candidate.exists() {
+                let Ok(candidate) = safe_relative_path(&base, f) else {
                     continue;
-                }
+                };
                 if let Ok(content) = std::fs::read_to_string(&candidate) {
                     loaded.push((f.clone(), content));
                 }
@@ -406,13 +405,46 @@ impl SkillLibrary for FsSkillLibrary {
 
     fn remove(&self, name: &str) -> anyhow::Result<bool> {
         // Skills live under a directory equal to their name. Remove it.
-        let skill_dir = self.skills_dir.join(name);
+        let skill_dir = self.skills_dir.join(safe_skill_dir_name(name)?);
         let existed = skill_dir.exists();
         if existed {
             std::fs::remove_dir_all(&skill_dir)?;
         }
         Ok(existed)
     }
+}
+
+fn safe_skill_dir_name(name: &str) -> anyhow::Result<String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty()
+        || trimmed.contains("..")
+        || trimmed.contains('/')
+        || trimmed.contains('\\')
+        || trimmed.contains(':')
+    {
+        anyhow::bail!("invalid skill name '{}'", name);
+    }
+    Ok(trimmed.to_string())
+}
+
+fn safe_relative_path(base: &Path, relative: &str) -> anyhow::Result<PathBuf> {
+    let rel = Path::new(relative);
+    if rel.is_absolute()
+        || rel
+            .components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+    {
+        anyhow::bail!("skill reference escapes skill directory: {}", relative);
+    }
+    let candidate = base.join(rel);
+    let canonical_base = base.canonicalize().unwrap_or_else(|_| base.to_path_buf());
+    let canonical_candidate = candidate
+        .canonicalize()
+        .unwrap_or_else(|_| candidate.to_path_buf());
+    if !canonical_candidate.starts_with(&canonical_base) || !canonical_candidate.exists() {
+        anyhow::bail!("skill reference outside base or missing: {}", relative);
+    }
+    Ok(canonical_candidate)
 }
 
 // ─── Curator: self-improvement loop ─────────────────────────────────────────────
@@ -507,19 +539,12 @@ impl Curator {
             merged.truncate(self.max_skills);
         }
 
-        // 4. Write back updated skills
-        // Clear directory first
-        if skills_dir.exists() {
-            for entry in std::fs::read_dir(skills_dir)? {
-                let entry = entry?;
-                if entry.path().is_dir() {
-                    std::fs::remove_dir_all(entry.path())?;
-                }
-            }
-        }
-
+        // 4. Write back updated SKILL.md files without deleting references,
+        // templates, scripts or assets stored beside them.
         for skill in &merged {
-            library.add(skill.clone())?;
+            let skill_dir = skills_dir.join(safe_skill_dir_name(&skill.name)?);
+            std::fs::create_dir_all(&skill_dir)?;
+            std::fs::write(skill_dir.join("SKILL.md"), skill.to_markdown())?;
         }
 
         tracing::info!(
@@ -685,5 +710,99 @@ fn skill_triggers_for_pattern(name: &str) -> Vec<String> {
 impl Default for Curator {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "sparrow-tier2-{name}-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    #[test]
+    fn skill_invocation_rejects_parent_dir_references() {
+        let root = temp_dir("skill-ref-escape");
+        std::fs::create_dir_all(root.join("review").join("references")).unwrap();
+        std::fs::write(
+            root.join("review").join("SKILL.md"),
+            "# Skill: review\n\n**Trigger:** review\n\n**References:** ../secret.txt, references/checklist.md\n\n## Body\nReview carefully.",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("review").join("references").join("checklist.md"),
+            "ok",
+        )
+        .unwrap();
+        std::fs::write(root.join("secret.txt"), "nope").unwrap();
+
+        let lib = FsSkillLibrary::new(root.clone());
+        let invocation = lib.invoke("review").unwrap().expect("skill should exist");
+
+        assert_eq!(invocation.loaded_references.len(), 1);
+        assert_eq!(invocation.loaded_references[0].0, "references/checklist.md");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn curator_preserves_skill_assets_and_updates_skill_md_only() {
+        let root = temp_dir("curator-assets");
+        let skill_dir = root.join("refactor-safely");
+        std::fs::create_dir_all(skill_dir.join("references")).unwrap();
+        std::fs::write(skill_dir.join("references").join("checklist.md"), "keep me").unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "# Skill: refactor-safely\n\n**Trigger:** refactor, rename\n\n**References:** references/checklist.md\n\n## Body\nMove in small steps.",
+        )
+        .unwrap();
+
+        Curator::new().curate(&root).unwrap();
+
+        assert!(
+            skill_dir.join("references").join("checklist.md").exists(),
+            "curator must not delete progressive-disclosure assets"
+        );
+        let lib = FsSkillLibrary::new(root.clone());
+        let invocation = lib
+            .invoke("refactor-safely")
+            .unwrap()
+            .expect("skill should remain");
+        assert_eq!(invocation.loaded_references[0].1, "keep me");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn skill_names_cannot_escape_skill_root() {
+        let root = temp_dir("skill-name-escape");
+        let lib = FsSkillLibrary::new(root.clone());
+        let skill = Skill {
+            name: "../outside".into(),
+            description: "bad".into(),
+            trigger: vec!["bad".into()],
+            body: "bad".into(),
+            source_file: String::new(),
+            usage_count: 0,
+            created_at: String::new(),
+            score: 0.5,
+            auto_generated: false,
+            references: Vec::new(),
+            templates: Vec::new(),
+            scripts: Vec::new(),
+            assets: Vec::new(),
+        };
+
+        assert!(lib.add(skill).is_err());
+        assert!(!root.join("..").join("outside").exists());
+
+        let _ = std::fs::remove_dir_all(root);
     }
 }

@@ -60,6 +60,9 @@ classify task → route model → assemble context
 Key invariants:
 
 - `permissions.deny` wins over `allow` and overrides autonomy.
+- Autonomy returns a rich verdict, not just yes/no: `decision`,
+  `needs_checkpoint`, `notify`, and `reason`. Trusted mutating/exec actions
+  therefore surface a notification and checkpoint intent before execution.
 - Every `Mutating`/`Exec`/`Destructive` tool triggers a checkpoint AND fires
   `HookEvent::PreCheckpoint`/`PostCheckpoint`.
 - A `Mutating` tool also flips `had_mutation`, which schedules the
@@ -105,6 +108,10 @@ invisible-Unicode, and prompt-injection phrases like
 
 - `MEMORY.md` / `USER.md` accumulate durable facts.
 - `~/.config/sparrow/skills/` collects learned skills (curator loop).
+- Skills use progressive disclosure: relevant matching loads only `SKILL.md`,
+  while explicit invocation can load declared references, templates, scripts and
+  assets. These paths are restricted to the skill folder, and curator rewrites
+  `SKILL.md` without deleting those companion files.
 - `~/.config/sparrow/plugins/` holds installed plugins.
 - `~/.config/sparrow/agents/` holds `.soul.toml` and `.agent.md` agents.
 - `<state>/sparrow/transcripts/` records every run for replay.

@@ -47,17 +47,62 @@ impl AutonomyContract {
     }
 
     pub fn decide(&self, action: &ProposedAction) -> Decision {
+        self.evaluate(action).decision
+    }
+
+    pub fn evaluate(&self, action: &ProposedAction) -> AutonomyVerdict {
         // Check hard stops first
         for stop in &self.stops {
             match stop {
                 HardStop::RiskLevel(rl) if action.risk == *rl => {
-                    return Decision::Deny;
+                    return AutonomyVerdict::new(
+                        Decision::Deny,
+                        false,
+                        false,
+                        format!("hard stop blocks {:?} actions", action.risk),
+                    );
                 }
                 _ => {}
             }
         }
-        // Delegate to approval policy
-        self.approve.decide(action)
+        let decision = self.approve.decide(action);
+        let needs_checkpoint = matches!(
+            action.risk,
+            RiskLevel::Mutating | RiskLevel::Exec | RiskLevel::Destructive
+        ) && matches!(decision, Decision::Allow | Decision::AskUser);
+        let notify = matches!(self.level, AutonomyLevel::Trusted)
+            && matches!(decision, Decision::Allow)
+            && matches!(action.risk, RiskLevel::Mutating | RiskLevel::Exec);
+        AutonomyVerdict::new(
+            decision,
+            needs_checkpoint,
+            notify,
+            format!("{:?} policy for tool '{}'", self.level, action.tool_name),
+        )
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AutonomyVerdict {
+    pub decision: Decision,
+    pub needs_checkpoint: bool,
+    pub notify: bool,
+    pub reason: String,
+}
+
+impl AutonomyVerdict {
+    fn new(
+        decision: Decision,
+        needs_checkpoint: bool,
+        notify: bool,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self {
+            decision,
+            needs_checkpoint,
+            notify,
+            reason: reason.into(),
+        }
     }
 }
 
@@ -333,5 +378,48 @@ impl Checkpoints for GitCheckpoints {
                 .status();
         }
         Ok(count)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn action(risk: RiskLevel) -> ProposedAction {
+        ProposedAction {
+            tool_name: "edit".into(),
+            risk,
+            args: serde_json::json!({}),
+        }
+    }
+
+    #[test]
+    fn trusted_mutating_verdict_requires_checkpoint_and_notify() {
+        let verdict = AutonomyContract::trusted().evaluate(&action(RiskLevel::Mutating));
+        assert_eq!(verdict.decision, Decision::Allow);
+        assert!(verdict.needs_checkpoint);
+        assert!(verdict.notify);
+    }
+
+    #[test]
+    fn supervised_readonly_verdict_needs_no_checkpoint() {
+        let verdict = AutonomyContract::supervised().evaluate(&action(RiskLevel::ReadOnly));
+        assert_eq!(verdict.decision, Decision::Allow);
+        assert!(!verdict.needs_checkpoint);
+        assert!(!verdict.notify);
+    }
+
+    #[test]
+    fn hard_stop_verdict_denies_without_checkpoint() {
+        let mut contract = AutonomyContract::autonomous();
+        contract
+            .stops
+            .push(HardStop::RiskLevel(RiskLevel::Destructive));
+
+        let verdict = contract.evaluate(&action(RiskLevel::Destructive));
+        assert_eq!(verdict.decision, Decision::Deny);
+        assert!(!verdict.needs_checkpoint);
+        assert!(!verdict.notify);
+        assert!(verdict.reason.contains("hard stop"));
     }
 }

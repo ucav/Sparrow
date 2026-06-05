@@ -200,10 +200,14 @@ impl FsAgentStore {
     }
 
     fn soul_path(&self, name: &str) -> PathBuf {
-        self.agents_dir.join(format!("{}.soul.toml", name))
+        self.agents_dir.join(format!(
+            "{}.soul.toml",
+            safe_agent_name(name).unwrap_or("invalid")
+        ))
     }
 
     fn find_agent_path(&self, name: &str) -> Option<PathBuf> {
+        let name = safe_agent_name(name).ok()?;
         let toml_path = self.soul_path(name);
         if toml_path.exists() {
             return Some(toml_path);
@@ -219,6 +223,7 @@ impl FsAgentStore {
 impl AgentStore for FsAgentStore {
     fn create(&self, soul: &Soul) -> anyhow::Result<()> {
         std::fs::create_dir_all(&self.agents_dir)?;
+        safe_agent_name(&soul.name)?;
         let path = self.soul_path(&soul.name);
         if path.exists() {
             anyhow::bail!(
@@ -256,6 +261,8 @@ impl AgentStore for FsAgentStore {
     }
 
     fn update(&self, name: &str, soul: &Soul) -> anyhow::Result<()> {
+        safe_agent_name(name)?;
+        safe_agent_name(&soul.name)?;
         let path = self
             .find_agent_path(name)
             .ok_or_else(|| anyhow::anyhow!("Agent '{}' not found.", name))?;
@@ -283,6 +290,19 @@ fn read_soul_file(path: &std::path::Path) -> Option<Soul> {
         Some("md") => Soul::from_markdown_frontmatter(&content).ok(),
         _ => None,
     }
+}
+
+fn safe_agent_name(name: &str) -> anyhow::Result<&str> {
+    let trimmed = name.trim();
+    if trimmed.is_empty()
+        || trimmed.contains("..")
+        || trimmed.contains('/')
+        || trimmed.contains('\\')
+        || trimmed.contains(':')
+    {
+        anyhow::bail!("invalid agent name '{}'", name);
+    }
+    Ok(trimmed)
 }
 
 #[cfg(test)]
@@ -368,6 +388,27 @@ Review every claim against evidence.
 
         store.remove("scout").unwrap();
         assert!(store.get("scout").is_none());
+
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn fs_agent_store_rejects_path_traversal_names() {
+        let dir = std::env::temp_dir().join(format!(
+            "sparrow-agent-escape-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let store = FsAgentStore::new(dir.clone());
+        let soul = Soul {
+            name: "../outside".into(),
+            ..Soul::default()
+        };
+
+        assert!(store.create(&soul).is_err());
+        assert!(store.get("../outside").is_none());
 
         let _ = std::fs::remove_dir_all(dir);
     }

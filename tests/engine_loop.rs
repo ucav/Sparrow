@@ -210,6 +210,11 @@ async fn checkpoint_is_created_before_mutating_edit_tool_runs() {
         .position(|event| matches!(event, Event::ToolUseStarted { id, .. } if id == "edit-1"))
         .expect("edit tool should start");
     assert!(checkpoint_index < tool_started_index);
+    assert!(events.iter().any(|event| matches!(
+        event,
+        Event::Message { role, text, .. }
+            if role == "autonomy" && text.contains("trusted autonomy")
+    )));
 
     let _ = std::fs::remove_dir_all(workspace);
 }
