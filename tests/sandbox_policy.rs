@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+#[cfg(not(target_os = "linux"))]
+use sparrow::sandbox::HardenedSandbox;
 use sparrow::sandbox::backends::{
     DaytonaSandbox, ModalSandbox, SingularitySandbox, VercelSandbox, WorktreeSandbox,
 };
 use sparrow::sandbox::{
     Command, FsNetPolicy, Limits, LocalSandbox, Sandbox, default_denied_paths, path_is_denied,
 };
-#[cfg(not(target_os = "linux"))]
-use sparrow::sandbox::HardenedSandbox;
 
 fn limits() -> Limits {
     Limits {
