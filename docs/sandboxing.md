@@ -14,6 +14,10 @@
 | `vercel-sandbox` | Ephemeral serverless sandbox |
 | `worktree` | Dedicated `git worktree` so mutations land on an isolated branch (`WorktreeSandbox::create`) |
 
+`local-hardened` is only available on Linux. On Windows and macOS it returns
+`exit_code = 127` with a clear stderr instead of pretending the hardened sandbox
+was applied.
+
 ## Filesystem/Network Policy
 
 ```rust
@@ -54,5 +58,6 @@ Construction fails clearly when `repo_root` is not a git repository.
 - Workdir outside `root` → rejected with an error
 - Argument referencing a protected path (`.git/config`) → rejected
 - Env allowlist actually filters the child environment
+- Non-Linux `local-hardened` reports an honest unsupported-platform failure
 - Modal/Daytona/Vercel/Singularity return honest errors when their CLI is absent
 - `WorktreeSandbox::create` on a non-git directory fails with a clear message

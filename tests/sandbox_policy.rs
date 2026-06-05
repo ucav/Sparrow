@@ -5,7 +5,8 @@ use sparrow::sandbox::backends::{
     DaytonaSandbox, ModalSandbox, SingularitySandbox, VercelSandbox, WorktreeSandbox,
 };
 use sparrow::sandbox::{
-    Command, FsNetPolicy, Limits, LocalSandbox, Sandbox, default_denied_paths, path_is_denied,
+    Command, FsNetPolicy, HardenedSandbox, Limits, LocalSandbox, Sandbox, default_denied_paths,
+    path_is_denied,
 };
 
 fn limits() -> Limits {
@@ -194,4 +195,32 @@ fn worktree_sandbox_rejects_non_git_root() {
         Err(e) => e.to_string(),
     };
     assert!(err.contains("git repo"), "error must explain why: {}", err);
+}
+
+#[cfg(not(target_os = "linux"))]
+#[tokio::test]
+async fn hardened_sandbox_non_linux_reports_honest_failure() {
+    let tmp = tempfile::tempdir().expect("tmp");
+    let root = tmp.path().to_path_buf();
+    let sandbox = HardenedSandbox::new(root.clone());
+    let cmd = Command {
+        program: if cfg!(windows) {
+            "cmd".into()
+        } else {
+            "true".into()
+        },
+        args: vec![],
+        env: HashMap::new(),
+        workdir: root,
+    };
+    let res = sandbox.exec(&cmd, &limits()).await.expect("exec result");
+    assert_eq!(
+        res.exit_code, 127,
+        "unsupported hardened sandbox must not report success"
+    );
+    assert!(
+        res.stderr.contains("requires Linux"),
+        "stderr must explain unsupported platform, got {:?}",
+        res.stderr
+    );
 }
