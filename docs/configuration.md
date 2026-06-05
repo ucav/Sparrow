@@ -58,3 +58,18 @@ curator_cron = "0 */6 * * *"
 | `OPENAI_API_KEY` | OpenAI credential |
 | `NVIDIA_API_KEY` | NVIDIA credential |
 | `OLLAMA_HOST` | Ollama base URL |
+
+## Credentials
+
+Credentials are resolved per provider, not all-or-nothing:
+
+1. OS keychain when the optional keyring backend is available.
+2. Local encrypted file fallback in the Sparrow config directory.
+3. Environment variables such as `NVIDIA_API_KEY`, `OPENAI_API_KEY`, and
+   `ANTHROPIC_API_KEY`.
+
+The file fallback writes `auth.enc` as a ChaCha20-Poly1305 envelope and stores a
+32-byte data key in `auth.key`. Both files use restrictive permissions where the
+platform supports them. Older plain JSON and legacy XOR auth files are still
+read for migration and are rewritten as encrypted envelopes on the next
+credential save.
