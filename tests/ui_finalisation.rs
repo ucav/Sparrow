@@ -198,6 +198,14 @@ fn console_html_has_slash_palette_and_agent_picker() {
         html.contains("loadCommandsCache") && html.contains("loadAgentsCache"),
         "both /commands and /agents must be pre-fetched on connect"
     );
+    assert!(
+        html.contains("cmd.usage") && html.contains("paletteSourceLabel"),
+        "slash palette and /help must render command usage plus readable sources"
+    );
+    assert!(
+        html.contains("runWebviewCliCommand") && html.contains("fetch('/cli'"),
+        "unknown slash commands must be executable through the WebView CLI bridge"
+    );
 }
 
 #[test]
@@ -433,7 +441,7 @@ async fn webview_app_builds_with_phase13_routes() {
 
     let addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
     let (tx, _rx) = broadcast::channel(16);
-    let server = sparrow::console::WebViewServer::new(addr, tx, None, None, None, None, None);
+    let server = sparrow::console::WebViewServer::new(addr, tx, None, None, None, None, None, None);
     // Just verify the constructor accepts the expected shape — actually
     // binding requires a tokio TcpListener which we skip to keep the test
     // hermetic and fast on all platforms.

@@ -120,54 +120,185 @@ impl Distiller {
     }
 }
 
-// ─── Embeddings stub ────────────────────────────────────────────────────────────
+// ─── Lightweight deterministic embeddings ──────────────────────────────────────
 
 /// Lightweight semantic embeddings for repo memory.
 /// §3.8: "optional embeddings (per project)"
+#[derive(Debug, Clone)]
 pub struct Embeddings {
-    /// Simple TF-IDF-like word frequency vectors
+    /// Stored text + normalized hashing-vector embedding.
     pub vectors: Vec<(String, Vec<f64>)>,
+    dimensions: usize,
 }
 
 impl Embeddings {
+    pub const DEFAULT_DIMENSIONS: usize = 512;
+
     pub fn new() -> Self {
         Self {
             vectors: Vec::new(),
+            dimensions: Self::DEFAULT_DIMENSIONS,
         }
     }
 
-    /// Build a simple embedding from text (bag-of-words normalized)
+    pub fn with_dimensions(dimensions: usize) -> Self {
+        Self {
+            vectors: Vec::new(),
+            dimensions: dimensions.max(16),
+        }
+    }
+
+    /// Build a deterministic hashing-vector embedding from text.
+    ///
+    /// This is intentionally local-first: no model/API key required, fixed
+    /// dimensions across documents, stable across sessions, and good enough for
+    /// lexical semantic recall in memory. It uses signed feature hashing with
+    /// unigram + adjacent bigram features, sublinear term frequency, and L2
+    /// normalization.
     pub fn embed(&self, text: &str) -> Vec<f64> {
-        let words: Vec<&str> = text.split_whitespace().collect();
-        let mut freq = std::collections::HashMap::new();
-        for w in &words {
-            *freq.entry(w.to_lowercase()).or_insert(0.0) += 1.0;
+        embed_with_dimensions(text, self.dimensions)
+    }
+
+    pub fn add(&mut self, text: &str) {
+        let clean = text.trim();
+        if clean.is_empty() {
+            return;
         }
-        let norm = (freq.values().map(|v| v * v).sum::<f64>()).sqrt();
-        if norm > 0.0 {
-            freq.values_mut().for_each(|v| *v /= norm);
+        self.vectors.push((clean.to_string(), self.embed(clean)));
+    }
+
+    pub fn add_many<I, S>(&mut self, texts: I)
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        for text in texts {
+            self.add(text.as_ref());
         }
-        freq.into_values().collect()
     }
 
     /// Find the most similar stored text to the query
     pub fn search(&self, query: &str, k: usize) -> Vec<String> {
-        let q_embed = self.embed(query);
-        let mut scored: Vec<(f64, &str)> = self
-            .vectors
-            .iter()
-            .map(|(text, emb)| (cosine_sim(&q_embed, emb), text.as_str()))
-            .collect();
-        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-        scored
+        self.search_scored(query, k)
             .into_iter()
-            .take(k)
-            .map(|(_, t)| t.to_string())
+            .map(|(_, text)| text)
             .collect()
     }
 
-    pub fn add(&mut self, text: &str) {
-        self.vectors.push((text.to_string(), self.embed(text)));
+    pub fn search_scored(&self, query: &str, k: usize) -> Vec<(f64, String)> {
+        if k == 0 {
+            return Vec::new();
+        }
+        let q_embed = self.embed(query);
+        let mut scored: Vec<(f64, usize, &str)> = self
+            .vectors
+            .iter()
+            .enumerate()
+            .map(|(idx, (text, emb))| (cosine_sim(&q_embed, emb), idx, text.as_str()))
+            .collect();
+        scored.sort_by(|a, b| {
+            b.0.partial_cmp(&a.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(a.1.cmp(&b.1))
+        });
+        scored
+            .into_iter()
+            .take(k)
+            .filter(|(score, _, _)| *score > 0.0)
+            .map(|(score, _, text)| (score, text.to_string()))
+            .collect()
+    }
+
+    pub fn save_to_path(&self, path: impl AsRef<std::path::Path>) -> anyhow::Result<()> {
+        let snapshot = EmbeddingsSnapshot {
+            dimensions: self.dimensions,
+            texts: self.vectors.iter().map(|(text, _)| text.clone()).collect(),
+        };
+        let json = serde_json::to_string_pretty(&snapshot)?;
+        if let Some(parent) = path.as_ref().parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(path, json)?;
+        Ok(())
+    }
+
+    pub fn load_from_path(path: impl AsRef<std::path::Path>) -> anyhow::Result<Self> {
+        let json = std::fs::read_to_string(path)?;
+        let snapshot: EmbeddingsSnapshot = serde_json::from_str(&json)?;
+        let mut index = Self::with_dimensions(snapshot.dimensions);
+        index.add_many(snapshot.texts);
+        Ok(index)
+    }
+}
+
+impl Default for Embeddings {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct EmbeddingsSnapshot {
+    dimensions: usize,
+    texts: Vec<String>,
+}
+
+fn embed_with_dimensions(text: &str, dimensions: usize) -> Vec<f64> {
+    let mut vector = vec![0.0; dimensions.max(16)];
+    let tokens = tokenize(text);
+    for token in &tokens {
+        add_feature(&mut vector, token, 1.0);
+    }
+    for pair in tokens.windows(2) {
+        add_feature(&mut vector, &format!("{}__{}", pair[0], pair[1]), 1.35);
+    }
+    for value in &mut vector {
+        if *value != 0.0 {
+            *value = value.signum() * value.abs().ln_1p();
+        }
+    }
+    normalize(&mut vector);
+    vector
+}
+
+fn tokenize(text: &str) -> Vec<String> {
+    let mut tokens = Vec::new();
+    let mut current = String::new();
+    for ch in text.chars() {
+        if ch.is_alphanumeric() {
+            current.extend(ch.to_lowercase());
+        } else if !current.is_empty() {
+            tokens.push(std::mem::take(&mut current));
+        }
+    }
+    if !current.is_empty() {
+        tokens.push(current);
+    }
+    tokens
+}
+
+fn add_feature(vector: &mut [f64], feature: &str, weight: f64) {
+    let hash = fnv1a64(feature.as_bytes());
+    let idx = (hash as usize) % vector.len();
+    let sign = if hash & (1 << 63) == 0 { 1.0 } else { -1.0 };
+    vector[idx] += sign * weight;
+}
+
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf29ce484222325u64;
+    for byte in bytes {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
+}
+
+fn normalize(vector: &mut [f64]) {
+    let norm = vector.iter().map(|v| v * v).sum::<f64>().sqrt();
+    if norm > 0.0 {
+        for value in vector {
+            *value /= norm;
+        }
     }
 }
 

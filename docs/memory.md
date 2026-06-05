@@ -7,7 +7,9 @@ Sparrow has four memory tiers, all persisted in SQLite.
 - File tree + symbol index for the workspace
 - Scanned on demand, cached to disk
 - Symbols extracted for Rust, TypeScript, Python, Go
-- Optional: embeddings for semantic search
+- Optional: deterministic local embeddings for semantic search. `extras::Embeddings`
+  uses fixed-size hashing vectors, can be saved to/reloaded from JSON, and does
+  not require an external embedding provider.
 
 ## Identity Memory
 
