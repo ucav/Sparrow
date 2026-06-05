@@ -1,7 +1,36 @@
-import { chromium } from "playwright";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+function requireFrom(baseDir) {
+  return createRequire(path.join(baseDir, "sparrow-playwright-runtime.cjs"));
+}
+
+function loadPlaywright() {
+  const roots = [
+    process.env.SPARROW_PLAYWRIGHT_ROOT,
+    process.cwd(),
+    __dirname,
+  ].filter(Boolean);
+  const tried = [];
+  for (const root of roots) {
+    const base = path.resolve(root);
+    tried.push(base);
+    try {
+      return requireFrom(base)("playwright");
+    } catch {
+      // Try the next candidate. The final error includes all attempted roots.
+    }
+  }
+  fail(
+    "Playwright package not found",
+    `Install runtime with \`npm install\` in the Sparrow checkout, or set SPARROW_PLAYWRIGHT_ROOT. Tried: ${tried.join(", ")}`
+  );
+}
 
 function fail(message, detail) {
   const payload = { ok: false, error: message };
@@ -18,6 +47,7 @@ function requireString(value, name) {
 }
 
 async function main() {
+  const { chromium } = loadPlaywright();
   let request;
   try {
     request = JSON.parse(readFileSync(0, "utf8") || "{}");

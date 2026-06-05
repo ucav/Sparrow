@@ -14,7 +14,9 @@ const PLAYWRIGHT_DRIVER: &str = include_str!("../../scripts/playwright-driver.mj
 /// The driver is embedded into the binary and materialized into a temporary
 /// `.mjs` file per call, so installed Sparrow binaries do not depend on a repo
 /// checkout. The host must provide Node.js plus the `playwright` package and a
-/// Chromium browser (`npm install && npx playwright install chromium`).
+/// Chromium browser (`npm install && npx playwright install chromium`). The
+/// driver resolves Playwright from the workspace root even though the embedded
+/// script itself is materialized in the OS temp directory.
 pub struct BrowserTool;
 
 #[async_trait]
@@ -351,5 +353,13 @@ mod tests {
         assert!(schema["properties"].get("y").is_some());
         assert!(schema["properties"].get("session_id").is_some());
         assert!(schema["properties"].get("key").is_some());
+    }
+
+    #[test]
+    fn embedded_driver_resolves_playwright_from_workspace() {
+        assert!(PLAYWRIGHT_DRIVER.contains("createRequire"));
+        assert!(PLAYWRIGHT_DRIVER.contains("process.cwd()"));
+        assert!(PLAYWRIGHT_DRIVER.contains("SPARROW_PLAYWRIGHT_ROOT"));
+        assert!(!PLAYWRIGHT_DRIVER.contains("from \"playwright\""));
     }
 }
