@@ -148,9 +148,9 @@ impl HardenedSandbox {
 impl Sandbox for HardenedSandbox {
     async fn exec(&self, _cmd: &Command, _limits: &Limits) -> anyhow::Result<ExecResult> {
         Ok(ExecResult {
-            stdout: "Hardened sandbox requires Linux (firejail/bwrap/unshare)".into(),
-            stderr: String::new(),
-            exit_code: 0,
+            stdout: String::new(),
+            stderr: "local-hardened sandbox requires Linux (firejail/bwrap/unshare)".into(),
+            exit_code: 127,
         })
     }
 
