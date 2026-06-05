@@ -243,6 +243,8 @@
     radial-gradient(circle at 50% 50%,rgba(242,169,60,.22),transparent 34%),
     linear-gradient(135deg,#1d1710,#0a0805);display:flex;align-items:center;justify-content:center;margin-bottom:12px}
   .video-thumb .play{width:46px;height:46px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,var(--amber),var(--coral));color:var(--ink);font-weight:900}
+  .video-card video{width:100%;aspect-ratio:16/9;border-radius:10px;border:1px solid var(--line);background:#0a0805;margin-bottom:12px;display:block}
+  .video-card a{color:var(--amber);font-size:12px;font-weight:700}
   .chapter-list{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--dim);line-height:1.8}
 
   /* ============== code block ============== */
@@ -754,22 +756,31 @@ sparrow run "open the local webview and take a screenshot"</pre>
 
       <div class="video-grid" id="videos">
         <article class="video-card" data-doc-title="Video tutorial: first launch" data-doc-tags="video tutorial setup providers onboarding">
-          <div class="video-thumb" aria-label="Video placeholder: first launch"><span class="play">▶</span></div>
+          <video controls preload="metadata" poster="screenshots/webview-captain.png">
+            <source src="tutorials/first-launch.mp4" type="video/mp4">
+          </video>
           <h4>First launch in 5 minutes</h4>
           <p>Install, run setup, add providers, and start the WebView cockpit.</p>
-          <div class="chapter-list">00:00 install · 01:20 setup · 03:10 first run · 04:30 cockpit</div>
+          <div class="chapter-list">00:00 install · 00:06 setup · 00:12 cockpit · 00:18 first run</div>
+          <a href="tutorials/README.md#first-launch-in-5-minutes">Read transcript</a>
         </article>
         <article class="video-card" data-doc-title="Video tutorial: safe agent edits" data-doc-tags="video tutorial checkpoint rewind permissions sandbox">
-          <div class="video-thumb" aria-label="Video placeholder: safe edits"><span class="play">▶</span></div>
+          <video controls preload="metadata" poster="screenshots/webview-captain.png">
+            <source src="tutorials/safe-edits-rewind.mp4" type="video/mp4">
+          </video>
           <h4>Safe edits and rewind</h4>
           <p>Permissions, checkpoints, diffs, and restoring the workspace after a bad batch.</p>
-          <div class="chapter-list">00:00 autonomy · 01:15 checkpoint · 03:00 approval · 04:40 rewind</div>
+          <div class="chapter-list">00:00 autonomy · 00:06 checkpoint · 00:12 diff · 00:18 rewind</div>
+          <a href="tutorials/README.md#safe-edits-and-rewind">Read transcript</a>
         </article>
         <article class="video-card" data-doc-title="Video tutorial: memory graph and browser" data-doc-tags="video tutorial memory graph neo4j browser computer playwright">
-          <div class="video-thumb" aria-label="Video placeholder: memory and browser"><span class="play">▶</span></div>
+          <video controls preload="metadata" poster="screenshots/webview-captain.png">
+            <source src="tutorials/memory-graph-browser.mp4" type="video/mp4">
+          </video>
           <h4>Memory graph + browser-use</h4>
           <p>Create graph entities, inspect neighbors, then use Playwright-backed browser actions.</p>
-          <div class="chapter-list">00:00 graph · 02:10 Neo4j sync · 03:30 screenshot · 05:00 click/type</div>
+          <div class="chapter-list">00:00 graph · 00:06 neighbors · 00:12 Neo4j · 00:18 click/type</div>
+          <a href="tutorials/README.md#memory-graph--browser-use">Read transcript</a>
         </article>
       </div>
     </div>
