@@ -661,10 +661,8 @@ mod tests {
     fn test_embeddings_persist_and_reload() {
         use sparrow::extras::Embeddings;
 
-        let temp = std::env::temp_dir().join(format!(
-            "sparrow-embeddings-{}.json",
-            std::process::id()
-        ));
+        let temp =
+            std::env::temp_dir().join(format!("sparrow-embeddings-{}.json", std::process::id()));
         let _ = std::fs::remove_file(&temp);
 
         let mut emb = Embeddings::with_dimensions(96);

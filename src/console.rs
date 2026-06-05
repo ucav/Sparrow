@@ -66,6 +66,7 @@ pub struct WebViewServer {
 }
 
 impl WebViewServer {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         addr: SocketAddr,
         event_tx: broadcast::Sender<Event>,
@@ -413,10 +414,7 @@ async fn run_task(
                 let b64 = STANDARD.encode(identity.personality.as_bytes());
                 format!(
                     "__agent:{}__{}__{}__ {}",
-                    identity.name,
-                    identity.role,
-                    b64,
-                    dispatch
+                    identity.name, identity.role, b64, dispatch
                 )
             } else {
                 dispatch

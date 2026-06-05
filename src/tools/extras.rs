@@ -172,10 +172,20 @@ pub fn spawn_config_watcher(
     config_path: PathBuf,
     reload_tx: tokio::sync::mpsc::UnboundedSender<crate::config::Config>,
 ) {
+    spawn_config_watcher_every(config_path, reload_tx, tokio::time::Duration::from_secs(5));
+}
+
+fn spawn_config_watcher_every(
+    config_path: PathBuf,
+    reload_tx: tokio::sync::mpsc::UnboundedSender<crate::config::Config>,
+    interval: tokio::time::Duration,
+) {
     tokio::spawn(async move {
-        let mut last_mtime = std::time::SystemTime::UNIX_EPOCH;
+        let mut last_mtime = std::fs::metadata(&config_path)
+            .and_then(|meta| meta.modified())
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH);
         loop {
-            tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+            tokio::time::sleep(interval).await;
             if let Ok(meta) = std::fs::metadata(&config_path) {
                 if let Ok(mtime) = meta.modified() {
                     if mtime > last_mtime {
@@ -202,6 +212,63 @@ pub fn ndjson_output(event: &crate::event::Event) -> String {
     match serde_json::to_string(event) {
         Ok(json) => format!("{}\n", json),
         Err(e) => format!("{{\"error\":\"{}\"}}\n", e),
+    }
+}
+
+#[cfg(test)]
+mod watcher_tests {
+    use super::*;
+    use crate::config::{Config, FsConfigStore};
+    use crate::event::{Event, RunId};
+    use std::time::Duration;
+
+    #[test]
+    fn ndjson_output_filters_reasoning_delta() {
+        let line = ndjson_output(&Event::ReasoningDelta {
+            run: RunId::new(),
+            text: " internal chain fragment".into(),
+        });
+
+        assert!(
+            line.is_empty(),
+            "ReasoningDelta must stay out of public NDJSON streams"
+        );
+    }
+
+    #[tokio::test]
+    async fn config_watcher_reloads_after_file_change() {
+        use crate::config::ConfigStore;
+
+        let tmp = tempfile::tempdir().expect("tmp");
+        let store = FsConfigStore::new(tmp.path().to_path_buf());
+        let mut cfg = Config {
+            theme: "captain".into(),
+            ..Config::default()
+        };
+        store.save(&cfg).expect("initial config save");
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        spawn_config_watcher_every(
+            tmp.path().join("config.toml"),
+            tx,
+            Duration::from_millis(25),
+        );
+
+        tokio::time::sleep(Duration::from_millis(60)).await;
+        assert!(
+            rx.try_recv().is_err(),
+            "watcher should not emit a reload for an unchanged file"
+        );
+
+        cfg.theme = "paper".into();
+        store.save(&cfg).expect("updated config save");
+
+        let updated = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .expect("config reload should arrive")
+            .expect("watcher channel should stay open");
+
+        assert_eq!(updated.theme, "paper");
     }
 }
 
