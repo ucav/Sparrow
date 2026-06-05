@@ -49,14 +49,14 @@ jobs:
         shell: bash
         run: |
           cd target/${{ matrix.target }}/release
-          sha256sum sparrow* > ${{ matrix.target }}.sha256
-          cat ${{ matrix.target }}.sha256
+          sha256sum "${{ matrix.artifact }}" > "${{ matrix.artifact }}.sha256"
+          cat "${{ matrix.artifact }}.sha256"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
           path: |
-            target/${{ matrix.target }}/release/sparrow*
-            target/${{ matrix.target }}/release/*.sha256
+            target/${{ matrix.target }}/release/${{ matrix.artifact }}
+            target/${{ matrix.target }}/release/${{ matrix.artifact }}.sha256
 
   publish:
     name: Publish Release
@@ -65,6 +65,18 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with: { path: artifacts }
+      - name: Clean stale release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if ! gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            exit 0
+          fi
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' |
+            while IFS= read -r asset; do
+              [ -n "$asset" ] && gh release delete-asset "$GITHUB_REF_NAME" "$asset" --repo "$GITHUB_REPOSITORY" -y
+            done
       - name: Create release
         uses: softprops/action-gh-release@v1
         with:
