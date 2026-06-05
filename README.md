@@ -107,6 +107,29 @@ See [docs/AUDIT.md](docs/AUDIT.md) for module-by-module proof.
 
 ## Quick Start
 
+**One-click install:**
+
+```powershell
+# Windows
+irm https://raw.githubusercontent.com/ucav/Sparrow/master/install.ps1 | iex
+```
+
+```bash
+# macOS / Linux
+curl -fsSL https://raw.githubusercontent.com/ucav/Sparrow/master/install.sh | sh
+```
+
+**Launch Sparrow:**
+
+```bash
+sparrow launch
+```
+
+`sparrow launch` runs first-launch setup when needed, then opens the WebView cockpit on
+`http://127.0.0.1:9339/`. Use `sparrow launch --tui` for the terminal cockpit.
+
+**Build from source:**
+
 ```bash
 git clone https://github.com/ucav/Sparrow.git
 cd Sparrow
@@ -117,7 +140,7 @@ cargo test --all-targets
 **Run the WebView cockpit:**
 
 ```bash
-cargo run -- console
+cargo run -- launch
 # → open http://127.0.0.1:9339/
 ```
 

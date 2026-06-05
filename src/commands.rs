@@ -76,6 +76,11 @@ const BUILTINS: &[(&str, &str, &str)] = &[
         "Usage: /run <task>",
     ),
     (
+        "launch",
+        "Start the first-run setup if needed, then open the WebView cockpit.",
+        "Terminal: sparrow launch [--port 9339] [--tui]",
+    ),
+    (
         "models",
         "List configured providers and discovered models.",
         "Usage: /models",
@@ -512,7 +517,9 @@ mod tests {
     #[test]
     fn webview_catalog_exposes_cli_top_level_commands_with_usage() {
         let commands = builtin_commands();
-        for name in ["doctor", "setup", "init", "profile", "import", "agent"] {
+        for name in [
+            "doctor", "setup", "launch", "init", "profile", "import", "agent",
+        ] {
             let cmd = commands
                 .iter()
                 .find(|cmd| cmd.name == name)

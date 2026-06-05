@@ -267,6 +267,48 @@ async fn main() -> anyhow::Result<()> {
             )
             .await?;
         }
+        Some(Commands::Launch { port, tui }) => {
+            if !active_config_dir.join("config.toml").exists() {
+                println!("First launch detected - running setup...\n");
+                let setup_result = sparrow::onboarding::setup_agent::run_setup_agent(
+                    &config,
+                    &config_store,
+                    memory.clone(),
+                    build_provider_brains,
+                )
+                .await;
+                if let Err(err) = setup_result {
+                    eprintln!("Setup Agent: {} - falling back to interactive setup.", err);
+                    handle_setup(&config, &config_store).await?;
+                }
+                if let Ok(fresh) = config_store.load() {
+                    config = fresh;
+                    config.config_dir = active_config_dir.clone();
+                    config.state_dir = active_state_dir.clone();
+                }
+            }
+
+            if tui {
+                run_tui(
+                    &config,
+                    memory.clone(),
+                    skill_library.clone(),
+                    &active_state_dir,
+                )
+                .await?;
+            } else {
+                handle_webview(
+                    &config,
+                    memory.clone(),
+                    scheduler.clone(),
+                    recorder.clone(),
+                    skill_library.clone(),
+                    Some(agent_store.clone()),
+                    port,
+                )
+                .await?;
+            }
+        }
         Some(Commands::Console { port }) => {
             handle_webview(
                 &config,

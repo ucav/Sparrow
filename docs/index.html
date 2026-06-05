@@ -912,10 +912,16 @@ sparrow run "open the local webview and take a screenshot"</pre>
 
   <div class="install">
     <div class="install-bar">
-      <span>$ — bash — 92×24</span>
-      <span class="copy" onclick="navigator.clipboard.writeText('curl -sSL https://raw.githubusercontent.com/ucav/Sparrow/master/install.sh | bash')">copy</span>
+      <span>$ — one-click install — 92×24</span>
+      <span class="copy" onclick="navigator.clipboard.writeText('irm https://raw.githubusercontent.com/ucav/Sparrow/master/install.ps1 | iex\ncurl -fsSL https://raw.githubusercontent.com/ucav/Sparrow/master/install.sh | sh\nsparrow launch')">copy</span>
     </div>
     <div class="install-body">
+      <div class="p" style="margin-bottom:18px"># Windows PowerShell</div>
+      <div class="c">irm https://raw.githubusercontent.com/ucav/Sparrow/master/install.ps1 | iex</div>
+
+      <div class="p" style="margin-top:22px;margin-bottom:18px"># macOS / Linux</div>
+      <div class="c">curl -fsSL https://raw.githubusercontent.com/ucav/Sparrow/master/install.sh | sh</div>
+
       <div class="p" style="margin-bottom:18px"># download pre-built binary</div>
       <div class="c" style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:14px">
         <a href="https://github.com/ucav/Sparrow/releases/latest/download/sparrow-linux-x86_64" style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border:1px solid var(--line);border-radius:7px;font-size:12.5px;color:var(--fg);text-decoration:none;background:#0a0805">🐧 Linux x64</a>
@@ -930,13 +936,13 @@ sparrow run "open the local webview and take a screenshot"</pre>
       <div class="c">git clone https://github.com/ucav/Sparrow && <span style="color:var(--coral)">cd</span> Sparrow && cargo build --release</div>
 
       <div class="p" style="margin-top:22px;margin-bottom:18px"># then</div>
-      <div class="c">sparrow setup <span style="color:var(--dim)"># first-run config · picks up your Ollama automatically</span></div>
+      <div class="c">sparrow launch <span style="color:var(--dim)"># first-run config, then WebView cockpit</span></div>
       <div class="c">sparrow run "hello, world"</div>
     </div>
   </div>
 
   <p style="text-align:center;color:var(--dim);margin-top:24px;font-size:13.5px">
-    Requires Rust 1.96+ · Linux / macOS · Optional: Ollama, Docker, Playwright
+    Pre-built binaries for Linux / macOS / Windows · Source fallback requires Rust 1.96+ · Optional: Ollama, Docker, Playwright
   </p>
 </section>
 
