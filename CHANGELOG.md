@@ -2,6 +2,45 @@
 
 All notable changes to Sparrow will be documented in this file.
 
+## [0.4.0] — 2026-06-05
+
+Public launch readiness — crates.io publish, first-run wizard, live demo, community skills, and security hooks.
+
+### Added
+- **`cargo install sparrow-cli`** — published on crates.io. One-command install.
+- **First-run wizard** (`sparrow setup`) — auto-detects 20+ API keys from env,
+  validates them, ranks providers by cost tier (free first), one-click setup.
+- **`sparrow demo`** — self-contained snake game coding demo in 30 seconds.
+  Shows live Planner→Coder→Verifier pipeline with colored terminal output.
+- **`sparrow share`** — reads latest session transcript, formats as Markdown,
+  uploads to GitHub Gist via `gh` CLI or API.
+- **`sparrow hook install`** — installs pre-commit security scanner that blocks
+  commits containing secrets, tokens, API keys, or private keys.
+- **`sparrow hook scan`** — one-off security scan of staged or all files.
+- **Provider auto-detection** (`src/provider/detect.rs`) — scans environment,
+  validates keys with lightweight API calls, ranks by cost tier.
+- **Humanized French error messages** (`src/errors.rs`) — translates HTTP 401,
+  429, connection errors, config errors into actionable French messages.
+- **10 community skills** bundled in `skills/`: explain-error, generate-commit,
+  write-unit-tests, review-my-pr, refactor-function, onboard-newbie, fix-bug,
+  optimize-sql, api-docs, deploy-check.
+- **Pre-commit hook script** (`hooks/pre-commit`) — bash script scanning for
+  GitHub tokens, OpenAI keys, Anthropic keys, AWS keys, private keys, passwords.
+
+### Changed
+- **Cargo.toml metadata** — improved description, added authors, keywords,
+  categories, repository link.
+- **`rust-toolchain.toml`** — pins Rust 1.96.0 with rustfmt and clippy.
+- **SECURITY.md** — updated supported versions to 0.3.x (current).
+- **README** — crates.io and docs.rs badges, `cargo install` as primary method.
+
+### Fixed
+- **Security** — removed Nova agent files from public repo and git history.
+  Added `agents/nova.*` to `.gitignore` to prevent future leaks.
+- **Security** — deleted 7 stale codex branches containing leaked content.
+- **Dependencies** — added `dialoguer` (interactive prompts) and `walkdir`
+  (recursive file scanning) for wizard and hook features.
+
 ## [0.3.6] — 2026-06-05
 
 Public distribution pass for one-click installation and simplified launch.
