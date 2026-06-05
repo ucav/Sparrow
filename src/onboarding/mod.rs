@@ -3,6 +3,7 @@ use crate::config::Config;
 pub mod enterprise;
 pub mod migration;
 pub mod setup_agent;
+pub mod wizard;
 
 // ─── User mode ─────────────────────────────────────────────────────────────────
 
