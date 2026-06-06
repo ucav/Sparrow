@@ -59,5 +59,5 @@ pub mod share;
 pub mod tools;
 pub mod tui;
 pub mod update;
-// pub mod streaming;  // WIP — Phase 2
-// pub mod chat;       // WIP — Phase 2
+pub mod streaming;
+pub mod chat;
