@@ -912,6 +912,28 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Learn) => {
             sparrow::onboarding::Onboarding::default().run_interactive()?;
         }
+        Some(Commands::Voice { action }) => {
+            match action {
+                sparrow::cli::VoiceAction::Speak { text } => {
+                    sparrow::tools::voice::handle_voice(
+                        sparrow::tools::voice::VoiceCommand::Speak { text, output: None }
+                    )?;
+                }
+                sparrow::cli::VoiceAction::Transcribe { file } => {
+                    sparrow::tools::voice::handle_voice(
+                        sparrow::tools::voice::VoiceCommand::Transcribe {
+                            audio_file: file.into(),
+                            language: None,
+                        }
+                    )?;
+                }
+                sparrow::cli::VoiceAction::Providers => {
+                    sparrow::tools::voice::handle_voice(
+                        sparrow::tools::voice::VoiceCommand::ListProviders
+                    )?;
+                }
+            }
+        }
         Some(Commands::Init) => {
             handle_init()?;
         }
