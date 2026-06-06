@@ -23,6 +23,7 @@ pub mod stt;
 pub mod subagent;
 pub mod todo;
 pub mod tts;
+pub mod voice;
 
 // ─── Tool context ───────────────────────────────────────────────────────────────
 
