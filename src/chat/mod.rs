@@ -1,193 +1,107 @@
-// ─── Interactive chat session ────────────────────────────────────────────────
-//
-// Persistent multi-turn chat with history, save/load to JSON, and streaming
-// response support. Designed for both CLI and TUI surfaces.
-
-pub mod composer;
+//! Interactive chat session for Sparrow.
+//!
+//! Persistent chat with history, save/load, and streaming responses.
 
 use std::path::Path;
 
-use anyhow::Result;
-use serde::{Deserialize, Serialize};
-
-use crate::chat::composer::InputComposer;
-use crate::streaming::{create_channel, StreamEvent, StreamReceiver, StreamSender};
-
-// ─── Chat message ────────────────────────────────────────────────────────────
+pub mod composer;
 
 /// A single message in the chat history.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ChatMessage {
-    pub role: String,
+    pub role: String, // "user" or "assistant"
     pub content: String,
+    pub timestamp: String,
 }
 
-// ─── Chat session ────────────────────────────────────────────────────────────
-
-/// Persistent chat session with history and streaming.
+/// A persistent chat session with full history.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ChatSession {
-    /// Ordered conversation history (user/assistant pairs).
-    history: Vec<ChatMessage>,
-    /// Active streaming channel for current response.
-    stream_tx: Option<StreamSender>,
-    stream_rx: Option<StreamReceiver>,
-    /// Accumulated response being built.
-    pending_response: String,
-    /// Whether the session has been modified since last save.
-    dirty: bool,
+    pub messages: Vec<ChatMessage>,
+    pub created_at: String,
+    pub model: Option<String>,
 }
 
 impl ChatSession {
     /// Create a new empty chat session.
     pub fn new() -> Self {
         Self {
-            history: Vec::new(),
-            stream_tx: None,
-            stream_rx: None,
-            pending_response: String::new(),
-            dirty: false,
+            messages: Vec::new(),
+            created_at: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            model: None,
         }
     }
 
-    /// Send a user message and begin streaming the assistant response.
-    /// Returns the streaming receiver so the caller can poll events.
-    ///
-    /// The returned `StreamReceiver` will emit `AgentMessage` events with the
-    /// assistant's response chunks, then a `TaskComplete` when done.
-    pub fn send(&mut self, message: &str) -> StreamReceiver {
-        // Record user message
-        self.history.push(ChatMessage {
+    /// Add a user message to the history.
+    pub fn add_user_message(&mut self, content: &str) {
+        self.messages.push(ChatMessage {
             role: "user".to_string(),
-            content: message.to_string(),
+            content: content.to_string(),
+            timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
         });
-        self.dirty = true;
-        self.pending_response.clear();
-
-        // Create a fresh channel for this response
-        let (tx, rx) = create_channel();
-        let tx_clone = tx.clone();
-
-        // Spawn a task that will stream the response.
-        // In practice, this would be replaced by actual agent invocation.
-        // The channel stays open so callers can inject events from the agent.
-        self.stream_tx = Some(tx);
-        self.stream_rx = Some(StreamReceiver::bare(rx.rx));
-
-        // Return a new receiver wrapping the raw mpsc receiver
-        // (We need to extract it — the StreamReceiver we stored owns it)
-        // For the caller, we create a fresh channel since we can't move out.
-        let (out_tx, out_rx) = create_channel();
-        self.stream_tx = Some(out_tx);
-
-        // Store the receiver for the caller
-        self.stream_rx = None;
-        out_rx
     }
 
-    /// Feed a stream event into the current response. Returns the new
-    /// accumulated text if the event was an AgentMessage.
-    pub fn feed_event(&mut self, event: StreamEvent) -> Option<String> {
-        match event {
-            StreamEvent::AgentMessage { role, text } if role == "assistant" => {
-                self.pending_response.push_str(&text);
-                Some(self.pending_response.clone())
-            }
-            StreamEvent::TaskComplete { summary } => {
-                // Finalize the assistant message
-                if !self.pending_response.is_empty() {
-                    self.history.push(ChatMessage {
-                        role: "assistant".to_string(),
-                        content: std::mem::take(&mut self.pending_response),
-                    });
-                } else if !summary.is_empty() {
-                    self.history.push(ChatMessage {
-                        role: "assistant".to_string(),
-                        content: summary,
-                    });
+    /// Add an assistant message to the history.
+    pub fn add_assistant_message(&mut self, content: &str) {
+        self.messages.push(ChatMessage {
+            role: "assistant".to_string(),
+            content: content.to_string(),
+            timestamp: chrono::Local::now().format("%H:%M:%S").to_string(),
+        });
+    }
+
+    /// Get the conversation history as (user, assistant) pairs.
+    pub fn history(&self) -> Vec<(&str, &str)> {
+        let mut pairs = Vec::new();
+        let mut current_user: Option<&str> = None;
+
+        for msg in &self.messages {
+            match msg.role.as_str() {
+                "user" => current_user = Some(&msg.content),
+                "assistant" => {
+                    if let Some(user_msg) = current_user.take() {
+                        pairs.push((user_msg, msg.content.as_str()));
+                    }
                 }
-                self.dirty = true;
-                None
+                _ => {}
             }
-            StreamEvent::Error { message } => {
-                self.history.push(ChatMessage {
-                    role: "error".to_string(),
-                    content: message,
-                });
-                self.dirty = true;
-                self.pending_response.clear();
-                None
-            }
-            _ => None,
         }
+
+        pairs
     }
 
-    /// Get the conversation history as (role, content) pairs.
-    pub fn history(&self) -> Vec<(String, String)> {
-        self.history
-            .iter()
-            .map(|m| (m.role.clone(), m.content.clone()))
-            .collect()
-    }
-
-    /// Get the raw chat messages.
-    pub fn messages(&self) -> &[ChatMessage] {
-        &self.history
-    }
-
-    /// Whether the session has unsaved changes.
-    pub fn is_dirty(&self) -> bool {
-        self.dirty
-    }
-
-    /// Clear the conversation history.
-    pub fn clear(&mut self) {
-        self.history.clear();
-        self.pending_response.clear();
-        self.dirty = true;
-    }
-
-    /// Number of messages in the history.
-    pub fn len(&self) -> usize {
-        self.history.len()
-    }
-
-    /// Whether the history is empty.
-    pub fn is_empty(&self) -> bool {
-        self.history.is_empty()
+    /// Get the last N messages as context.
+    pub fn last_context(&self, n: usize) -> Vec<&ChatMessage> {
+        self.messages.iter().rev().take(n).rev().collect()
     }
 
     /// Save the session to a JSON file.
-    pub fn save(&self, path: &Path) -> Result<()> {
-        let parent = path.parent().unwrap_or_else(|| Path::new("."));
-        std::fs::create_dir_all(parent)?;
-
-        let json = serde_json::to_string_pretty(&SaveFormat {
-            version: 1,
-            messages: self.history.clone(),
-        })?;
+    pub fn save(&self, path: &Path) -> anyhow::Result<()> {
+        let json = serde_json::to_string_pretty(self)?;
         std::fs::write(path, json)?;
         Ok(())
     }
 
     /// Load a session from a JSON file.
-    pub fn load(path: &Path) -> Result<Self> {
-        let content = std::fs::read_to_string(path)?;
-        let saved: SaveFormat = serde_json::from_str(&content)?;
+    pub fn load(path: &Path) -> anyhow::Result<Self> {
+        let json = std::fs::read_to_string(path)?;
+        let session: ChatSession = serde_json::from_str(&json)?;
+        Ok(session)
+    }
 
-        if saved.version != 1 {
-            anyhow::bail!(
-                "Unsupported chat session version: {} (expected 1)",
-                saved.version
-            );
-        }
+    /// Clear all messages.
+    pub fn clear(&mut self) {
+        self.messages.clear();
+    }
 
-        Ok(Self {
-            history: saved.messages,
-            stream_tx: None,
-            stream_rx: None,
-            pending_response: String::new(),
-            dirty: false,
-        })
+    /// Get the number of messages.
+    pub fn len(&self) -> usize {
+        self.messages.len()
+    }
+
+    /// Check if the session is empty.
+    pub fn is_empty(&self) -> bool {
+        self.messages.is_empty()
     }
 }
 
@@ -197,98 +111,38 @@ impl Default for ChatSession {
     }
 }
 
-// ─── Serialization format ────────────────────────────────────────────────────
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[derive(Debug, Serialize, Deserialize)]
-struct SaveFormat {
-    version: u32,
-    messages: Vec<ChatMessage>,
-}
+    #[test]
+    fn test_chat_session() {
+        let mut session = ChatSession::new();
+        assert!(session.is_empty());
 
-// ─── Convenience: interactive loop ───────────────────────────────────────────
+        session.add_user_message("Hello");
+        session.add_assistant_message("Hi there!");
+        assert_eq!(session.len(), 2);
 
-impl ChatSession {
-    /// Run a simple interactive chat loop using stdin/stdout.
-    /// The `responder` closure is called with the user message and must return
-    /// a response string. This is a convenience for quick CLI chat.
-    pub async fn run_interactive<F, Fut>(&mut self, mut responder: F) -> Result<()>
-    where
-        F: FnMut(String) -> Fut,
-        Fut: std::future::Future<Output = Result<String>>,
-    {
-        use std::io::{self, Write};
+        let history = session.history();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].0, "Hello");
+        assert_eq!(history[0].1, "Hi there!");
+    }
 
-        println!("═══ Sparrow Chat ═══");
-        println!("Type your message and press Enter. Ctrl+D or /exit to quit.");
-        println!();
+    #[test]
+    fn test_save_load() {
+        let mut session = ChatSession::new();
+        session.add_user_message("test");
+        session.add_assistant_message("response");
 
-        loop {
-            print!("◆ you › ");
-            io::stdout().flush()?;
+        let tmp = std::env::temp_dir().join("sparrow_test_chat.json");
+        session.save(&tmp).unwrap();
 
-            let mut input = String::new();
-            let n = io::stdin().read_line(&mut input)?;
-            if n == 0 {
-                // EOF
-                break;
-            }
-            let input = input.trim().to_string();
-            if input.is_empty() {
-                continue;
-            }
-            if input == "/exit" || input == "/quit" {
-                break;
-            }
+        let loaded = ChatSession::load(&tmp).unwrap();
+        assert_eq!(loaded.len(), 2);
+        assert_eq!(loaded.messages[0].content, "test");
 
-            // Handle slash commands
-            if input == "/clear" {
-                self.clear();
-                println!("── history cleared ──");
-                continue;
-            }
-            if input == "/history" {
-                for m in &self.history {
-                    println!("  [{}] {}", m.role, m.content);
-                }
-                continue;
-            }
-            if input == "/save" {
-                let path = dirs::data_local_dir()
-                    .unwrap_or_default()
-                    .join("sparrow")
-                    .join("chat_sessions")
-                    .join(format!("chat_{}.json", chrono::Utc::now().format("%Y%m%d_%H%M%S")));
-                self.save(&path)?;
-                println!("── saved to {} ──", path.display());
-                continue;
-            }
-
-            // Record user message
-            self.history.push(ChatMessage {
-                role: "user".to_string(),
-                content: input.clone(),
-            });
-
-            // Get response
-            match responder(input).await {
-                Ok(response) => {
-                    println!("◆ sparrow › {}", response);
-                    self.history.push(ChatMessage {
-                        role: "assistant".to_string(),
-                        content: response,
-                    });
-                }
-                Err(e) => {
-                    eprintln!("✗ Error: {}", e);
-                    self.history.push(ChatMessage {
-                        role: "error".to_string(),
-                        content: e.to_string(),
-                    });
-                }
-            }
-            println!();
-        }
-
-        Ok(())
+        let _ = std::fs::remove_file(&tmp);
     }
 }
