@@ -297,6 +297,12 @@ pub enum Commands {
         #[command(subcommand)]
         action: HookAction,
     },
+
+    /// Voice commands (speak, transcribe, providers)
+    Voice {
+        #[command(subcommand)]
+        action: VoiceAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -612,4 +618,14 @@ pub enum HookAction {
         #[arg(long)]
         all: bool,
     },
+}
+
+#[derive(Subcommand)]
+pub enum VoiceAction {
+    /// Convert text to speech
+    Speak { text: String },
+    /// Transcribe audio file
+    Transcribe { file: String },
+    /// List available voice providers
+    Providers,
 }
