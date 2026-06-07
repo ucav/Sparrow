@@ -27,6 +27,9 @@ sparrow/
 *.db-wal
 transcripts/
 
+# Private agent definitions (PII, do not publish)
+agents/nova.*
+
 # Codex / local assistant artifacts
 .codex-remote-attachments/
 .claude/
