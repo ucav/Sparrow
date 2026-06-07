@@ -2,6 +2,43 @@
 
 All notable changes to Sparrow will be documented in this file.
 
+## [0.5.3] — 2026-06-07
+
+Adoption pass — packaging, IDE, drop-in compat, opt-in telemetry, signed releases.
+
+### Added
+- **Homebrew tap** (`packaging/homebrew/sparrow.rb`) updated to v0.5.3 with
+  per-arch SHA256 slots — installable via `brew install ucav/tap/sparrow`.
+- **Scoop manifest** (`packaging/scoop/sparrow.json`) for Windows install via
+  `scoop install sparrow`.
+- **winget manifest** (`packaging/winget/ucav.Sparrow*.yaml`) for Windows 11
+  install via `winget install ucav.Sparrow`.
+- **VS Code extension scaffold** (`ide/vscode/`) — embeds the Sparrow cockpit
+  in a side panel, exposes `Sparrow: Run`, `Plan`, `Rewind`, `Open Cockpit`.
+- **Claude Code drop-in compat** (`src/onboarding/claude_compat.rs`) — reads
+  `~/.claude/CLAUDE.md`, `~/.claude/commands/*.md`, `~/.claude/agents/*.md`,
+  `~/.claude/settings.json`, plus the same in `.claude/` of the current project.
+  Zero-effort migration from Claude Code to Sparrow.
+- **Opt-in telemetry skeleton** (`src/telemetry.rs`) — off by default, closed
+  enum of event kinds, never sends prompts/file content. Documented in
+  `PRIVACY.md`.
+- **`PRIVACY.md`** — explicit privacy policy covering local storage, third
+  parties, gateways, sharing.
+- **`docs/getting-started.md`** — 60-second quick start covering every install
+  channel and budget caps.
+- **Nightly CI workflow** (`.github/workflows/nightly.yml`) — fmt/clippy/test
+  on 3 OS, `cargo audit`, budget-capped smoke test against Groq.
+- **Release signing workflow** (`.github/workflows/release-sign.yml`) — cosign
+  keyless signing of every release asset, signatures uploaded to the same
+  release.
+
+### Changed
+- **CLI flags** added: `--max-cost-usd`, `--max-wall-secs`, `--max-tokens`,
+  `--bind` — hard stop / network binding controls usable from every command.
+- **README** — comparison table vs Claude Code / Codex / Aider at the top,
+  multi-channel install block (cargo, brew, scoop, winget, curl), TOC link to
+  the new `Why Sparrow` section.
+
 ## [0.5.2] — 2026-06-07
 
 Unified release — upward merge of every feature shipped in parallel on the public master (v0.4.0 → v0.5.1) with the local hardening track (v0.3.5 → v0.3.6). No feature was dropped on either side.

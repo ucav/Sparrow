@@ -1,5 +1,6 @@
 use crate::config::Config;
 
+pub mod claude_compat;
 pub mod enterprise;
 pub mod migration;
 pub mod setup_agent;

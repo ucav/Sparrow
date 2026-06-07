@@ -1,0 +1,83 @@
+{
+    "name": "sparrow-vscode",
+    "displayName": "Sparrow",
+    "description": "Local-first Rust agent cockpit, inside VS Code.",
+    "version": "0.1.0",
+    "publisher": "ucav",
+    "engines": {
+        "vscode": "^1.85.0"
+    },
+    "categories": [
+        "Other",
+        "Programming Languages",
+        "AI"
+    ],
+    "activationEvents": [
+        "onStartupFinished"
+    ],
+    "main": "./extension.js",
+    "contributes": {
+        "commands": [
+            {
+                "command": "sparrow.openCockpit",
+                "title": "Sparrow: Open Cockpit"
+            },
+            {
+                "command": "sparrow.run",
+                "title": "Sparrow: Run Task"
+            },
+            {
+                "command": "sparrow.plan",
+                "title": "Sparrow: Plan Task"
+            },
+            {
+                "command": "sparrow.rewind",
+                "title": "Sparrow: Rewind Last Checkpoint"
+            }
+        ],
+        "configuration": {
+            "title": "Sparrow",
+            "properties": {
+                "sparrow.binaryPath": {
+                    "type": "string",
+                    "default": "sparrow",
+                    "description": "Path to the sparrow binary."
+                },
+                "sparrow.cockpitPort": {
+                    "type": "number",
+                    "default": 9339,
+                    "description": "Port the WebView cockpit listens on."
+                },
+                "sparrow.autoLaunchCockpit": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Launch the cockpit automatically when VS Code starts."
+                }
+            }
+        },
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "sparrow",
+                    "title": "Sparrow",
+                    "icon": "media/sparrow.svg"
+                }
+            ]
+        },
+        "views": {
+            "sparrow": [
+                {
+                    "id": "sparrow.cockpit",
+                    "name": "Cockpit",
+                    "type": "webview"
+                }
+            ]
+        }
+    },
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/ucav/Sparrow.git",
+        "directory": "ide/vscode"
+    },
+    "license": "MIT"
+}
