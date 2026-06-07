@@ -18,7 +18,11 @@ pub enum StreamEvent {
     /// The agent sent a message
     AgentMessage { content: String },
     /// Task progress update
-    TaskProgress { current: u64, total: u64, description: String },
+    TaskProgress {
+        current: u64,
+        total: u64,
+        description: String,
+    },
     /// Task completed
     TaskComplete { summary: String },
     /// An error occurred
@@ -101,27 +105,41 @@ impl LiveDisplay {
                 );
             }
             StreamEvent::ToolOutput { name: _, output } => {
-                let preview: String = output.lines().take(3).map(|l| format!("  │ {l}")).collect::<Vec<_>>().join("\n");
+                let preview: String = output
+                    .lines()
+                    .take(3)
+                    .map(|l| format!("  │ {l}"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
                 if !preview.is_empty() {
                     eprintln!("{preview}");
                     if output.lines().count() > 3 {
-                        eprintln!("  │ \x1b[2m... ({} more lines)\x1b[0m", output.lines().count() - 3);
+                        eprintln!(
+                            "  │ \x1b[2m... ({} more lines)\x1b[0m",
+                            output.lines().count() - 3
+                        );
                     }
                 }
             }
             StreamEvent::AgentMessage { content } => {
                 eprintln!("\x1b[35m💬\x1b[0m {content}");
             }
-            StreamEvent::TaskProgress { current, total, description } => {
+            StreamEvent::TaskProgress {
+                current,
+                total,
+                description,
+            } => {
                 self.steps_done = *current;
                 self.steps_total = *total;
                 self.task_description = description.clone();
-                let pct = if *total > 0 { (current * 100) / total } else { 0 };
+                let pct = if *total > 0 {
+                    (current * 100) / total
+                } else {
+                    0
+                };
                 let bar = "█".repeat(pct as usize / 5) + &"░".repeat(20 - pct as usize / 5);
                 let elapsed = self.start_time.elapsed().as_secs();
-                eprintln!(
-                    "\x1b[36m[{elapsed:>3}s]\x1b[0m [{bar}] {pct}% — {description}"
-                );
+                eprintln!("\x1b[36m[{elapsed:>3}s]\x1b[0m [{bar}] {pct}% — {description}");
             }
             StreamEvent::TaskComplete { summary } => {
                 let elapsed = self.start_time.elapsed().as_secs_f64();
@@ -136,7 +154,10 @@ impl LiveDisplay {
     /// Finish the display and print a summary.
     pub fn finish(&mut self) {
         let elapsed = self.start_time.elapsed().as_secs_f64();
-        eprintln!("\n\x1b[1mDone in {elapsed:.1}s\x1b[0m — {}/{} steps completed", self.steps_done, self.steps_total);
+        eprintln!(
+            "\n\x1b[1mDone in {elapsed:.1}s\x1b[0m — {}/{} steps completed",
+            self.steps_done, self.steps_total
+        );
     }
 
     /// Get the elapsed time in seconds.

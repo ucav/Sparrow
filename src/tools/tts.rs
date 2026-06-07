@@ -53,9 +53,12 @@ fn tts_edge(text: &str, output: &std::path::Path) -> anyhow::Result<()> {
     // edge-tts is a Python package: pip install edge-tts
     let status = Command::new("edge-tts")
         .args([
-            "--text", text,
-            "--voice", "fr-FR-DeniseNeural",
-            "--write-media", &output.to_string_lossy(),
+            "--text",
+            text,
+            "--voice",
+            "fr-FR-DeniseNeural",
+            "--write-media",
+            &output.to_string_lossy(),
         ])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -67,9 +70,12 @@ fn tts_edge(text: &str, output: &std::path::Path) -> anyhow::Result<()> {
             // Try English fallback
             Command::new("edge-tts")
                 .args([
-                    "--text", text,
-                    "--voice", "en-US-JennyNeural",
-                    "--write-media", &output.to_string_lossy(),
+                    "--text",
+                    text,
+                    "--voice",
+                    "en-US-JennyNeural",
+                    "--write-media",
+                    &output.to_string_lossy(),
                 ])
                 .status()?;
             Ok(())

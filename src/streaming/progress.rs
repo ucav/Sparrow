@@ -15,7 +15,9 @@ impl ProgressBar {
         let bar = IndiBar::new(total);
         bar.set_style(
             ProgressStyle::default_bar()
-                .template("{spinner:.cyan} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}")
+                .template(
+                    "{spinner:.cyan} [{elapsed_precise}] [{bar:40.cyan/blue}] {pos}/{len} {msg}",
+                )
                 .unwrap()
                 .progress_chars("▰▱"),
         );

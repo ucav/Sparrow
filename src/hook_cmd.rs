@@ -36,7 +36,10 @@ pub fn run_hook_install() -> anyhow::Result<()> {
     // Backup existing hook
     if pre_commit_path.exists() {
         let backup = hooks_dir.join("pre-commit.sparrow-backup");
-        println!("   ⚠️  Un hook pre-commit existe déjà → backup → {}", backup.display());
+        println!(
+            "   ⚠️  Un hook pre-commit existe déjà → backup → {}",
+            backup.display()
+        );
         std::fs::rename(&pre_commit_path, &backup)?;
     }
 
@@ -212,8 +215,6 @@ fn scan_staged_files(repo_root: &std::path::Path) -> anyhow::Result<()> {
 
 /// Scan all files in a directory recursively.
 fn scan_directory(dir: &std::path::Path) -> anyhow::Result<()> {
-    
-
     let mut issues_found = 0;
     let mut files_scanned = 0;
 
@@ -225,10 +226,13 @@ fn scan_directory(dir: &std::path::Path) -> anyhow::Result<()> {
         let path = entry.path();
 
         // Skip hidden directories (but not hidden files at root)
-        if path
-            .components()
-            .any(|c| c.as_os_str().to_string_lossy().starts_with('.') && c != path.components().next().unwrap_or(std::path::Component::CurDir))
-        {
+        if path.components().any(|c| {
+            c.as_os_str().to_string_lossy().starts_with('.')
+                && c != path
+                    .components()
+                    .next()
+                    .unwrap_or(std::path::Component::CurDir)
+        }) {
             // Skip .git, .sparrow, node_modules, target, etc.
             let path_str = path.to_string_lossy();
             if path_str.contains("/.git/")
@@ -274,49 +278,65 @@ fn scan_directory(dir: &std::path::Path) -> anyhow::Result<()> {
 /// Patterns that indicate a potential secret leak.
 static SECRET_PATTERNS: &[(&str, &str)] = &[
     // API keys (generic)
-    (r"(?i)(?:api[_-]?key|api[_-]?secret|apikey)\s*[:=]\s*[\x27\x22]?\w{20,}[\x27\x22]?", "Clé API en clair"),
-    (r"(?i)(?:secret[_-]?key|secretkey)\s*[:=]\s*[\x27\x22]?\w{20,}[\x27\x22]?", "Clé secrète en clair"),
-    (r"(?i)(?:access[_-]?key|accesskey)\s*[:=]\s*[\x27\x22]?\w{16,}[\x27\x22]?", "Clé d'accès en clair"),
-
+    (
+        r"(?i)(?:api[_-]?key|api[_-]?secret|apikey)\s*[:=]\s*[\x27\x22]?\w{20,}[\x27\x22]?",
+        "Clé API en clair",
+    ),
+    (
+        r"(?i)(?:secret[_-]?key|secretkey)\s*[:=]\s*[\x27\x22]?\w{20,}[\x27\x22]?",
+        "Clé secrète en clair",
+    ),
+    (
+        r"(?i)(?:access[_-]?key|accesskey)\s*[:=]\s*[\x27\x22]?\w{16,}[\x27\x22]?",
+        "Clé d'accès en clair",
+    ),
     // AWS
     (r"AKIA[0-9A-Z]{16}", "AWS Access Key ID"),
-    (r"(?i)aws[_-]?secret[_-]?access[_-]?key\s*[:=]\s*[\x27\x22]?[0-9a-zA-Z/+]{40}[\x27\x22]?", "AWS Secret Key"),
-
+    (
+        r"(?i)aws[_-]?secret[_-]?access[_-]?key\s*[:=]\s*[\x27\x22]?[0-9a-zA-Z/+]{40}[\x27\x22]?",
+        "AWS Secret Key",
+    ),
     // GitHub
     (r"ghp_[0-9a-zA-Z]{36}", "GitHub Personal Access Token"),
     (r"github_pat_[0-9a-zA-Z_]{36,}", "GitHub PAT (fine-grained)"),
     (r"gho_[0-9a-zA-Z]{36}", "GitHub OAuth Token"),
-
     // OpenAI
     (r"sk-[0-9a-zA-Z]{32,}", "OpenAI API Key"),
     (r"sk-proj-[0-9a-zA-Z]{32,}", "OpenAI Project Key"),
-
     // Anthropic
     (r"sk-ant-[0-9a-zA-Z]{32,}", "Anthropic API Key"),
-
     // Generic token patterns
-    (r"(?i)(?:password|passwd|pwd)\s*[:=]\s*[\x27\x22]?\S{4,}[\x27\x22]?", "Mot de passe en clair"),
-    (r"(?i)(?:token|auth[_-]?token)\s*[:=]\s*[\x27\x22]?\S{20,}[\x27\x22]?", "Token en clair"),
-
+    (
+        r"(?i)(?:password|passwd|pwd)\s*[:=]\s*[\x27\x22]?\S{4,}[\x27\x22]?",
+        "Mot de passe en clair",
+    ),
+    (
+        r"(?i)(?:token|auth[_-]?token)\s*[:=]\s*[\x27\x22]?\S{20,}[\x27\x22]?",
+        "Token en clair",
+    ),
     // Private keys
-    (r"-----BEGIN (?:RSA|DSA|EC|OPENSSH|PGP) PRIVATE KEY-----", "Clé privée"),
+    (
+        r"-----BEGIN (?:RSA|DSA|EC|OPENSSH|PGP) PRIVATE KEY-----",
+        "Clé privée",
+    ),
     (r"-----BEGIN PRIVATE KEY-----", "Clé privée"),
-
     // JWT tokens
-    (r"eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}", "JWT Token"),
-
+    (
+        r"eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}",
+        "JWT Token",
+    ),
     // Slack
     (r"xox[baprs]-[0-9a-zA-Z-]{10,}", "Slack Token"),
-
     // Stripe
     (r"sk_live_[0-9a-zA-Z]{24,}", "Stripe Live Key"),
     (r"pk_live_[0-9a-zA-Z]{24,}", "Stripe Live Publishable Key"),
-
     // Google
     (r"AIza[0-9A-Za-z_-]{35}", "Google API Key"),
-
     // Agent files
-    (r"(?i)\.(?:sparrow|codex|agent|ai|llm)", "Fichier de config agent IA"),
+    (
+        r"(?i)\.(?:sparrow|codex|agent|ai|llm)",
+        "Fichier de config agent IA",
+    ),
 ];
 
 /// Sensitive filenames that should never be committed.
@@ -370,9 +390,7 @@ fn scan_content(content: &str, path: &std::path::Path) -> Vec<String> {
                 for (line_num, line) in content.lines().enumerate() {
                     if re.is_match(line) {
                         // Redact the secret part for display
-                        let redacted = re.replace(line, |_caps: &regex::Captures| {
-                            "***REDACTED***"
-                        });
+                        let redacted = re.replace(line, |_caps: &regex::Captures| "***REDACTED***");
                         findings.push(format!(
                             "{} (ligne {}) : {}",
                             label,

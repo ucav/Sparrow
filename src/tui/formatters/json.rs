@@ -31,7 +31,8 @@ pub fn format_json(json_str: &str) -> String {
     // Use serde_json to parse and re-serialize with pretty print
     match serde_json::from_str::<serde_json::Value>(json_str) {
         Ok(value) => {
-            let pretty = serde_json::to_string_pretty(&value).unwrap_or_else(|_| json_str.to_string());
+            let pretty =
+                serde_json::to_string_pretty(&value).unwrap_or_else(|_| json_str.to_string());
             colorize_json(&pretty, &colors)
         }
         Err(_) => {

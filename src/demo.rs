@@ -12,9 +12,11 @@ use std::time::Duration;
 ///
 /// Simulates Sparrow's Planner → Coder → Verifier pipeline by generating
 /// a simple snake game in Rust, compiling it, and optionally running it.
-pub async fn run_demo(_skills: Option<&dyn crate::capabilities::SkillLibrary>) -> anyhow::Result<()> {
-    use crossterm::style::{Color, SetForegroundColor, ResetColor};
+pub async fn run_demo(
+    _skills: Option<&dyn crate::capabilities::SkillLibrary>,
+) -> anyhow::Result<()> {
     use crossterm::ExecutableCommand;
+    use crossterm::style::{Color, ResetColor, SetForegroundColor};
 
     let mut stdout = io::stdout();
 
@@ -28,7 +30,12 @@ pub async fn run_demo(_skills: Option<&dyn crate::capabilities::SkillLibrary>) -
     println!();
 
     // ── Phase 1: Planner ──────────────────────────────────────────────
-    phase_header(&mut stdout, "Planner", "Analyse de la demande...", Color::Yellow)?;
+    phase_header(
+        &mut stdout,
+        "Planner",
+        "Analyse de la demande...",
+        Color::Yellow,
+    )?;
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     let plan = vec![
@@ -82,7 +89,12 @@ pub async fn run_demo(_skills: Option<&dyn crate::capabilities::SkillLibrary>) -
     println!();
 
     // ── Phase 3: Verifier ─────────────────────────────────────────────
-    phase_header(&mut stdout, "Verifier", "Vérification du code...", Color::Magenta)?;
+    phase_header(
+        &mut stdout,
+        "Verifier",
+        "Vérification du code...",
+        Color::Magenta,
+    )?;
     tokio::time::sleep(Duration::from_millis(300)).await;
 
     // Try to compile the game
@@ -97,7 +109,10 @@ pub async fn run_demo(_skills: Option<&dyn crate::capabilities::SkillLibrary>) -
             stdout.execute(SetForegroundColor(Color::Red))?;
             println!("  ✗ Compilation échouée : {err}");
             stdout.execute(ResetColor)?;
-            println!("  → Le code source reste disponible dans {}", demo_dir.display());
+            println!(
+                "  → Le code source reste disponible dans {}",
+                demo_dir.display()
+            );
         }
     }
 
@@ -111,7 +126,10 @@ pub async fn run_demo(_skills: Option<&dyn crate::capabilities::SkillLibrary>) -
     stdout.execute(ResetColor)?;
     println!();
     println!("  Planner  : {} étapes planifiées", plan.len());
-    println!("  Coder    : {} lignes de code générées", game_code.lines().count());
+    println!(
+        "  Coder    : {} lignes de code générées",
+        game_code.lines().count()
+    );
     println!(
         "  Verifier : {}",
         if compile_result.is_ok() {
@@ -153,8 +171,8 @@ fn phase_header(
     subtitle: &str,
     color: crossterm::style::Color,
 ) -> io::Result<()> {
-    use crossterm::style::{Attribute, SetAttribute, SetForegroundColor, ResetColor};
     use crossterm::ExecutableCommand;
+    use crossterm::style::{Attribute, ResetColor, SetAttribute, SetForegroundColor};
 
     stdout.execute(SetForegroundColor(color))?;
     stdout.execute(SetAttribute(Attribute::Bold))?;
@@ -422,7 +440,10 @@ fn main() -> anyhow::Result<()> {
 // ─── Compilation ─────────────────────────────────────────────────────────────
 
 /// Try to compile the generated snake game.
-fn compile_snake_game(demo_dir: &std::path::Path, game_path: &std::path::Path) -> anyhow::Result<()> {
+fn compile_snake_game(
+    demo_dir: &std::path::Path,
+    game_path: &std::path::Path,
+) -> anyhow::Result<()> {
     // Check if rustc is available
     let rustc_check = std::process::Command::new("rustc")
         .arg("--version")

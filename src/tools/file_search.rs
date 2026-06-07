@@ -88,8 +88,7 @@ fn search_with_rg(
     }
 
     if options.context_lines > 0 {
-        cmd.arg("-C")
-            .arg(options.context_lines.to_string());
+        cmd.arg("-C").arg(options.context_lines.to_string());
     }
 
     if let Some(ref glob) = options.file_glob {
@@ -111,7 +110,10 @@ fn search_with_rg(
         anyhow::bail!("ripgrep failed: {stderr}");
     }
 
-    parse_rg_output(&String::from_utf8_lossy(&output.stdout), options.max_results)
+    parse_rg_output(
+        &String::from_utf8_lossy(&output.stdout),
+        options.max_results,
+    )
 }
 
 /// Parse ripgrep output into SearchMatch structs.
@@ -156,8 +158,7 @@ fn search_with_grep(
     }
 
     if options.context_lines > 0 {
-        cmd.arg("-C")
-            .arg(options.context_lines.to_string());
+        cmd.arg("-C").arg(options.context_lines.to_string());
     }
 
     if let Some(ref glob) = options.file_glob {
@@ -176,7 +177,10 @@ fn search_with_grep(
         anyhow::bail!("grep failed: {stderr}");
     }
 
-    parse_grep_output(&String::from_utf8_lossy(&output.stdout), options.max_results)
+    parse_grep_output(
+        &String::from_utf8_lossy(&output.stdout),
+        options.max_results,
+    )
 }
 
 /// Parse grep output.
@@ -192,7 +196,8 @@ pub fn find_files(pattern: &str, directory: &Path) -> anyhow::Result<Vec<String>
     // Use fd if available, else find
     if fd_available() {
         let output = Command::new("fd")
-            .arg("--type").arg("f")
+            .arg("--type")
+            .arg("f")
             .arg(pattern)
             .arg(directory)
             .output()?;
@@ -203,8 +208,10 @@ pub fn find_files(pattern: &str, directory: &Path) -> anyhow::Result<Vec<String>
     } else {
         let output = Command::new("find")
             .arg(directory)
-            .arg("-name").arg(pattern)
-            .arg("-type").arg("f")
+            .arg("-name")
+            .arg(pattern)
+            .arg("-type")
+            .arg("f")
             .output()?;
 
         for line in String::from_utf8_lossy(&output.stdout).lines() {

@@ -26,14 +26,16 @@ impl SessionSearch {
         let conn = rusqlite::Connection::open(&db_path)?;
 
         // Enable FTS5
-        conn.execute_batch("
+        conn.execute_batch(
+            "
             CREATE VIRTUAL TABLE IF NOT EXISTS sessions_fts USING fts5(
                 session_id,
                 title,
                 content,
                 tokenize='unicode61'
             );
-        ")?;
+        ",
+        )?;
 
         Ok(Self { db_path })
     }
@@ -76,15 +78,18 @@ impl SessionSearch {
              LIMIT ?2"
         )?;
 
-        let hits = stmt.query_map(rusqlite::params![query, limit as i64], |row| {
-            Ok(SessionHit {
-                session_id: row.get(0)?,
-                title: row.get(1)?,
-                snippet: row.get::<_, String>(2).unwrap_or_default(),
-                started_at: String::new(),
-                match_count: 1,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let hits = stmt
+            .query_map(rusqlite::params![query, limit as i64], |row| {
+                Ok(SessionHit {
+                    session_id: row.get(0)?,
+                    title: row.get(1)?,
+                    snippet: row.get::<_, String>(2).unwrap_or_default(),
+                    started_at: String::new(),
+                    match_count: 1,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
 
         Ok(hits)
     }
@@ -97,18 +102,21 @@ impl SessionSearch {
             "SELECT session_id, title, substr(content, 1, 200) as snippet
              FROM sessions_fts
              ORDER BY rowid DESC
-             LIMIT ?1"
+             LIMIT ?1",
         )?;
 
-        let hits = stmt.query_map(rusqlite::params![limit as i64], |row| {
-            Ok(SessionHit {
-                session_id: row.get(0)?,
-                title: row.get(1)?,
-                snippet: row.get::<_, String>(2).unwrap_or_default(),
-                started_at: String::new(),
-                match_count: 1,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let hits = stmt
+            .query_map(rusqlite::params![limit as i64], |row| {
+                Ok(SessionHit {
+                    session_id: row.get(0)?,
+                    title: row.get(1)?,
+                    snippet: row.get::<_, String>(2).unwrap_or_default(),
+                    started_at: String::new(),
+                    match_count: 1,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
 
         Ok(hits)
     }
@@ -126,17 +134,20 @@ impl SessionSearch {
     /// Get the total number of indexed sessions.
     pub fn count(&self) -> anyhow::Result<usize> {
         let conn = rusqlite::Connection::open(&self.db_path)?;
-        let count: usize = conn.query_row("SELECT COUNT(*) FROM sessions_fts", [], |row| row.get(0))?;
+        let count: usize =
+            conn.query_row("SELECT COUNT(*) FROM sessions_fts", [], |row| row.get(0))?;
         Ok(count)
     }
 
     /// Rebuild the FTS index (useful after corruption or migration).
     pub fn rebuild(&self) -> anyhow::Result<()> {
         let conn = rusqlite::Connection::open(&self.db_path)?;
-        conn.execute_batch("
+        conn.execute_batch(
+            "
             DELETE FROM sessions_fts;
             INSERT INTO sessions_fts(sessions_fts) VALUES('rebuild');
-        ")?;
+        ",
+        )?;
         Ok(())
     }
 }
@@ -150,8 +161,16 @@ mod tests {
         let tmp = std::env::temp_dir().join("sparrow_test_fts.db");
         let search = SessionSearch::open(tmp.clone()).unwrap();
 
-        search.index_session("sess1", Some("Test Session"), "This is about Rust programming").unwrap();
-        search.index_session("sess2", Some("Another"), "Python is great for data science").unwrap();
+        search
+            .index_session(
+                "sess1",
+                Some("Test Session"),
+                "This is about Rust programming",
+            )
+            .unwrap();
+        search
+            .index_session("sess2", Some("Another"), "Python is great for data science")
+            .unwrap();
 
         let hits = search.search("Rust programming", 5).unwrap();
         assert!(!hits.is_empty());
