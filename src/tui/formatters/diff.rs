@@ -41,10 +41,10 @@ pub struct DiffColors {
 impl Default for DiffColors {
     fn default() -> Self {
         Self {
-            plus: "\x1b[38;2;116;194;88m",   // green
-            minus: "\x1b[38;2;217;106;99m",  // red
-            hunk: "\x1b[38;2;86;182;194m",   // cyan
-            file: "\x1b[1;38;2;242;169;60m", // bold amber
+            plus: "\x1b[38;2;116;194;88m",     // green
+            minus: "\x1b[38;2;217;106;99m",    // red
+            hunk: "\x1b[38;2;86;182;194m",     // cyan
+            file: "\x1b[1;38;2;242;169;60m",   // bold amber
             context: "\x1b[38;2;137;125;108m", // dim
             reset: "\x1b[0m",
         }

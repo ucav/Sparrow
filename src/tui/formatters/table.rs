@@ -14,10 +14,10 @@ pub struct TableStyles {
 impl Default for TableStyles {
     fn default() -> Self {
         Self {
-            header: "\x1b[1;38;2;242;169;60m",  // bold amber
-            cell: "\x1b[38;2;236;226;207m",      // normal fg
-            separator: "\x1b[38;2;92;83;70m",    // dimmer
-            border: "\x1b[38;2;92;83;70m",       // dimmer
+            header: "\x1b[1;38;2;242;169;60m", // bold amber
+            cell: "\x1b[38;2;236;226;207m",    // normal fg
+            separator: "\x1b[38;2;92;83;70m",  // dimmer
+            border: "\x1b[38;2;92;83;70m",     // dimmer
             reset: "\x1b[0m",
         }
     }

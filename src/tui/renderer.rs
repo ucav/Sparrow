@@ -35,16 +35,20 @@ impl TermRenderer {
     }
 
     pub fn render_code(&self, code: &str, language: &str) -> String {
-        let lang = if language.is_empty() { None } else { Some(language) };
+        let lang = if language.is_empty() {
+            None
+        } else {
+            Some(language)
+        };
         match lang {
-            Some(l) => {
-                crate::tui::formatters::code::highlight_with_line_numbers(code, l, &self.config.syntax_theme)
-                    .unwrap_or_else(|_| code.to_string())
-            }
-            None => {
-                crate::tui::formatters::code::highlight(code, "", &self.config.syntax_theme)
-                    .unwrap_or_else(|_| code.to_string())
-            }
+            Some(l) => crate::tui::formatters::code::highlight_with_line_numbers(
+                code,
+                l,
+                &self.config.syntax_theme,
+            )
+            .unwrap_or_else(|_| code.to_string()),
+            None => crate::tui::formatters::code::highlight(code, "", &self.config.syntax_theme)
+                .unwrap_or_else(|_| code.to_string()),
         }
     }
 
@@ -57,7 +61,12 @@ impl TermRenderer {
     }
 
     pub fn render_table(&self, headers: &[&str], rows: &[Vec<String>]) -> String {
-        crate::tui::formatters::table::render_table(headers, rows, Some(self.config.width as usize), None)
+        crate::tui::formatters::table::render_table(
+            headers,
+            rows,
+            Some(self.config.width as usize),
+            None,
+        )
     }
 
     pub fn render_key_value(&self, pairs: &[(&str, &str)]) -> String {

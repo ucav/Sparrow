@@ -22,7 +22,11 @@ pub fn highlight(code: &str, language: &str, theme: &str) -> Result<String> {
     let syntax = language_syntax(&ss, language);
     let theme = ts
         .themes
-        .get(if theme.is_empty() { DEFAULT_THEME } else { theme })
+        .get(if theme.is_empty() {
+            DEFAULT_THEME
+        } else {
+            theme
+        })
         .unwrap_or_else(|| {
             ts.themes
                 .get(DEFAULT_THEME)
@@ -53,7 +57,11 @@ pub fn highlight_with_line_numbers(code: &str, language: &str, theme: &str) -> R
     let syntax = language_syntax(&ss, language);
     let theme = ts
         .themes
-        .get(if theme.is_empty() { DEFAULT_THEME } else { theme })
+        .get(if theme.is_empty() {
+            DEFAULT_THEME
+        } else {
+            theme
+        })
         .unwrap_or_else(|| {
             ts.themes
                 .get(DEFAULT_THEME)
@@ -63,7 +71,11 @@ pub fn highlight_with_line_numbers(code: &str, language: &str, theme: &str) -> R
     let mut h = HighlightLines::new(syntax, theme);
     let lines: Vec<&str> = LinesWithEndings::from(code).collect();
     let total = lines.len();
-    let gutter_width = if total == 0 { 1 } else { total.to_string().len() };
+    let gutter_width = if total == 0 {
+        1
+    } else {
+        total.to_string().len()
+    };
 
     let dim_reset = "\x1b[0m";
     // Dim grey for line numbers: \x1b[38;2;100;100;100m
@@ -90,7 +102,10 @@ pub fn highlight_with_line_numbers(code: &str, language: &str, theme: &str) -> R
 
 /// Auto-detect the language from a file extension or common name.
 /// Maps language names / extensions to syntect syntax names.
-pub(crate) fn language_syntax<'a>(ss: &'a SyntaxSet, language: &str) -> &'a syntect::parsing::SyntaxReference {
+pub(crate) fn language_syntax<'a>(
+    ss: &'a SyntaxSet,
+    language: &str,
+) -> &'a syntect::parsing::SyntaxReference {
     let lang_lower = language.trim().to_lowercase();
 
     // Try by direct syntax name

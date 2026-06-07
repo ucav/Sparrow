@@ -34,7 +34,7 @@ impl MemoryStore {
                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
             CREATE INDEX IF NOT EXISTS idx_memory_key ON memory(key);
-            CREATE INDEX IF NOT EXISTS idx_memory_category ON memory(category);"
+            CREATE INDEX IF NOT EXISTS idx_memory_category ON memory(category);",
         )?;
         Ok(Self { db_path })
     }
@@ -54,18 +54,20 @@ impl MemoryStore {
     pub fn get(&self, key: &str) -> anyhow::Result<Option<MemoryFact>> {
         let conn = rusqlite::Connection::open(&self.db_path)?;
         let mut stmt = conn.prepare(
-            "SELECT id, key, value, category, created_at, updated_at FROM memory WHERE key = ?1"
+            "SELECT id, key, value, category, created_at, updated_at FROM memory WHERE key = ?1",
         )?;
-        let result = stmt.query_row(rusqlite::params![key], |row| {
-            Ok(MemoryFact {
-                id: row.get(0)?,
-                key: row.get(1)?,
-                value: row.get(2)?,
-                category: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5)?,
+        let result = stmt
+            .query_row(rusqlite::params![key], |row| {
+                Ok(MemoryFact {
+                    id: row.get(0)?,
+                    key: row.get(1)?,
+                    value: row.get(2)?,
+                    category: row.get(3)?,
+                    created_at: row.get(4)?,
+                    updated_at: row.get(5)?,
+                })
             })
-        }).ok();
+            .ok();
         Ok(result)
     }
 
@@ -76,18 +78,21 @@ impl MemoryStore {
         let mut stmt = conn.prepare(
             "SELECT id, key, value, category, created_at, updated_at FROM memory
              WHERE key LIKE ?1 OR value LIKE ?1 OR category LIKE ?1
-             ORDER BY updated_at DESC LIMIT 50"
+             ORDER BY updated_at DESC LIMIT 50",
         )?;
-        let facts = stmt.query_map(rusqlite::params![pattern], |row| {
-            Ok(MemoryFact {
-                id: row.get(0)?,
-                key: row.get(1)?,
-                value: row.get(2)?,
-                category: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5)?,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let facts = stmt
+            .query_map(rusqlite::params![pattern], |row| {
+                Ok(MemoryFact {
+                    id: row.get(0)?,
+                    key: row.get(1)?,
+                    value: row.get(2)?,
+                    category: row.get(3)?,
+                    created_at: row.get(4)?,
+                    updated_at: row.get(5)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(facts)
     }
 
@@ -96,18 +101,21 @@ impl MemoryStore {
         let conn = rusqlite::Connection::open(&self.db_path)?;
         let mut stmt = conn.prepare(
             "SELECT id, key, value, category, created_at, updated_at FROM memory
-             ORDER BY updated_at DESC"
+             ORDER BY updated_at DESC",
         )?;
-        let facts = stmt.query_map([], |row| {
-            Ok(MemoryFact {
-                id: row.get(0)?,
-                key: row.get(1)?,
-                value: row.get(2)?,
-                category: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5)?,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let facts = stmt
+            .query_map([], |row| {
+                Ok(MemoryFact {
+                    id: row.get(0)?,
+                    key: row.get(1)?,
+                    value: row.get(2)?,
+                    category: row.get(3)?,
+                    created_at: row.get(4)?,
+                    updated_at: row.get(5)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(facts)
     }
 
@@ -116,18 +124,21 @@ impl MemoryStore {
         let conn = rusqlite::Connection::open(&self.db_path)?;
         let mut stmt = conn.prepare(
             "SELECT id, key, value, category, created_at, updated_at FROM memory
-             WHERE category = ?1 ORDER BY updated_at DESC"
+             WHERE category = ?1 ORDER BY updated_at DESC",
         )?;
-        let facts = stmt.query_map(rusqlite::params![category], |row| {
-            Ok(MemoryFact {
-                id: row.get(0)?,
-                key: row.get(1)?,
-                value: row.get(2)?,
-                category: row.get(3)?,
-                created_at: row.get(4)?,
-                updated_at: row.get(5)?,
-            })
-        })?.filter_map(|r| r.ok()).collect();
+        let facts = stmt
+            .query_map(rusqlite::params![category], |row| {
+                Ok(MemoryFact {
+                    id: row.get(0)?,
+                    key: row.get(1)?,
+                    value: row.get(2)?,
+                    category: row.get(3)?,
+                    created_at: row.get(4)?,
+                    updated_at: row.get(5)?,
+                })
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(facts)
     }
 
@@ -149,11 +160,14 @@ impl MemoryStore {
     pub fn categories(&self) -> anyhow::Result<Vec<(String, usize)>> {
         let conn = rusqlite::Connection::open(&self.db_path)?;
         let mut stmt = conn.prepare(
-            "SELECT category, COUNT(*) as cnt FROM memory GROUP BY category ORDER BY cnt DESC"
+            "SELECT category, COUNT(*) as cnt FROM memory GROUP BY category ORDER BY cnt DESC",
         )?;
-        let cats = stmt.query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, usize>(1)?))
-        })?.filter_map(|r| r.ok()).collect();
+        let cats = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, usize>(1)?))
+            })?
+            .filter_map(|r| r.ok())
+            .collect();
         Ok(cats)
     }
 }

@@ -33,7 +33,10 @@ pub fn handle_voice(cmd: VoiceCommand) -> anyhow::Result<()> {
             println!("✓ Audio saved: {}", path.display());
             println!("  → Play: ffplay {} -nodisp -autoexit", path.display());
         }
-        VoiceCommand::Transcribe { audio_file, language } => {
+        VoiceCommand::Transcribe {
+            audio_file,
+            language,
+        } => {
             println!("🎤 Transcribing audio...");
             let text = crate::tools::stt::transcribe(
                 &audio_file,

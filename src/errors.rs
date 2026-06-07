@@ -20,9 +20,7 @@ use crate::provider::BrainError;
 /// ```
 pub fn humanize_brain_error(err: &BrainError, provider_label: &str, model: &str) -> String {
     match err {
-        BrainError::RateLimit { retry_after } => {
-            humanize_rate_limit(provider_label, *retry_after)
-        }
+        BrainError::RateLimit { retry_after } => humanize_rate_limit(provider_label, *retry_after),
         BrainError::ServerError { status, body } => {
             humanize_http_error(*status, body, provider_label, model)
         }
@@ -121,10 +119,7 @@ fn humanize_unauthorized(provider_label: &str) -> String {
             "https://openrouter.ai/keys",
             " (crédits gratuits à l'inscription)",
         ),
-        "xai" | "xai (grok)" => (
-            "https://console.x.ai/",
-            " (payant)",
-        ),
+        "xai" | "xai (grok)" => ("https://console.x.ai/", " (payant)"),
         _ => ("", ""),
     };
 
@@ -383,7 +378,10 @@ mod tests {
     #[test]
     fn test_extract_http_status() {
         assert_eq!(extract_http_status("HTTP 401 Unauthorized"), Some(401));
-        assert_eq!(extract_http_status("status: 429 Too Many Requests"), Some(429));
+        assert_eq!(
+            extract_http_status("status: 429 Too Many Requests"),
+            Some(429)
+        );
         assert_eq!(extract_http_status("500 Internal Server Error"), Some(500));
         assert_eq!(extract_http_status("no status here"), None);
     }

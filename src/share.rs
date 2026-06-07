@@ -11,10 +11,7 @@ use std::process::Command;
 ///
 /// Reads the latest transcript, formats it as a Markdown gist, and uploads it.
 /// If `include_demo_gif` is true, adds a placeholder for a demo GIF at the top.
-pub async fn run_share(
-    state_dir: &std::path::Path,
-    include_demo_gif: bool,
-) -> anyhow::Result<()> {
+pub async fn run_share(state_dir: &std::path::Path, include_demo_gif: bool) -> anyhow::Result<()> {
     println!("🔗 Sparrow Share — partage ta session\n");
 
     // 1. Find the latest transcript
@@ -113,9 +110,7 @@ fn format_transcript(
     let mut md = String::new();
 
     // Header
-    md.push_str(&format!(
-        "# 🐦 Sparrow Session — {timestamp}\n\n"
-    ));
+    md.push_str(&format!("# 🐦 Sparrow Session — {timestamp}\n\n"));
 
     if include_demo_gif {
         md.push_str("> 🎬 *Démo GIF à venir — regarde Sparrow en action !*\n\n");
@@ -159,9 +154,7 @@ fn format_transcript(
     // Footer
     md.push_str("\n---\n");
     md.push_str("*Partagé avec Sparrow — l'agent CLI qui code avec toi.*\n");
-    md.push_str(
-        "*[Installer Sparrow](https://github.com/ucav/Sparrow) | cargo install sparrow*\n",
-    );
+    md.push_str("*[Installer Sparrow](https://github.com/ucav/Sparrow) | cargo install sparrow*\n");
 
     Ok(md)
 }
@@ -262,7 +255,11 @@ fn render_event_to_markdown(md: &mut String, event: &serde_json::Value) {
             md.push_str(&format!("### 🚀 Démarrage : {task}\n\n"));
         }
         "TextDelta" | "text_delta" | "assistant" => {
-            if let Some(text) = event.get("text").or_else(|| event.get("content")).and_then(|t| t.as_str()) {
+            if let Some(text) = event
+                .get("text")
+                .or_else(|| event.get("content"))
+                .and_then(|t| t.as_str())
+            {
                 if text.len() > 200 {
                     md.push_str(&format!(
                         "<details>\n<summary>💬 {}</summary>\n\n{}\n\n</details>\n\n",
@@ -420,11 +417,7 @@ fn upload_via_gh_cli(filename: &str, content: &str) -> anyhow::Result<String> {
     Ok(url)
 }
 
-async fn upload_via_api(
-    filename: &str,
-    content: &str,
-    token: &str,
-) -> anyhow::Result<String> {
+async fn upload_via_api(filename: &str, content: &str, token: &str) -> anyhow::Result<String> {
     let client = reqwest::Client::builder()
         .user_agent("sparrow-share")
         .timeout(std::time::Duration::from_secs(30))

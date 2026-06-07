@@ -20,10 +20,7 @@ use crate::provider::detect::{self, DetectedProvider, ProviderTier};
 /// Guides the user through provider detection and configuration. If the user
 /// chooses "Quick start", all detected providers are configured immediately
 /// without further prompts.
-pub async fn run_wizard(
-    config: &Config,
-    store: &dyn ConfigStore,
-) -> anyhow::Result<()> {
+pub async fn run_wizard(config: &Config, store: &dyn ConfigStore) -> anyhow::Result<()> {
     let _auth = crate::auth::store::ChainedAuthStore::new(config.config_dir.clone());
 
     print_banner();
@@ -111,7 +108,11 @@ fn show_detection_summary(
     if !need_key.is_empty() {
         println!("\n⚠️  Clés trouvées mais invalides :");
         for p in &need_key {
-            println!("   • {} — {}", p.label, p.validation_error.as_deref().unwrap_or("?"));
+            println!(
+                "   • {} — {}",
+                p.label,
+                p.validation_error.as_deref().unwrap_or("?")
+            );
         }
     }
 
@@ -135,10 +136,7 @@ fn show_detection_summary(
     }
 
     // Show un-configured providers count
-    let not_configured = all
-        .iter()
-        .filter(|p| !p.key_found)
-        .count();
+    let not_configured = all.iter().filter(|p| !p.key_found).count();
     if not_configured > 0 {
         println!(
             "\n📋 {} autres providers dispos (payants ou nécessitent une clé).",
@@ -176,11 +174,15 @@ async fn quick_start(
     // If nothing was configured, suggest free providers
     if ready.is_empty() {
         println!("   ⚠️  Aucun provider prêt. Voici des options gratuites :\n");
-        println!("   • NVIDIA NIM — gratuit, crée une clé : https://build.nvidia.com/explore/discover");
+        println!(
+            "   • NVIDIA NIM — gratuit, crée une clé : https://build.nvidia.com/explore/discover"
+        );
         println!("     puis : export NVIDIA_API_KEY=\"ta-clé\" && sparrow setup");
         println!("   • Groq — tier gratuit généreux : https://console.groq.com/keys");
         println!("     puis : export GROQ_API_KEY=\"ta-clé\" && sparrow setup");
-        println!("   • Google Gemini — gratuit 1500 req/j : https://aistudio.google.com/app/apikey");
+        println!(
+            "   • Google Gemini — gratuit 1500 req/j : https://aistudio.google.com/app/apikey"
+        );
         println!("     puis : export GEMINI_API_KEY=\"ta-clé\" && sparrow setup\n");
     }
 
@@ -302,14 +304,15 @@ async fn step_by_step(
         io::stdin().read_line(&mut answer)?;
         if !matches!(answer.trim().to_lowercase().as_str(), "n" | "no" | "non") {
             println!("   → Pour utiliser Copilot, assure-toi d'être connecté : gh auth login");
-            updated.providers.entry("copilot".into()).or_insert_with(|| {
-                ProviderConfig {
+            updated
+                .providers
+                .entry("copilot".into())
+                .or_insert_with(|| ProviderConfig {
                     adapter: "openai-compatible".into(),
                     base_url: Some("https://api.githubcopilot.com".into()),
                     models: vec!["gpt-4o".into()],
                     api_key_env: Some("COPILOT_TOKEN".into()),
-                }
-            });
+                });
             println!("   ✓ GitHub Copilot ajouté à la config.");
         }
     }
@@ -340,10 +343,7 @@ async fn handle_provider_key_prompt(
     provider: &DetectedProvider,
     auth: &crate::auth::store::ChainedAuthStore,
 ) -> anyhow::Result<()> {
-    let env_var_name = provider
-        .env_var
-        .as_deref()
-        .unwrap_or(&provider.id);
+    let env_var_name = provider.env_var.as_deref().unwrap_or(&provider.id);
 
     println!();
     println!("Pour utiliser {}, il te faut une clé API.", provider.label);
@@ -370,7 +370,9 @@ async fn handle_provider_key_prompt(
             println!("✓");
             auth.set(&provider.id, Credential::api_key(&key))?;
             // SAFETY: single-threaded setup wizard
-            unsafe { std::env::set_var(env_var_name, &key); }
+            unsafe {
+                std::env::set_var(env_var_name, &key);
+            }
             add_provider_to_config(config, provider);
             println!("   ✓ {} configuré avec succès !", provider.label);
         }
@@ -381,10 +383,15 @@ async fn handle_provider_key_prompt(
             io::stdout().flush().ok();
             let mut answer = String::new();
             io::stdin().read_line(&mut answer)?;
-            if matches!(answer.trim().to_lowercase().as_str(), "o" | "oui" | "y" | "yes") {
+            if matches!(
+                answer.trim().to_lowercase().as_str(),
+                "o" | "oui" | "y" | "yes"
+            ) {
                 auth.set(&provider.id, Credential::api_key(&key))?;
                 // SAFETY: single-threaded setup wizard
-                unsafe { std::env::set_var(env_var_name, &key); }
+                unsafe {
+                    std::env::set_var(env_var_name, &key);
+                }
                 add_provider_to_config(config, provider);
                 println!("   ✓ {} ajouté (clé non validée).", provider.label);
             }
@@ -398,22 +405,24 @@ async fn handle_provider_key_prompt(
 fn add_provider_to_config(config: &mut Config, provider: &DetectedProvider) {
     let def = crate::config::providers::find_provider(&provider.id);
 
-    let entry = config.providers.entry(provider.id.clone()).or_insert_with(|| {
-        ProviderConfig {
+    let entry = config
+        .providers
+        .entry(provider.id.clone())
+        .or_insert_with(|| ProviderConfig {
             adapter: def
                 .as_ref()
                 .map(|d| d.adapter.clone())
                 .unwrap_or_else(|| "openai-compatible".into()),
-            base_url: def.as_ref().map(|d| Some(d.base_url.clone())).unwrap_or(None),
+            base_url: def
+                .as_ref()
+                .map(|d| Some(d.base_url.clone()))
+                .unwrap_or(None),
             models: def
                 .as_ref()
-                .map(|d| {
-                    crate::config::providers::default_models(&d.id)
-                })
+                .map(|d| crate::config::providers::default_models(&d.id))
                 .unwrap_or_default(),
             api_key_env: provider.env_var.clone(),
-        }
-    });
+        });
 
     // Ensure the adapter and base_url are correct even for existing entries
     if let Some(d) = &def {

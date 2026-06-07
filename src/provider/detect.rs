@@ -4,7 +4,7 @@
 //!
 //! Integrates with the first-run wizard in [`crate::onboarding::wizard`].
 
-use crate::config::providers::{find_provider, provider_registry, ProviderDef};
+use crate::config::providers::{ProviderDef, find_provider, provider_registry};
 use serde::{Deserialize, Serialize};
 
 // ─── Detection result types ──────────────────────────────────────────────────
@@ -328,10 +328,7 @@ async fn validate_with_chat_request(base_url: &str, api_key: &str) -> Result<(),
         .build()
         .map_err(|e| format!("Erreur client HTTP: {e}"))?;
 
-    let url = format!(
-        "{}/chat/completions",
-        base_url.trim_end_matches('/')
-    );
+    let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
 
     let body = serde_json::json!({
         "model": "gpt-3.5-turbo",  // widely supported model name for testing
@@ -359,7 +356,9 @@ async fn validate_with_chat_request(base_url: &str, api_key: &str) -> Result<(),
     match resp.status().as_u16() {
         200 => Ok(()),
         401 | 403 => Err("Clé API invalide.".into()),
-        404 => Err("Endpoint chat/completions introuvable. L'URL de base est peut-être incorrecte.".into()),
+        404 => Err(
+            "Endpoint chat/completions introuvable. L'URL de base est peut-être incorrecte.".into(),
+        ),
         429 => Err("Rate limit — trop de requêtes.".into()),
         s => {
             // Even 400/422 is "good" — it means the key was accepted, just the model
@@ -380,9 +379,7 @@ async fn validate_ollama_connection(base_url: &str) -> Result<(), String> {
         .build()
         .map_err(|e| format!("Erreur client HTTP: {e}"))?;
 
-    let root = base_url
-        .trim_end_matches('/')
-        .trim_end_matches("/v1");
+    let root = base_url.trim_end_matches('/').trim_end_matches("/v1");
     let url = format!("{root}/api/tags");
 
     let resp = client.get(&url).send().await.map_err(|e| {
@@ -399,16 +396,16 @@ async fn validate_ollama_connection(base_url: &str) -> Result<(), String> {
 
     match resp.status().as_u16() {
         200 => Ok(()),
-        s => Err(format!("Ollama a répondu HTTP {s}. Vérifie que le serveur tourne.")),
+        s => Err(format!(
+            "Ollama a répondu HTTP {s}. Vérifie que le serveur tourne."
+        )),
     }
 }
 
 /// Run validation for all detected providers with keys.
 ///
 /// Returns the list of providers with `validated` fields populated.
-pub async fn validate_detected_providers(
-    providers: &mut [DetectedProvider],
-) {
+pub async fn validate_detected_providers(providers: &mut [DetectedProvider]) {
     for p in providers.iter_mut() {
         if !p.key_found {
             p.validated = Some(false);

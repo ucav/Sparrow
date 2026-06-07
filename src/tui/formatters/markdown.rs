@@ -28,18 +28,18 @@ pub struct MarkdownStyles {
 impl Default for MarkdownStyles {
     fn default() -> Self {
         Self {
-            h1: "\x1b[1;38;2;242;169;60m",      // bold amber
-            h2: "\x1b[1;38;2;111;166;230m",     // bold blue
-            h3: "\x1b[1;38;2;78;201;176m",       // bold teal
+            h1: "\x1b[1;38;2;242;169;60m",  // bold amber
+            h2: "\x1b[1;38;2;111;166;230m", // bold blue
+            h3: "\x1b[1;38;2;78;201;176m",  // bold teal
             bold: "\x1b[1m",
             italic: "\x1b[3m",
             code_inline: "\x1b[48;2;22;18;13;38;2;242;201;76m", // gold on dark bg
-            code_block_lang: "\x1b[38;2;137;125;108m", // dim
-            link_url: "\x1b[38;2;111;166;230m",  // blue
-            list_marker: "\x1b[38;2;242;169;60m", // amber
-            blockquote: "\x1b[38;2;137;125;108m", // dim
-            hr: "\x1b[38;2;92;83;70m",            // dimmer
-            text: "",                              // default terminal colour
+            code_block_lang: "\x1b[38;2;137;125;108m",          // dim
+            link_url: "\x1b[38;2;111;166;230m",                 // blue
+            list_marker: "\x1b[38;2;242;169;60m",               // amber
+            blockquote: "\x1b[38;2;137;125;108m",               // dim
+            hr: "\x1b[38;2;92;83;70m",                          // dimmer
+            text: "",                                           // default terminal colour
             reset: "\x1b[0m",
         }
     }

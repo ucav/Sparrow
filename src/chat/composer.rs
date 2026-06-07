@@ -77,7 +77,11 @@ impl InputComposer {
         let mut first = true;
 
         loop {
-            let prompt = if first { &self.prompt } else { &self.cont_prompt };
+            let prompt = if first {
+                &self.prompt
+            } else {
+                &self.cont_prompt
+            };
             print!("{prompt}");
             io::stdout().flush()?;
 
@@ -131,7 +135,9 @@ impl InputComposer {
         if self.history.is_empty() {
             return None;
         }
-        let pos = self.history_pos.map_or(0, |p| (p + 1).min(self.history.len() - 1));
+        let pos = self
+            .history_pos
+            .map_or(0, |p| (p + 1).min(self.history.len() - 1));
         self.history_pos = Some(pos);
         Some(&self.history[pos])
     }
