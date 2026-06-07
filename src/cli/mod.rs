@@ -35,6 +35,24 @@ pub struct Cli {
     #[arg(long)]
     pub budget: Option<f64>,
 
+    /// Hard stop on cumulative USD spent in this run (alias for --budget,
+    /// kept separately to match competitor tools' UX).
+    #[arg(long)]
+    pub max_cost_usd: Option<f64>,
+
+    /// Hard stop on wall-clock seconds elapsed in this run.
+    #[arg(long)]
+    pub max_wall_secs: Option<u64>,
+
+    /// Hard stop on total tokens consumed in this run.
+    #[arg(long)]
+    pub max_tokens: Option<u64>,
+
+    /// Bind address for daemon / cockpit servers (default 127.0.0.1).
+    /// Use 0.0.0.0 when running under WSL or in a container.
+    #[arg(long)]
+    pub bind: Option<String>,
+
     /// Sandbox backend
     #[arg(long)]
     pub sandbox: Option<String>,

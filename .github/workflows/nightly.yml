@@ -1,0 +1,53 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 3 * * *"   # 03:00 UTC every day
+  workflow_dispatch: {}
+
+jobs:
+  build-test:
+    name: Build + test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: cargo fmt --check
+        run: cargo fmt --all --check
+      - name: cargo clippy
+        run: cargo clippy --no-deps -- -D warnings
+      - name: cargo test
+        run: cargo test --all-targets
+
+  audit:
+    name: Supply-chain audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: rustsec/audit-check@v2
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  smoke-providers:
+    name: Smoke test free providers (budget-capped)
+    runs-on: ubuntu-latest
+    if: ${{ secrets.GROQ_API_KEY != '' }}
+    env:
+      SPARROW_MAX_COST_USD: "0.05"
+      SPARROW_MAX_WALL_SECS: "60"
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release
+      - name: Quick run against Groq (capped at $0.05 / 60s)
+        run: ./target/release/sparrow run "print the sum of 2 and 2" --max-cost-usd 0.05 --max-wall-secs 60 --json | head -200

@@ -1,0 +1,47 @@
+name: Release signing (sigstore)
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  sign:
+    name: Sign release assets with cosign keyless
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write     # required for keyless signing
+      contents: write     # upload signed artifacts back to the release
+    steps:
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Download release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p signing
+          cd signing
+          gh release download "${{ github.event.release.tag_name }}" --repo "${{ github.repository }}"
+          ls -la
+
+      - name: Sign every asset
+        run: |
+          cd signing
+          for f in sparrow-*; do
+            [ -f "$f" ] || continue
+            cosign sign-blob --yes \
+              --output-signature "$f.sig" \
+              --output-certificate "$f.crt" \
+              "$f"
+          done
+
+      - name: Upload signatures and certs to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd signing
+          for f in *.sig *.crt; do
+            [ -f "$f" ] || continue
+            gh release upload "${{ github.event.release.tag_name }}" "$f" \
+              --repo "${{ github.repository }}" --clobber
+          done

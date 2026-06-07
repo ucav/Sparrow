@@ -1,0 +1,26 @@
+PackageIdentifier: ucav.Sparrow
+PackageVersion: 0.5.3
+PackageLocale: en-US
+Publisher: ucav
+PublisherUrl: https://github.com/ucav
+PublisherSupportUrl: https://github.com/ucav/Sparrow/issues
+PackageName: Sparrow
+PackageUrl: https://github.com/ucav/Sparrow
+License: MIT
+LicenseUrl: https://github.com/ucav/Sparrow/blob/master/LICENSE
+ShortDescription: A local-first Rust agent cockpit — route, run, replay, rewind.
+Description: |-
+  Sparrow is a single-binary CLI agent written in Rust. It routes each task to
+  the cheapest capable model, keeps you in control with Git-backed checkpoints,
+  and makes every run replayable. Local models (Ollama) are always the first hop;
+  cloud providers are explicit fallbacks.
+Tags:
+  - ai
+  - agent
+  - cli
+  - llm
+  - rust
+  - coding
+ReleaseNotesUrl: https://github.com/ucav/Sparrow/releases/tag/v0.5.3
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0

@@ -58,6 +58,7 @@ pub mod sandbox;
 pub mod security;
 pub mod share;
 pub mod streaming;
+pub mod telemetry;
 pub mod tools;
 pub mod tui;
 pub mod update;

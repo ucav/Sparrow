@@ -19,7 +19,7 @@
 [![asciicast](https://asciinema.org/a/PLEprnQSdv4lqOH2.svg)](https://asciinema.org/a/PLEprnQSdv4lqOH2)
 
 
-[Quick Start](#quick-start) · [Commands](#common-commands) · [Architecture](#architecture) · [Docs](#docs) · [Releases](https://github.com/ucav/Sparrow/releases)
+[Quick Start](#quick-start) · [Why Sparrow](#why-sparrow-vs-claude-code--codex--aider) · [Commands](#common-commands) · [Architecture](#architecture) · [Docs](#docs) · [Releases](https://github.com/ucav/Sparrow/releases)
 
 </div>
 
@@ -28,6 +28,30 @@
 Sparrow is a single-binary CLI agent written in Rust. It routes each task to the **cheapest capable model**, keeps you in control with **Git-backed checkpoints**, and makes every run **replayable**. Local models (Ollama) are always the first hop; cloud providers are explicit fallbacks.
 
 The project focuses on a narrow product promise: a Rust-native local cockpit where every run is **visible, replayable, budgeted, and checkpointed**.
+
+---
+
+## Why Sparrow vs Claude Code / Codex / Aider
+
+| Capability | Claude Code | OpenAI Codex CLI | Aider | **Sparrow** |
+|---|:---:|:---:|:---:|:---:|
+| Single static binary, no Node/Python runtime | ❌ | ❌ | ❌ | ✅ |
+| Choose any provider, any model | ❌ Anthropic | ❌ OpenAI | ✅ | ✅ **38 providers** |
+| Local-first (Ollama OOTB) | ❌ | ❌ | ⚠️ | ✅ |
+| Git checkpoints + `rewind` per run | ❌ | ❌ | ⚠️ | ✅ |
+| Budget caps (`--max-cost-usd` / `--max-wall-secs`) | ❌ | ❌ | ❌ | ✅ |
+| WebView cockpit + TUI + JSON stream | ⚠️ TUI only | ⚠️ TUI only | ⚠️ TUI only | ✅ all three |
+| MCP server **host + client** | ✅ | ⚠️ | ❌ | ✅ |
+| Drop-in import of `~/.claude/` config | n/a | ❌ | ❌ | ✅ |
+| Multi-agent swarm (Planner → Coder → Verifier) | ❌ | ❌ | ❌ | ✅ |
+| Telegram / Discord / Slack gateways | ❌ | ❌ | ❌ | ✅ |
+| Pre-commit secret scanner bundled | ❌ | ❌ | ❌ | ✅ |
+| Voice (`speak`, `transcribe`) | ❌ | ❌ | ❌ | ✅ |
+| Replay & share session as URL/Gist | ❌ | ❌ | ❌ | ✅ |
+| Source open, MIT | ⚠️ closed | ⚠️ closed | ✅ | ✅ |
+| Zero telemetry by default | ⚠️ | ⚠️ | ✅ | ✅ |
+
+See [`docs/comparison/vs-competitors.md`](docs/comparison/vs-competitors.md) for the long form (incl. OpenCode, Hermes, Continue, Cursor).
 
 ---
 
@@ -122,23 +146,39 @@ See [docs/AUDIT.md](docs/AUDIT.md) for module-by-module proof.
 
 ## Quick Start
 
-**Install from crates.io (recommended):**
+**Pick any of these — they all give you the same `sparrow` binary:**
 
 ```bash
+# Universal (Rust toolchain)
 cargo install sparrow-cli
-```
 
-**One-click install:**
+# macOS / Linux — one-liner
+curl -fsSL https://raw.githubusercontent.com/ucav/Sparrow/master/install.sh | sh
 
-```powershell
-# Windows
+# macOS — Homebrew
+brew install ucav/tap/sparrow
+
+# Windows — PowerShell one-liner
 irm https://raw.githubusercontent.com/ucav/Sparrow/master/install.ps1 | iex
+
+# Windows — Scoop
+scoop bucket add ucav https://github.com/ucav/scoop-bucket
+scoop install sparrow
+
+# Windows 11 — winget
+winget install ucav.Sparrow
 ```
+
+**Then:**
 
 ```bash
-# macOS / Linux
-curl -fsSL https://raw.githubusercontent.com/ucav/Sparrow/master/install.sh | sh
+sparrow launch       # first-run picks a free provider, opens cockpit
+sparrow run "explain this repo and write TODO.md"
 ```
+
+That's the [60-second tour](docs/getting-started.md). No API key required —
+the first-run wizard offers a free provider (Groq / Gemini / NVIDIA) or local
+Ollama (auto-installed if missing).
 
 **Launch Sparrow:**
 
