@@ -17,6 +17,8 @@ use ratatui::{
 };
 use tokio::sync::mpsc;
 
+pub mod formatters;
+pub mod renderer;
 pub mod theme;
 
 type CrosstermTerminal = ratatui::Terminal<ratatui::backend::CrosstermBackend<io::Stdout>>;

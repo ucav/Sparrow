@@ -6,6 +6,7 @@ use std::pin::Pin;
 use crate::event::{StopReason, TokenUsage};
 
 pub mod anthropic;
+pub mod detect;
 pub mod discovery;
 pub mod ollama;
 pub mod openai_compat;

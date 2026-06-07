@@ -1,0 +1,3 @@
+{"version": 2, "width": 80, "height": 24, "timestamp": 1780701013, "env": {"SHELL": "/bin/bash", "TERM": "xterm-256color"}}
+[0.000831, "o", "n\r\n"]
+[0.12144, "o", "sh: 1: source: not found\r\n"]

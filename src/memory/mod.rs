@@ -11,6 +11,9 @@ use crate::redaction::RedactionFilter;
 #[cfg(feature = "treesitter")]
 pub mod symbol_index;
 
+pub mod cli;
+pub mod fts;
+
 pub const MEMORY_MD_LIMIT: usize = 2200;
 pub const USER_MD_LIMIT: usize = 1375;
 
