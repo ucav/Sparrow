@@ -45,4 +45,6 @@ Sparrow is built on a **trust-first** security model:
 
 | Version | Supported |
 |---|---|
-| 0.1.x (current) | ✅ |
+| 0.3.x (current) | ✅ |
+| 0.2.x             | ❌ |
+| 0.1.x             | ❌ |

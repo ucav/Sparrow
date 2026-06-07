@@ -9,10 +9,15 @@
 [![Release](https://img.shields.io/github/v/release/ucav/Sparrow?color=blue&label=release)](https://github.com/ucav/Sparrow/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Rust 1.96+](https://img.shields.io/badge/rust-1.96%2B-orange)](https://rust-lang.org)
+[![crates.io](https://img.shields.io/crates/v/sparrow-cli?color=orange)](https://crates.io/crates/sparrow-cli)
+[![docs.rs](https://img.shields.io/docsrs/sparrow-cli)](https://docs.rs/sparrow-cli)
 
 <img src="assets/brand/sparrow-mascot.svg" width="140" alt="Sparrow mascot" />
 
 *One event stream. Terminal UI, WebView cockpit, JSON output, or gateway — your choice.*
+
+[![asciicast](https://asciinema.org/a/PLEprnQSdv4lqOH2.svg)](https://asciinema.org/a/PLEprnQSdv4lqOH2)
+
 
 [Quick Start](#quick-start) · [Commands](#common-commands) · [Architecture](#architecture) · [Docs](#docs) · [Releases](https://github.com/ucav/Sparrow/releases)
 
@@ -26,24 +31,31 @@ The project focuses on a narrow product promise: a Rust-native local cockpit whe
 
 ---
 
-## ✨ What's New — v0.3.6
+## ✨ What's New — v0.5.2
 
-> **Public distribution pass** — one-click installers, simplified launch, and release metadata are ready for broader testing.
+> **Unified release** — v0.4.0 public launch + v0.5.0/v0.5.1 Phases 1→5 + v0.3.6 distribution pass + Tier2 autonomy hardening, all merged upward.
 
-- **One-click installers**: Windows PowerShell plus macOS/Linux shell installers pull the latest GitHub release and fall back to source builds when needed.
-- **Simplified launch**: `sparrow launch` runs first-launch setup when needed, then opens the WebView cockpit; `sparrow launch --tui` keeps the terminal path.
-- **Release workflow hardening**: GitHub release publishing has explicit permissions and stable Windows asset naming for `sparrow-windows-x86_64.exe`.
-- **Syntax-highlighted code cards**: fenced code is rendered in compact collapsible cards with language labels, line counts, copy actions, and local editor-style highlighting.
-- **Prompt caching controls**: Anthropic Messages and OpenAI-compatible/Responses requests now carry cache controls for stable Sparrow prefixes.
-- **Reasoning-state continuity**: DeepSeek/Qwen/Moonshot-style `reasoning_content` is captured, persisted, and re-injected without showing it as visible assistant text.
-- **Persistent knowledge graph**: SQLite memory now stores typed graph nodes/edges with a `knowledge_graph` tool and optional Neo4j sync.
-- **Playwright browser/computer-use**: real headless browser automation plus screenshot/click/type computer actions gated as sandboxed exec.
-- **Safer plan flow**: WebView `/plan` has explicit run, edit, and reject actions before execution.
-- **Per-hunk diff review UI**: diff cards and the side panel group patches by hunk with accept/reject review states.
-- **No metric spam**: high-frequency token/cost events update live meters without flooding the transcript.
-- **Cleaner typography**: WebView uses system UI fonts with `SF Mono`-style code rendering.
-- **Repo hygiene**: local handoffs, scratch files, and presentation-only artifacts are kept out of the public tree.
-- **Release metadata**: version, changelog, and README status align on v0.3.6.
+**Distribution & install**
+- **`cargo install sparrow-cli`** — published on crates.io.
+- **`sparrow launch`** — one-click first-run with WebView cockpit (`--tui` for terminal).
+- **One-click installers** for Windows, macOS, Linux.
+
+**Experience**
+- **CLI rich rendering** (Phase 1) — markdown, code, diff, JSON, tables.
+- **Streaming + chat composer** (Phase 2) — live progress, persistent sessions.
+- **TTS / STT / `file_search`** (Phase 3) — 30 new bundled skills.
+- **Memory CLI + FTS5 session search** (Phase 4).
+- **`sparrow voice {speak,transcribe,providers}`** (Phase 5).
+- **`sparrow demo`** — 30-second self-contained Planner→Coder→Verifier demo.
+- **`sparrow share`** — session → GitHub Gist in one command.
+- **First-run wizard** — auto-detects 20+ provider keys, ranks by cost tier.
+
+**Safety**
+- **Tier2 autonomy** — encrypted credential fallback store, honest hardened-sandbox reporting.
+- **`sparrow hook install`** — pre-commit secret scanner.
+- **Knowledge graph** — typed SQLite nodes/edges with optional Neo4j sync.
+- **Playwright e2e** — real browser/computer-use regression suite.
+- **Humanized French errors** for HTTP 401/429/connection/config failures.
 
 ---
 
@@ -109,6 +121,12 @@ See [docs/AUDIT.md](docs/AUDIT.md) for module-by-module proof.
 ---
 
 ## Quick Start
+
+**Install from crates.io (recommended):**
+
+```bash
+cargo install sparrow-cli
+```
 
 **One-click install:**
 

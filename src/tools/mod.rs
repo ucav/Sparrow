@@ -12,14 +12,18 @@ pub mod code_nav;
 pub mod edit;
 pub mod exec;
 pub mod extras;
+pub mod file_search;
 pub mod fs;
 pub mod git;
 pub mod knowledge_graph;
 pub mod media;
 pub mod memory;
 pub mod search_and_web;
+pub mod stt;
 pub mod subagent;
 pub mod todo;
+pub mod tts;
+pub mod voice;
 
 // ─── Tool context ───────────────────────────────────────────────────────────────
 

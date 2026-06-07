@@ -2,6 +2,86 @@
 
 All notable changes to Sparrow will be documented in this file.
 
+## [0.5.2] — 2026-06-07
+
+Unified release — upward merge of every feature shipped in parallel on the public master (v0.4.0 → v0.5.1) with the local hardening track (v0.3.5 → v0.3.6). No feature was dropped on either side.
+
+### Added (from local hardening track, kept)
+- **Tier2 autonomy hardening** — encrypted credential fallback store,
+  honest sandbox reporting for unsupported hardened backends, knowledge graph
+  tool persistence test.
+- **Playwright computer-use e2e** — full browser sandbox regression suite.
+- **Docs hub** — searchable static site + real tutorial videos.
+- **Webview polish** — slash command palette runner, agent picker drawer,
+  coder lane label updates when an agent is selected, base64-safe agent
+  identity prefixing.
+- **One-click installers** — `install.ps1` (Windows) and `install.sh`
+  (Linux/macOS), `sparrow launch` first-run flow.
+
+### Added (from public launch track, merged upward)
+- **`cargo install sparrow-cli`** — crate published on crates.io.
+- **Phase1** — CLI rich rendering engine (renderer + code/diff/json/markdown/table formatters).
+- **Phase2** — streaming + chat composer (live events, progress, sessions).
+- **Phase3** — TTS, STT, file_search tools + 30 community skills.
+- **Phase4** — Memory CLI + Session FTS5 search.
+- **Phase5** — Voice command (`sparrow voice {speak,transcribe,providers}`).
+- **`sparrow demo`** — self-contained snake game demo.
+- **`sparrow share`** — uploads latest session to a GitHub Gist.
+- **`sparrow hook {install,scan}`** — pre-commit secret scanner.
+- **`sparrow setup`** — first-run wizard with provider auto-detection.
+- **Humanized French error messages** (`src/errors.rs`).
+
+### Security
+- **Nova agent files untracked** — `agents/nova.*` is now gitignored;
+  PII (name, family, financial goals, business strategy) is no longer
+  committed to the repo.
+
+### Changed
+- Crate renamed to **`sparrow-cli`** for crates.io with `[lib]` exposed for
+  embedding. Binary name remains `sparrow`.
+- Cargo deps unified: `dialoguer`, `walkdir`, `syntect`, `pulldown-cmark`,
+  `indicatif`, `console` pulled in alongside the existing audio/lettre/imap
+  feature set.
+
+## [0.4.0] — 2026-06-05
+
+Public launch readiness — crates.io publish, first-run wizard, live demo, community skills, and security hooks.
+
+### Added
+- **`cargo install sparrow-cli`** — published on crates.io. One-command install.
+- **First-run wizard** (`sparrow setup`) — auto-detects 20+ API keys from env,
+  validates them, ranks providers by cost tier (free first), one-click setup.
+- **`sparrow demo`** — self-contained snake game coding demo in 30 seconds.
+  Shows live Planner→Coder→Verifier pipeline with colored terminal output.
+- **`sparrow share`** — reads latest session transcript, formats as Markdown,
+  uploads to GitHub Gist via `gh` CLI or API.
+- **`sparrow hook install`** — installs pre-commit security scanner that blocks
+  commits containing secrets, tokens, API keys, or private keys.
+- **`sparrow hook scan`** — one-off security scan of staged or all files.
+- **Provider auto-detection** (`src/provider/detect.rs`) — scans environment,
+  validates keys with lightweight API calls, ranks by cost tier.
+- **Humanized French error messages** (`src/errors.rs`) — translates HTTP 401,
+  429, connection errors, config errors into actionable French messages.
+- **10 community skills** bundled in `skills/`: explain-error, generate-commit,
+  write-unit-tests, review-my-pr, refactor-function, onboard-newbie, fix-bug,
+  optimize-sql, api-docs, deploy-check.
+- **Pre-commit hook script** (`hooks/pre-commit`) — bash script scanning for
+  GitHub tokens, OpenAI keys, Anthropic keys, AWS keys, private keys, passwords.
+
+### Changed
+- **Cargo.toml metadata** — improved description, added authors, keywords,
+  categories, repository link.
+- **`rust-toolchain.toml`** — pins Rust 1.96.0 with rustfmt and clippy.
+- **SECURITY.md** — updated supported versions to 0.3.x (current).
+- **README** — crates.io and docs.rs badges, `cargo install` as primary method.
+
+### Fixed
+- **Security** — removed Nova agent files from public repo and git history.
+  Added `agents/nova.*` to `.gitignore` to prevent future leaks.
+- **Security** — deleted 7 stale codex branches containing leaked content.
+- **Dependencies** — added `dialoguer` (interactive prompts) and `walkdir`
+  (recursive file scanning) for wizard and hook features.
+
 ## [0.3.6] — 2026-06-05
 
 Public distribution pass for one-click installation and simplified launch.

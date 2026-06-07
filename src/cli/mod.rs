@@ -285,6 +285,24 @@ pub enum Commands {
 
     /// (Re)run conversational setup
     Setup,
+
+    /// Run a self-contained demo (snake game)
+    Demo,
+
+    /// Share latest session as GitHub Gist
+    Share,
+
+    /// Install or scan security pre-commit hooks
+    Hook {
+        #[command(subcommand)]
+        action: HookAction,
+    },
+
+    /// Voice commands (speak, transcribe, providers)
+    Voice {
+        #[command(subcommand)]
+        action: VoiceAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -588,4 +606,26 @@ pub enum RouteAction {
     Clear,
     /// Show the current routing config (preferred provider + per-tier policy).
     Show,
+}
+
+#[derive(Subcommand)]
+pub enum HookAction {
+    /// Install pre-commit security hook
+    Install,
+    /// Scan staged files (or all files with --all) for secrets
+    Scan {
+        /// Scan entire working tree instead of just staged files
+        #[arg(long)]
+        all: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum VoiceAction {
+    /// Convert text to speech
+    Speak { text: String },
+    /// Transcribe audio file
+    Transcribe { file: String },
+    /// List available voice providers
+    Providers,
 }
