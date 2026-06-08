@@ -910,27 +910,35 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Learn) => {
             sparrow::onboarding::Onboarding::default().run_interactive()?;
         }
-        Some(Commands::Voice { action }) => match action {
-            sparrow::cli::VoiceAction::Speak { text } => {
-                sparrow::tools::voice::handle_voice(sparrow::tools::voice::VoiceCommand::Speak {
-                    text,
-                    output: None,
-                })?;
+        Some(Commands::Voice { action }) => {
+            match action {
+                sparrow::cli::VoiceAction::Speak { text } => {
+                    sparrow::tools::voice::handle_voice(
+                        sparrow::tools::voice::VoiceCommand::Speak { text, output: None }
+                    )?;
+                }
+                sparrow::cli::VoiceAction::Transcribe { file } => {
+                    sparrow::tools::voice::handle_voice(
+                        sparrow::tools::voice::VoiceCommand::Transcribe {
+                            audio_file: file.into(),
+                            language: None,
+                        }
+                    )?;
+                }
+                sparrow::cli::VoiceAction::Providers => {
+                    sparrow::tools::voice::handle_voice(
+                        sparrow::tools::voice::VoiceCommand::ListProviders
+                    )?;
+                }
             }
-            sparrow::cli::VoiceAction::Transcribe { file } => {
-                sparrow::tools::voice::handle_voice(
-                    sparrow::tools::voice::VoiceCommand::Transcribe {
-                        audio_file: file.into(),
-                        language: None,
-                    },
-                )?;
-            }
-            sparrow::cli::VoiceAction::Providers => {
-                sparrow::tools::voice::handle_voice(
-                    sparrow::tools::voice::VoiceCommand::ListProviders,
-                )?;
-            }
-        },
+        }
+        Some(Commands::Browser { url }) => {
+            println!("🌐 Sparrow Browser — testing navigation to {}", url);
+            println!("   Install deps first: bash scripts/setup-browser.sh\n");
+            println!("   Usage in tasks:");
+            println!("   sparrow run \"take a screenshot of {}\"", url);
+            println!("   sparrow run \"extract the main content from {}\"", url);
+        }
         Some(Commands::Init) => {
             handle_init()?;
         }

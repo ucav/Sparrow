@@ -321,6 +321,13 @@ pub enum Commands {
         #[command(subcommand)]
         action: VoiceAction,
     },
+
+    /// Test browser/vision (screenshot, navigate)
+    Browser {
+        /// URL to test
+        #[arg(default_value = "https://example.com")]
+        url: String,
+    },
 }
 
 #[derive(Subcommand)]

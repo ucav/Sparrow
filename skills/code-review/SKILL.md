@@ -2,14 +2,53 @@
 
 **Trigger:** review, code review, check this code, audit
 
-**Description:** Adversarial code review: security, performance, edge cases, regressions. Used by the Verifier.
+**Description:** Revue de code adverse : sécurité, performance, edge cases, régressions. Checklist structurée, jamais "looks good" sans vérification concrète.
 
 ## Body
-When reviewing code:
-1. SECURITY: Check for secret leaks, injection vectors, unsafe operations.
-2. CORRECTNESS: Does it match the spec? Are edge cases handled?
-3. PERFORMANCE: Any obvious bottlenecks (N+1 queries, large allocations)?
-4. REGRESSIONS: Could this break existing functionality?
-5. STYLE: Does it follow project conventions?
-6. Report findings with file:line references. Be specific, not vague.
-7. NEVER approve without checking. Never say "looks good" without concrete verification.
+
+### Checklist (par priorité)
+1. 🔒 **SÉCURITÉ** — secrets exposés ? injection ? path traversal ?
+2. ✅ **CORRECTION** — le fix résout-il le problème ? edge cases ?
+3. ⚡ **PERFORMANCE** — allocations inutiles ? N+1 queries ? boucles O(n²) ?
+4. 🔄 **RÉGRESSIONS** — ça casse quoi ? `cargo test` passe ?
+5. 📖 **LISIBILITÉ** — noms clairs ? fonctions <50 lignes ?
+
+### Commandes
+```bash
+# Voir les diffs
+git diff origin/main...HEAD
+
+# Vérifier les tests
+cargo test && cargo clippy -- -D warnings
+
+# Vérifier la couverture des fichiers modifiés
+cargo tarpaulin --out Html
+```
+
+### Patterns suspects
+```rust
+// ❌ unwrap() en production
+let x = config.get("key").unwrap();
+
+// ✅ Gérer l'erreur
+let x = config.get("key").context("missing key")?;
+
+// ❌ clone() dans une boucle
+for item in items {
+    process(item.clone()); // alloue à chaque itération
+}
+
+// ✅ Passer par référence
+for item in &items {
+    process(item);
+}
+```
+
+### Format de rapport
+```
+## Review: PR #X — Titre
+🔴 Bloquant: ...
+🟡 Important: ...
+🔵 Suggestion: ...
+✅ Bien vu: ...
+```

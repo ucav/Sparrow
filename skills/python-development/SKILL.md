@@ -1,15 +1,52 @@
 # Skill: Python Development
-**Trigger:** python code, pip, venv, write python
-**Description:** Python development best practices — virtualenv, testing, typing, packaging.
+
+**Trigger:** python, pip, venv, pytest, Python
+
+**Description:** Développement Python : venv, pytest, typing, ruff, packaging.
 
 ## Body
-1. Virtualenv: python3 -m venv .venv && source .venv/bin/activate
-2. Dependencies: pip install, requirements.txt or pyproject.toml
-3. Format: black . && isort .
-4. Lint: ruff check . or flake8
-5. Type check: mypy .
-6. Test: pytest -xvs
-7. Use type hints (def foo(x: int) -> str)
-8. Use dataclasses or Pydantic for data models
-9. Error handling: specific exceptions, not bare except
-10. Packaging: pyproject.toml with setuptools or poetry
+
+```bash
+# Environnement
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+
+# Tests
+pytest -xvs                          # Stop au 1er échec, verbose
+pytest --cov=src --cov-report=html   # Couverture
+pytest -k "test_user"                # Filtre
+
+# Qualité
+ruff check . --fix                   # Lint + fix auto
+black . && isort .                   # Format
+mypy .                               # Type check
+```
+
+### Patterns
+```python
+# Typage
+def get_user(user_id: int) -> User | None:
+    ...
+
+# Dataclass > dict
+@dataclass
+class Config:
+    host: str = "localhost"
+    port: int = 8080
+
+# async/await
+async def fetch_data(url: str) -> dict:
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(url)
+        return resp.json()
+
+# Context manager pour ressources
+with open("file.txt") as f:
+    data = f.read()
+```
+
+### Pièges
+- `except:` nu → toujours spécifier l'exception
+- `requirements.txt` sans versions → `pip freeze > requirements.txt`
+- Mutable default args : `def f(x=[])` → `def f(x=None)`
+- `pip install` sans venv → pollue le système
