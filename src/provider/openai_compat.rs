@@ -559,4 +559,50 @@ mod tests {
             "opaque provider reasoning"
         );
     }
+
+    #[test]
+    fn multi_tool_turn_is_one_assistant_message_with_reasoning() {
+        // Regression for the v0.5.5 fix: a single model turn that emits N tool
+        // calls must serialize as ONE assistant message carrying
+        // reasoning_content + a tool_calls array of length N. Splitting it into
+        // one message per tool dropped reasoning_content from the 2nd+ calls,
+        // which DeepSeek/Qwen/Moonshot thinking-mode rejects with HTTP 400 and
+        // which aborted multi-file tasks half-way.
+        let req = BrainRequest {
+            messages: vec![Msg {
+                role: "assistant".into(),
+                content: vec![
+                    ContentBlock::Reasoning {
+                        text: "thinking about two files".into(),
+                    },
+                    ContentBlock::ToolUse {
+                        id: "call_0".into(),
+                        name: "fs_write".into(),
+                        input: serde_json::json!({"path": "reverse.py"}),
+                    },
+                    ContentBlock::ToolUse {
+                        id: "call_1".into(),
+                        name: "fs_write".into(),
+                        input: serde_json::json!({"path": "test_reverse.py"}),
+                    },
+                ],
+            }],
+            ..BrainRequest::default()
+        };
+
+        let body = build_chat_body("deepseek-test", &req);
+        // exactly one assistant message
+        assert_eq!(body["messages"].as_array().unwrap().len(), 1);
+        // reasoning_content present on it
+        assert_eq!(
+            body["messages"][0]["reasoning_content"],
+            "thinking about two files"
+        );
+        // both tool calls in a single tool_calls array
+        let calls = body["messages"][0]["tool_calls"].as_array().unwrap();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0]["id"], "call_0");
+        assert_eq!(calls[1]["id"], "call_1");
+        assert_eq!(calls[0]["function"]["name"], "fs_write");
+    }
 }

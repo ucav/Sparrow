@@ -2337,30 +2337,44 @@ impl Engine {
                                         }
                                     }
                                     crate::event::StopReason::ToolUse => {
-                                        // Feed tool results back. The assistant
-                                        // message that triggered the tool MUST also
-                                        // carry the reasoning_content so DeepSeek
-                                        // thinking-mode accepts the next turn.
-                                        let mut first = true;
-                                        for (tool_id, tool_name, args, content, is_error) in
-                                            tool_results_pending.drain(..)
+                                        // A single model turn that emits N tool calls
+                                        // MUST be replayed as ONE assistant message
+                                        // carrying reasoning_content + ALL tool_calls,
+                                        // followed by N tool-result messages. Splitting
+                                        // it into one assistant message per tool left
+                                        // the 2nd+ calls without reasoning_content, which
+                                        // DeepSeek/Qwen/Moonshot thinking-mode rejects
+                                        // with HTTP 400 ("reasoning_content must be passed
+                                        // back"), aborting every turn after the first and
+                                        // leaving multi-file tasks half-done. One
+                                        // assistant message with a tool_calls array is
+                                        // also the correct OpenAI/Anthropic shape.
+                                        let drained: Vec<_> =
+                                            tool_results_pending.drain(..).collect();
+
+                                        let mut assistant_blocks = Vec::new();
+                                        if !reasoning_buf.is_empty() {
+                                            assistant_blocks.push(ContentBlock::Reasoning {
+                                                text: reasoning_buf.clone(),
+                                            });
+                                        }
+                                        for (tool_id, tool_name, args, _content, _is_error) in
+                                            &drained
                                         {
-                                            let mut blocks = Vec::new();
-                                            if first && !reasoning_buf.is_empty() {
-                                                blocks.push(ContentBlock::Reasoning {
-                                                    text: reasoning_buf.clone(),
-                                                });
-                                            }
-                                            blocks.push(ContentBlock::ToolUse {
+                                            assistant_blocks.push(ContentBlock::ToolUse {
                                                 id: tool_id.clone(),
-                                                name: tool_name,
-                                                input: args,
+                                                name: tool_name.clone(),
+                                                input: args.clone(),
                                             });
-                                            first = false;
-                                            messages.push(Msg {
-                                                role: "assistant".into(),
-                                                content: blocks,
-                                            });
+                                        }
+                                        messages.push(Msg {
+                                            role: "assistant".into(),
+                                            content: assistant_blocks,
+                                        });
+
+                                        for (tool_id, _tool_name, _args, content, is_error) in
+                                            drained
+                                        {
                                             messages.push(Msg {
                                                 role: "user".into(),
                                                 content: vec![ContentBlock::ToolResult {

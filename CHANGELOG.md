@@ -2,6 +2,38 @@
 
 All notable changes to Sparrow will be documented in this file.
 
+## [0.5.5] — 2026-06-08
+
+Critical agentic-loop fix — multi-tool turns no longer abort against thinking-mode models.
+
+### Fixed
+- **Multi-file / multi-tool tasks completed only half-way** against DeepSeek /
+  Qwen / Moonshot "thinking-mode" providers (e.g. the `opencode-go` route).
+  Root cause: when a single model turn emitted N tool calls, the engine
+  replayed them as N *separate* assistant messages, and only the first carried
+  `reasoning_content`. The 2nd+ tool-call messages lacked it, so the provider
+  rejected every subsequent turn with `HTTP 400 "reasoning_content must be
+  passed back"`. The run aborted after the first tool round, leaving tasks
+  half-done (e.g. a test file written but the module it imports missing) while
+  burning tokens on ~60 rejected retries.
+  Fix: a single model turn is now replayed as **one** assistant message
+  carrying `reasoning_content` + the full `tool_calls` array, followed by one
+  tool-result message per call — the correct OpenAI/Anthropic shape, accepted
+  by thinking-mode providers.
+  Verified end-to-end: a "create reverse.py + test_reverse.py" task now writes
+  both files and the test passes; token use dropped from 212k in / 0 out to
+  31k in / 148 out on the same task.
+- **Output token accounting showed 0** on the affected runs. This was a
+  downstream symptom of the 400-retry loop above (no completion ever
+  succeeded); output tokens are now counted normally.
+
+### Known issues
+- Streaming tool-call labels can briefly render `[Tool: unknown]` when a
+  provider sends the tool name in a later delta than the call id; the tool
+  still executes correctly. Cosmetic, tracked for a follow-up.
+- `sparrow plan` produces a deterministic template, not an LLM-authored plan.
+  Tracked for a follow-up.
+
 ## [0.5.4] — 2026-06-07
 
 Launch-ready pass — every public-facing asset needed for HN/X/Reddit day.
