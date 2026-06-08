@@ -33,6 +33,12 @@ transcripts/
 # Private agent definitions (PII, do not publish)
 agents/nova.*
 
+# Launch playbook & marketing copy — keep LOCAL only.
+# Public launch strategy (HN/X/Reddit posts, response templates, hooks,
+# visuals) must never leak to the repo or competitors can read it.
+docs/launch/
+assets/launch/
+
 # Codex / local assistant artifacts
 .codex-remote-attachments/
 .claude/
