@@ -20,6 +20,34 @@ use tokio::sync::mpsc;
 pub mod formatters;
 pub mod renderer;
 pub mod theme;
+
+/// Make the host console accept the UTF-8 output the TUI emits.
+///
+/// On Windows the default console code page (CP1252 / OEM-850) silently
+/// corrupts every multi-byte character we draw — `•` becomes `â¢`, `·`
+/// becomes `Â·`, box-drawing chars become noise, and a few bytes get
+/// dropped along the way ("binary" → "binana"). The fix is a single
+/// `SetConsoleOutputCP(65001)` call on stdout's code page before we
+/// enter the alternate screen.
+///
+/// On Unix the terminal already speaks UTF-8 — no-op.
+fn ensure_utf8_console() {
+    #[cfg(windows)]
+    {
+        // Minimal FFI shim — equivalent to `chcp 65001` but applied to
+        // the process's *output* code page only, so it does not leak into
+        // child processes or the shell prompt after we exit.
+        unsafe extern "system" {
+            fn SetConsoleOutputCP(wCodePageID: u32) -> i32;
+            fn SetConsoleCP(wCodePageID: u32) -> i32;
+        }
+        const CP_UTF8: u32 = 65001;
+        unsafe {
+            let _ = SetConsoleOutputCP(CP_UTF8);
+            let _ = SetConsoleCP(CP_UTF8);
+        }
+    }
+}
 pub mod ansi_bridge;
 
 type CrosstermTerminal = ratatui::Terminal<ratatui::backend::CrosstermBackend<io::Stdout>>;
@@ -1016,11 +1044,21 @@ impl Tui {
     }
 
     pub fn run(&mut self) -> io::Result<()> {
+        // Windows: force the console code page to UTF-8 (65001) BEFORE we
+        // enter the alternate screen. Without this the default CP1252/OEM
+        // mangles every multi-byte glyph the TUI emits (•, ·, ∘, →, box-
+        // drawing) into "â", "Â·" garbage and visibly drops bytes inside
+        // ASCII strings, producing "binana"/"versioo" output.
+        ensure_utf8_console();
         enable_raw_mode()?;
         let mut stdout = io::stdout();
         execute!(stdout, EnterAlternateScreen)?;
         let backend = ratatui::backend::CrosstermBackend::new(stdout);
         let mut terminal = ratatui::Terminal::new(backend)?;
+        // Wipe any residue from the parent shell so ratatui starts on a
+        // clean buffer (otherwise stray dots from the previous prompt show
+        // up over empty panel areas).
+        terminal.clear()?;
         let result = self.main_loop(&mut terminal);
         disable_raw_mode()?;
         execute!(io::stdout(), LeaveAlternateScreen)?;

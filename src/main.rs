@@ -4113,6 +4113,120 @@ async fn run_task_json(
 
 // ─── WebView console ───────────────────────────────────────────────────────────
 
+/// Pull the WebView-internal protocol prefixes off the start of a task string.
+///
+/// The WebView wraps user input with metadata it cannot pass as a separate
+/// channel:
+///   `__agent:NAME__ROLE__BASE64_PERSONALITY__ __model:MODEL__ <user text>`
+///
+/// Either, both, or neither prefix may be present. Whatever survives at the
+/// end is the actual prompt the user typed and must be the only string we:
+///   - send to the LLM,
+///   - echo to the UI,
+///   - persist in conversation history.
+///
+/// Returns (clean_task, optional identity, optional model override).
+fn extract_webview_protocol_prefixes(
+    raw: &str,
+) -> (String, Option<sparrow::engine::Identity>, Option<String>) {
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+
+    let mut remaining = raw.to_string();
+    let mut identity: Option<sparrow::engine::Identity> = None;
+    let mut model_override: Option<String> = None;
+
+    // __agent:NAME__ROLE__BASE64__ <rest>
+    if let Some(rest) = remaining.strip_prefix("__agent:") {
+        if let Some((name, after_name)) = rest.split_once("__") {
+            if let Some((role, after_role)) = after_name.split_once("__") {
+                if let Some((b64, after_b64)) = after_role.split_once("__ ") {
+                    let personality = String::from_utf8(
+                        STANDARD.decode(b64.as_bytes()).unwrap_or_default(),
+                    )
+                    .unwrap_or_default();
+                    identity = Some(sparrow::engine::Identity {
+                        name: name.to_string(),
+                        role: role.to_string(),
+                        personality,
+                    });
+                    remaining = after_b64.to_string();
+                }
+            }
+        }
+    }
+
+    // __model:M__ <rest>
+    if let Some(rest) = remaining.strip_prefix("__model:") {
+        if let Some((model, after_model)) = rest.split_once("__ ") {
+            model_override = Some(model.to_string());
+            remaining = after_model.to_string();
+        }
+    }
+
+    (remaining, identity, model_override)
+}
+
+#[cfg(test)]
+mod webview_protocol_tests {
+    use super::extract_webview_protocol_prefixes;
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+
+    #[test]
+    fn plain_task_is_unchanged() {
+        let (clean, id, model) = extract_webview_protocol_prefixes("hello world");
+        assert_eq!(clean, "hello world");
+        assert!(id.is_none());
+        assert!(model.is_none());
+    }
+
+    #[test]
+    fn agent_prefix_is_stripped_and_decoded() {
+        let b64 = STANDARD.encode(b"sarcastic helper");
+        let raw = format!("__agent:nova__assistant__{}__ tu es en quel version?", b64);
+        let (clean, id, model) = extract_webview_protocol_prefixes(&raw);
+        assert_eq!(clean, "tu es en quel version?");
+        let id = id.expect("identity extracted");
+        assert_eq!(id.name, "nova");
+        assert_eq!(id.role, "assistant");
+        assert_eq!(id.personality, "sarcastic helper");
+        assert!(model.is_none());
+    }
+
+    #[test]
+    fn model_only_prefix_is_stripped() {
+        let (clean, id, model) =
+            extract_webview_protocol_prefixes("__model:deepseek-v4-pro__ run tests");
+        assert_eq!(clean, "run tests");
+        assert!(id.is_none());
+        assert_eq!(model.as_deref(), Some("deepseek-v4-pro"));
+    }
+
+    #[test]
+    fn agent_and_model_together_are_both_stripped() {
+        // This is the exact shape the WebView sends today and the one that
+        // was leaking the base64 personality + model id into the chat.
+        let b64 = STANDARD.encode(b"P");
+        let raw = format!(
+            "__agent:nova__personal assistant__{}__ __model:deepseek-v4-pro__ ?",
+            b64
+        );
+        let (clean, id, model) = extract_webview_protocol_prefixes(&raw);
+        assert_eq!(clean, "?");
+        assert_eq!(id.as_ref().unwrap().name, "nova");
+        assert_eq!(model.as_deref(), Some("deepseek-v4-pro"));
+    }
+
+    #[test]
+    fn malformed_agent_prefix_is_left_alone() {
+        // Defensive: a half-formed prefix must NOT silently drop the user's
+        // text. Better to send the raw to the LLM than to swallow it.
+        let raw = "__agent:nova__broken-without-base64";
+        let (clean, id, _) = extract_webview_protocol_prefixes(raw);
+        assert_eq!(clean, raw);
+        assert!(id.is_none());
+    }
+}
+
 async fn handle_webview(
     config: &sparrow::config::Config,
     memory: Arc<dyn Memory>,
@@ -4175,6 +4289,28 @@ async fn handle_webview(
         )> = None;
 
         while let Some(mut task) = command_rx.recv().await {
+            // FIRST thing in the loop: strip the WebView protocol prefixes
+            // (`__agent:NAME__ROLE__BASE64__ `, `__model:M__ `) from `task`.
+            //
+            // If we don't, the raw protocol payload leaks to three places
+            // downstream:
+            //   1. the mid-run inject channel (the model sees the base64
+            //      personality on every subsequent turn — PII to the provider)
+            //   2. the UI `Message` event emitted for the user turn
+            //      (the user sees the base64 blob in their own transcript)
+            //   3. the persistent `conv_for_runs` history (every future run
+            //      replays the same blob to the model)
+            // All three are visible bugs we previously observed.
+            let pending_identity: Option<sparrow::engine::Identity>;
+            let pending_model_override: Option<String>;
+            {
+                let (clean, identity, model) =
+                    extract_webview_protocol_prefixes(&task);
+                task = clean;
+                pending_identity = identity;
+                pending_model_override = model;
+            }
+
             // Sentinel: clear conversation history without driving the engine.
             if task == "__reset_conversation__" {
                 let mut guard = conv_for_runs.lock().expect("conv lock poisoned");
@@ -4273,26 +4409,18 @@ async fn handle_webview(
                 .with_memory(memory_for_runs.clone())
                 .with_skills(skills_for_runs.clone())
                 .with_approval_handler(approvals_for_runs.clone());
-            // Apply agent identity override: __agent:NAME__ROLE__BASE64__
-            if let Some(rest) = task.strip_prefix("__agent:") {
-                if let Some((id_part, rest2)) = rest.split_once("__") {
-                    if let Some((role_part, rest3)) = rest2.split_once("__") {
-                        // rest3 = "<base64>__ <actual task>"
-                        if let Some((b64_part, clean_task)) = rest3.split_once("__ ") {
-                            use base64::{Engine as _, engine::general_purpose::STANDARD};
-                            let personality = String::from_utf8(
-                                STANDARD.decode(b64_part.as_bytes()).unwrap_or_default(),
-                            )
-                            .unwrap_or_default();
-                            engine = engine.with_identity(Identity {
-                                name: id_part.to_string(),
-                                role: role_part.to_string(),
-                                personality,
-                            });
-                            task = clean_task.to_string();
-                        }
-                    }
-                }
+            // Apply the identity extracted at the top of the loop. The
+            // model_override is consumed inside the engine by the existing
+            // `__model:` parser when present in the task description, so we
+            // leave that prefix off the clean task — the engine never sees
+            // it. If the WebView selected a model, we re-encode the
+            // `__model:M__ ` prefix HERE so the engine can pick it up via
+            // its existing strip logic without changing engine internals.
+            if let Some(identity) = pending_identity.clone() {
+                engine = engine.with_identity(identity);
+            }
+            if let Some(ref model) = pending_model_override {
+                task = format!("__model:{}__ {}", model, task);
             }
             // Pull the persisted conversation history so a model switch never
             // drops prior turns. The Vec is cloned so the engine owns it for
