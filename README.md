@@ -11,6 +11,11 @@
 [![Rust 1.96+](https://img.shields.io/badge/rust-1.96%2B-orange)](https://rust-lang.org)
 [![crates.io](https://img.shields.io/crates/v/sparrow-cli?color=orange)](https://crates.io/crates/sparrow-cli)
 [![docs.rs](https://img.shields.io/docsrs/sparrow-cli)](https://docs.rs/sparrow-cli)
+[![Linux](https://img.shields.io/badge/linux-x86__64%20%C2%B7%20aarch64-2dba4e?logo=linux&logoColor=white)](https://github.com/ucav/Sparrow/releases/latest)
+[![macOS](https://img.shields.io/badge/macOS-arm64%20%C2%B7%20x86__64-c1c1c1?logo=apple&logoColor=white)](https://github.com/ucav/Sparrow/releases/latest)
+[![Windows](https://img.shields.io/badge/windows-x86__64-0078d4?logo=windows&logoColor=white)](https://github.com/ucav/Sparrow/releases/latest)
+[![Downloads](https://img.shields.io/crates/d/sparrow-cli?color=blueviolet&label=crates.io%20downloads)](https://crates.io/crates/sparrow-cli)
+[![GitHub stars](https://img.shields.io/github/stars/ucav/Sparrow?style=flat&color=f2a93c)](https://github.com/ucav/Sparrow/stargazers)
 
 <img src="assets/brand/sparrow-mascot.svg" width="140" alt="Sparrow mascot" />
 
