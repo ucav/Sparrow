@@ -1,0 +1,11 @@
+LangChain is a Python library you import into an app. Sparrow is a static
+binary you install. They aren't really comparable.
+
+If you mean "could I have built Sparrow on top of LangChain instead of from
+scratch in Rust" — no. The whole point was shipping a single binary that
+boots in 18 ms and doesn't break when someone bumps a transitive Python
+dep. Importing LangChain forfeits both of those properties.
+
+If you mean "do I plan to support LangChain tools as a plugin format" —
+Sparrow already speaks MCP (Model Context Protocol), which is the open
+equivalent. Any MCP server works as a Sparrow tool: `sparrow mcp add ...`.

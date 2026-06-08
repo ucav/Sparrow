@@ -1,0 +1,26 @@
+OpenHands (formerly OpenDevin) and Sparrow solve different problems:
+
+OpenHands is a multi-agent platform aimed at running long autonomous
+agents in a sandboxed Docker container, often hosted, with a heavy web
+UI. It's a great fit for "give the agent an issue, walk away, come back
+to a PR".
+
+Sparrow is a single-binary CLI agent for interactive coding work on
+your own machine. It runs in your terminal or as a local cockpit on
+:9339. It's a better fit for "I'm coding right now, help me with this
+function, then get out of the way".
+
+Technical differences that matter:
+
+  - OpenHands is Python + Docker. Sparrow is one Rust binary.
+  - OpenHands routes through one main brain; Sparrow has a fan-out
+    Planner→Coder→Verifier with a router picking different models per
+    role.
+  - OpenHands' checkpoints are commit-level. Sparrow's are
+    tool-boundary level — finer-grained rewind.
+  - OpenHands has a strong cloud-sandbox story. Sparrow has a strong
+    local-first story.
+
+If your workflow is "issue → PR autonomously over hours", try
+OpenHands. If it's "I'm at the keyboard, this needs to be fast and
+cheap and rewindable", try Sparrow.

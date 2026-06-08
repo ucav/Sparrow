@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0e0b08"/>
+      <stop offset="100%" stop-color="#16120d"/>
+    </linearGradient>
+    <style>
+      .mono  { font-family: 'JetBrains Mono','SF Mono',ui-monospace,monospace; }
+      .sans  { font-family: 'Inter',system-ui,-apple-system,sans-serif; }
+      .amber { fill: #f2a93c; }
+      .cream { fill: #ece2cf; }
+      .dim   { fill: #897d6c; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="675" fill="url(#bg)"/>
+
+  <text x="80" y="100" class="sans cream" font-size="58" font-weight="800" letter-spacing="-2">install in one line</text>
+  <text x="80" y="146" class="sans dim"   font-size="20">pick any. they all give you the same binary.</text>
+
+  <g transform="translate(80,210)" class="mono" font-size="22">
+    <!-- card 1 -->
+    <rect x="0" y="0" width="500" height="86" rx="10" fill="#1d1710" stroke="#2c251c"/>
+    <text x="22" y="34" class="dim" font-size="13">EVERYWHERE</text>
+    <text x="22" y="68" class="amber">cargo install sparrow-cli</text>
+
+    <!-- card 2 -->
+    <rect x="540" y="0" width="500" height="86" rx="10" fill="#1d1710" stroke="#2c251c"/>
+    <text x="562" y="34" class="dim" font-size="13">MACOS — HOMEBREW</text>
+    <text x="562" y="68" class="amber">brew install ucav/tap/sparrow</text>
+
+    <!-- card 3 -->
+    <rect x="0" y="110" width="500" height="86" rx="10" fill="#1d1710" stroke="#2c251c"/>
+    <text x="22" y="144" class="dim" font-size="13">LINUX/MACOS — CURL</text>
+    <text x="22" y="178" class="amber" font-size="18">curl -fsSL .../install.sh | sh</text>
+
+    <!-- card 4 -->
+    <rect x="540" y="110" width="500" height="86" rx="10" fill="#1d1710" stroke="#2c251c"/>
+    <text x="562" y="144" class="dim" font-size="13">WINDOWS — POWERSHELL</text>
+    <text x="562" y="178" class="amber" font-size="18">irm .../install.ps1 | iex</text>
+
+    <!-- card 5 -->
+    <rect x="0" y="220" width="500" height="86" rx="10" fill="#1d1710" stroke="#2c251c"/>
+    <text x="22" y="254" class="dim" font-size="13">WINDOWS — SCOOP</text>
+    <text x="22" y="288" class="amber">scoop install sparrow</text>
+
+    <!-- card 6 -->
+    <rect x="540" y="220" width="500" height="86" rx="10" fill="#1d1710" stroke="#2c251c"/>
+    <text x="562" y="254" class="dim" font-size="13">WINDOWS — WINGET</text>
+    <text x="562" y="288" class="amber">winget install ucav.Sparrow</text>
+  </g>
+
+  <text x="80" y="620" class="sans amber" font-size="24" font-weight="700">then: sparrow launch</text>
+  <text x="80" y="650" class="mono dim" font-size="14">first-run wizard picks a free provider. no key required.</text>
+</svg>

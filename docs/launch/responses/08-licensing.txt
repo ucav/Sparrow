@@ -1,0 +1,13 @@
+MIT. Use it commercially, fork it, embed it in a closed product, ship a
+managed version — all fine, no CLA, no patent clause to worry about.
+
+The only ask: keep the LICENSE file when you redistribute. That's the
+MIT license requirement, not a Sparrow-specific one.
+
+If you're at a company that requires a CLA for upstream contributions,
+open an issue and we can adapt — but the default position is "no CLA,
+just submit a PR".
+
+The skills, the comparison docs, the press kit are MIT too. The
+sparrow mascot SVG is also MIT-licensed; please don't claim you made
+it but otherwise it's yours to use.

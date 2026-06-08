@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0e0b08"/>
+      <stop offset="100%" stop-color="#16120d"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="80%" cy="0%" r="60%">
+      <stop offset="0%" stop-color="#f2a93c" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#f2a93c" stop-opacity="0"/>
+    </radialGradient>
+    <style>
+      .mono { font-family: 'JetBrains Mono','SF Mono',ui-monospace,monospace; }
+      .sans { font-family: 'Inter',system-ui,-apple-system,sans-serif; }
+      .amber { fill: #f2a93c; }
+      .cream { fill: #ece2cf; }
+      .dim   { fill: #897d6c; }
+      .coral { fill: #f0674a; }
+      .green { fill: #74c258; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+
+  <!-- top brand strip -->
+  <g transform="translate(60,60)">
+    <circle cx="10" cy="10" r="9" class="amber"/>
+    <text x="32" y="17" class="sans amber" font-size="18" font-weight="700" letter-spacing="3">SPARROW</text>
+    <text x="1080" y="17" class="mono dim" font-size="14">v0.5.3 — MIT</text>
+  </g>
+
+  <!-- main headline -->
+  <g transform="translate(60,200)">
+    <text class="sans cream" font-size="74" font-weight="800" letter-spacing="-2">
+      <tspan x="0" dy="0">one binary.</tspan>
+      <tspan x="0" dy="92">any model.</tspan>
+      <tspan x="0" dy="92">no surprise bill.</tspan>
+    </text>
+  </g>
+
+  <!-- right side terminal -->
+  <g transform="translate(680,200)" opacity="0.94">
+    <rect x="0" y="0" width="460" height="260" rx="10" fill="#0a0805" stroke="#2c251c" stroke-width="1"/>
+    <circle cx="22" cy="22" r="6" fill="#f0674a"/>
+    <circle cx="42" cy="22" r="6" fill="#f2c94c"/>
+    <circle cx="62" cy="22" r="6" fill="#74c258"/>
+    <g class="mono" font-size="15" transform="translate(22,68)">
+      <text class="dim" y="0">$ sparrow run "fix the failing test"</text>
+      <text class="amber" y="32">→ planner   gpt-4o-mini    $0.0004</text>
+      <text class="amber" y="56">→ coder     claude-haiku   $0.0019</text>
+      <text class="dim" y="80">  checkpoint cb_8a2e  • 2 files</text>
+      <text class="amber" y="104">→ verifier  qwen-coder     $0.0003</text>
+      <text class="green" y="136">✓ done  $0.0026 spent  ·  41s</text>
+    </g>
+  </g>
+
+  <!-- bottom row -->
+  <g transform="translate(60,540)">
+    <text class="mono amber" font-size="22" font-weight="600">cargo install sparrow-cli</text>
+    <text x="0" y="38" class="sans dim" font-size="16">github.com/ucav/Sparrow  ·  local-first  ·  zero telemetry</text>
+  </g>
+</svg>

@@ -1,0 +1,14 @@
+Sparrow is MIT, no paid tier, no SaaS, no cloud component I host.
+
+`cargo install sparrow-cli` and it's yours. Bring your own provider keys,
+or use local Ollama for $0.00 runs (the router defaults to Ollama if
+you have it installed).
+
+I have GitHub Sponsors enabled (.github/FUNDING.yml) for people who
+want to support the work. Sponsorship is never required for support,
+and it doesn't unlock features. The CLI stays MIT.
+
+If Sparrow gets enough traction that I can work on it full-time, I may
+add an OPTIONAL paid tier for things that genuinely need a server
+(shared team memory, cross-machine session sync). The CLI itself will
+stay MIT no matter what.

@@ -1,0 +1,19 @@
+Three reasons, in order:
+
+1. One static binary. 9 MB. Boots in 18 ms. `cargo install sparrow-cli`
+   either works or fails with a real error. No "pip install failed because
+   numpy 1.24 needs Python 3.10 but you have 3.12". No "npm install hung
+   for 14 minutes then printed 600 warnings". Just a binary.
+
+2. tokio's broadcast channel is the right primitive for the event bus
+   that drives the TUI, the WebView cockpit, and the JSON pipeline as
+   peer subscribers. Python doesn't have a clean equivalent (asyncio
+   broadcast is a footgun, multiprocessing is a different language).
+
+3. clippy + edition 2024 + no unsafe outside the git2 FFI shim catches
+   the entire category of "I shipped a coding agent and it deleted your
+   files" before runtime.
+
+The cost: Rust slows me down on prototype-y features (the chat composer
+and TTS modules took longer than they should have). Net positive for
+this kind of tool.

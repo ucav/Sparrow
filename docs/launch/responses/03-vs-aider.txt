@@ -1,0 +1,16 @@
+Aider is excellent and I used it for six months before writing Sparrow.
+Three differences that mattered to me:
+
+1. Aider is Python. The dep tree breaks on my machines about every quarter.
+   Sparrow is one Rust binary that does not.
+
+2. Aider's UI is the TUI. Sparrow has three peer surfaces — TUI, WebView
+   cockpit on port 9339, and `--json` NDJSON — fed from one typed event
+   bus. Crash one, the others keep working.
+
+3. Aider has no `HardStop` primitive in its budget code. The cap is a
+   warning. Sparrow's `--max-cost-usd` / `--max-wall-secs` / `--max-tokens`
+   abort the run at the next safe boundary, no config trick can bypass.
+
+What Aider does better than Sparrow: its diff-application strategy is
+more robust than mine. I plan to copy it for v0.6.

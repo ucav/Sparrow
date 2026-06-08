@@ -1,0 +1,31 @@
+38 providers wired today, with quick notes on which ones I personally use:
+
+Frontier:
+  - Anthropic (Claude 3.5/4 family)
+  - OpenAI (GPT-4o/4.1/o-series)
+  - Google (Gemini 2.0/2.5)
+  - xAI (Grok 3)
+
+Fast/cheap:
+  - Groq (Llama 3.x, Mixtral) — what the wizard picks if you have no other key
+  - Cerebras (very fast Llama inference)
+  - Together
+  - Fireworks
+  - DeepInfra
+
+Open weights via cloud:
+  - OpenRouter (one key, ~80 models)
+  - DeepSeek (V2.5, R1)
+  - Mistral
+  - Moonshot (Kimi)
+  - Qwen (Alibaba)
+  - Zhipu (GLM 4.5)
+  - Yi
+  - InternLM
+  - NVIDIA NIM (92 models discovered on launch)
+
+Local:
+  - Ollama (default first hop)
+
+The full registry is in `src/provider/` — each provider is a separate
+file implementing one trait. Adding a 39th is ~80 lines.

@@ -1,0 +1,29 @@
+v0.6 (next ~6 weeks):
+  - Better diff application (porting Aider's strategy).
+  - Webview replay URL — share a session as a public timeline, not
+    just as a Gist.
+  - Official MCP server discovery + auto-install from a curated list.
+  - Signed release artifacts (cosign keyless on every tag, manifests
+    in the release notes).
+  - VS Code extension on the Marketplace.
+
+v0.7 (~3 months):
+  - External security audit (target: Trail of Bits or GitHub Security
+    Lab).
+  - Plugin marketplace — `sparrow skill search/install` from a
+    community registry.
+  - Optional shared-memory backend for teams (server-side, opt-in,
+    encryption at rest). This may be the only paid feature ever.
+
+v1.0 (~6 months):
+  - Stability lock on the public CLI + config schema.
+  - Formal MSRV policy.
+  - 6-month security disclosure window.
+
+Things I'm explicitly NOT doing:
+  - Hosted SaaS that runs Sparrow for you. The whole point is local.
+  - A "smart router" that learns your preferences across machines —
+    too easy to misuse.
+  - Generated-marketing-content tooling. There are plenty of those.
+
+ROADMAP.md in the repo for the full live version.

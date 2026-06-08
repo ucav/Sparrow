@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 675" width="1200" height="675">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0e0b08"/>
+      <stop offset="100%" stop-color="#14100b"/>
+    </linearGradient>
+    <style>
+      .mono { font-family: 'JetBrains Mono','SF Mono',ui-monospace,monospace; }
+      .sans { font-family: 'Inter',system-ui,-apple-system,sans-serif; }
+      .amber { fill: #f2a93c; }
+      .coral { fill: #f0674a; }
+      .cream { fill: #ece2cf; }
+      .dim   { fill: #897d6c; }
+      .red   { fill: #d96a63; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="675" fill="url(#bg)"/>
+
+  <!-- stylized dashboard panel -->
+  <g transform="translate(110,140)">
+    <rect x="0" y="0" width="980" height="395" rx="14" fill="#1d1710" stroke="#2c251c" stroke-width="1"/>
+    <text x="36" y="58" class="sans dim" font-size="14" letter-spacing="4">USAGE — LAST 4 DAYS</text>
+
+    <text x="36" y="200" class="sans cream" font-size="148" font-weight="800" letter-spacing="-4">$847.21</text>
+    <text x="36" y="248" class="sans dim" font-size="20">11 files modified  ·  3 session crashes  ·  context lost</text>
+
+    <!-- bar approximations of a chart -->
+    <g transform="translate(540,90)">
+      <rect x="0"   y="120" width="42" height="32"  class="coral" opacity="0.6"/>
+      <rect x="68"  y="80"  width="42" height="72"  class="coral" opacity="0.75"/>
+      <rect x="136" y="40"  width="42" height="112" class="coral" opacity="0.9"/>
+      <rect x="204" y="6"   width="42" height="146" class="coral"/>
+      <text x="0"   y="170" class="mono dim" font-size="12">Mon</text>
+      <text x="68"  y="170" class="mono dim" font-size="12">Tue</text>
+      <text x="136" y="170" class="mono dim" font-size="12">Wed</text>
+      <text x="204" y="170" class="mono dim" font-size="12">Thu</text>
+    </g>
+
+    <line x1="36" y1="320" x2="944" y2="320" stroke="#2c251c"/>
+    <text x="36" y="358" class="mono red" font-size="18">⚠  no cap configured</text>
+  </g>
+
+  <!-- caption -->
+  <g transform="translate(110,600)">
+    <text class="sans amber" font-size="32" font-weight="700">I closed the laptop. Opened Rust. Built Sparrow.</text>
+    <text class="mono dim" font-size="16" y="38">github.com/ucav/Sparrow</text>
+  </g>
+</svg>

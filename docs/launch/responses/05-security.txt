@@ -1,0 +1,20 @@
+Honest answer: no external audit yet. What's in place:
+
+- `cargo audit` enforced in nightly CI.
+- `clippy -D warnings` on every PR.
+- No `unsafe` outside the FFI shim into libgit2.
+- Credentials encrypted at rest with ChaCha20-Poly1305, key derived from
+  the OS keychain when available, fall back to a local salt otherwise.
+- Pre-commit secret scanner bundled (`sparrow hook install`) — bash
+  script that catches the obvious GitHub/OpenAI/Anthropic/AWS key
+  patterns before commit.
+- Sandbox uses bwrap on Linux. On macOS/Windows we report "unsupported
+  hardened sandbox" honestly rather than ship a stub that silently
+  fails.
+- PRIVACY.md is explicit about what stays local (everything by default)
+  and what telemetry would be (opt-in, closed event enum, never prompts
+  or file contents).
+
+External audit is on the v0.7 roadmap. I'd take grants/program pointers
+if you have them. Trail of Bits and GitHub Security Lab are the two I'm
+trying to reach.
