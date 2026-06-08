@@ -1,5 +1,5 @@
 PackageIdentifier: ucav.Sparrow
-PackageVersion: 0.5.3
+PackageVersion: 0.5.4
 PackageLocale: en-US
 Publisher: ucav
 PublisherUrl: https://github.com/ucav
@@ -21,6 +21,6 @@ Tags:
   - llm
   - rust
   - coding
-ReleaseNotesUrl: https://github.com/ucav/Sparrow/releases/tag/v0.5.3
+ReleaseNotesUrl: https://github.com/ucav/Sparrow/releases/tag/v0.5.4
 ManifestType: defaultLocale
 ManifestVersion: 1.6.0

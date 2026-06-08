@@ -1,12 +1,12 @@
 PackageIdentifier: ucav.Sparrow
-PackageVersion: 0.5.3
+PackageVersion: 0.5.4
 InstallerType: portable
 Commands:
   - sparrow
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/ucav/Sparrow/releases/download/v0.5.3/sparrow-windows-x86_64.exe
-    InstallerSha256: REPLACE_WITH_SHA256_AFTER_RELEASE
+    InstallerUrl: https://github.com/ucav/Sparrow/releases/download/v0.5.4/sparrow-windows-x86_64.exe
+    InstallerSha256: D12904CA5B36FAB708697114D254A368E965E0BAEFB7D46C811481819AF1581B
     PortableCommandAlias: sparrow
 ManifestType: installer
 ManifestVersion: 1.6.0
