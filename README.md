@@ -151,24 +151,31 @@ See [docs/AUDIT.md](docs/AUDIT.md) for module-by-module proof.
 
 ## Quick Start
 
-**Pick any of these — they all give you the same `sparrow` binary:**
+**Available today — same `sparrow` binary either way:**
 
 ```bash
-# Universal (Rust toolchain)
+# Universal (Rust toolchain) — published on crates.io
 cargo install sparrow-cli
 
-# macOS / Linux — one-liner
+# macOS / Linux — one-liner (pulls the latest GitHub release)
 curl -fsSL https://raw.githubusercontent.com/ucav/Sparrow/master/install.sh | sh
-
-# macOS — Homebrew
-brew install ucav/tap/sparrow
 
 # Windows — PowerShell one-liner
 irm https://raw.githubusercontent.com/ucav/Sparrow/master/install.ps1 | iex
+```
+
+Or grab a prebuilt binary directly from the
+[latest release](https://github.com/ucav/Sparrow/releases/latest)
+(Linux x86_64, macOS arm64, Windows x86_64).
+
+**Package managers (manifests ready, publishing in progress):**
+
+```bash
+# macOS — Homebrew
+brew install ucav/tap/sparrow
 
 # Windows — Scoop
-scoop bucket add ucav https://github.com/ucav/scoop-bucket
-scoop install sparrow
+scoop bucket add ucav https://github.com/ucav/scoop-bucket && scoop install sparrow
 
 # Windows 11 — winget
 winget install ucav.Sparrow
