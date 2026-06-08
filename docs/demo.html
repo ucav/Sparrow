@@ -9,7 +9,7 @@
 <meta property="og:description" content="A full agentic run, checkpointed and rewound, in 30 seconds." />
 <meta property="og:type" content="website" />
 <meta property="og:url" content="https://ucav.github.io/Sparrow/demo.html" />
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/asciinema-player@3.8.0/dist/bundle/asciinema-player.css" />
+<link rel="stylesheet" href="./vendor/asciinema-player/asciinema-player.css" />
 <style>
   :root{ --bg:#0e0b08; --fg:#ece2cf; --dim:#897d6c; --amber:#f2a93c; --line:#2c251c; }
   *{box-sizing:border-box;margin:0;padding:0}
@@ -53,9 +53,9 @@
     No API key needed — first run offers a free provider or local Ollama.
   </footer>
 
-  <script src="https://cdn.jsdelivr.net/npm/asciinema-player@3.8.0/dist/bundle/asciinema-player.min.js"></script>
+  <script src="./vendor/asciinema-player/asciinema-player.min.js"></script>
   <script>
-    AsciinemaPlayer.create('./sparrow-demo.cast', document.getElementById('player'), {
+    AsciinemaPlayer.create('./sparrow-demo.cast?v=3', document.getElementById('player'), {
       autoPlay: true,
       loop: true,
       theme: 'asciinema',
