@@ -1,6 +1,6 @@
 [package]
 name = "sparrow-cli"
-version = "0.5.6"
+version = "0.5.7"
 edition = "2024"
 description = "A local-first Rust agent cockpit — route, run, replay, rewind"
 license = "MIT"
