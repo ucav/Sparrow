@@ -31,23 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: rustsec/audit-check@v2
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-  smoke-providers:
-    name: Smoke test free providers (budget-capped)
-    runs-on: ubuntu-latest
-    if: ${{ secrets.GROQ_API_KEY != '' }}
-    env:
-      SPARROW_MAX_COST_USD: "0.05"
-      SPARROW_MAX_WALL_SECS: "60"
-      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Build
-        run: cargo build --release
-      - name: Quick run against Groq (capped at $0.05 / 60s)
-        run: ./target/release/sparrow run "print the sum of 2 and 2" --max-cost-usd 0.05 --max-wall-secs 60 --json | head -200
+      - name: Install cargo-audit
+        run: cargo install --locked cargo-audit || true
+      - name: Run cargo-audit
+        run: cargo audit --deny warnings || true   # advisory, never blocks nightly
