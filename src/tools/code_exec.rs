@@ -1,7 +1,6 @@
 //! Code execution in sandbox — runs code with timeout.
 
 use std::process::Command;
-use std::time::Duration;
 
 pub fn execute_code(code: &str, language: &str, timeout_secs: u64) -> anyhow::Result<ExecResult> {
     let tmpdir = std::env::temp_dir().join("sparrow_exec");
