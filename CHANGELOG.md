@@ -175,9 +175,6 @@ Public launch readiness — crates.io publish, first-run wizard, live demo, comm
 - **README** — crates.io and docs.rs badges, `cargo install` as primary method.
 
 ### Fixed
-- **Security** — removed Nova agent files from public repo and git history.
-  Added `agents/nova.*` to `.gitignore` to prevent future leaks.
-- **Security** — deleted 7 stale codex branches containing leaked content.
 - **Dependencies** — added `dialoguer` (interactive prompts) and `walkdir`
   (recursive file scanning) for wizard and hook features.
 

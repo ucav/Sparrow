@@ -12,6 +12,7 @@ pub mod ollama;
 pub mod openai_compat;
 pub mod responses;
 pub mod sse_buffer;
+pub mod tool_markup;
 
 // ─── Model capabilities ─────────────────────────────────────────────────────────
 

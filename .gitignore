@@ -39,13 +39,19 @@ agents/nova.*
 docs/launch/
 assets/launch/
 
-# Codex / local assistant artifacts
-.codex-remote-attachments/
-.claude/
-.sparrow/handoff/
+# Internal planning / process docs — local only
+PLAN.md
+PLAN_*.md
+ROADMAP_*.md
+docs/V1_COMPLETION_AUDIT.md
+docs/AUDIT_*.md
+docs/REPAIR_*.md
 STATUS*.md
 status*.md
 plan-status*.md
+.codex-remote-attachments/
+.claude/
+.sparrow/handoff/
 mercredi.md
 tool_test.txt
 skills/local-temperature/

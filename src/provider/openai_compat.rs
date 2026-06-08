@@ -263,6 +263,14 @@ impl Brain for OpenAICompatAdapter {
         struct SseState {
             tools: HashMap<u64, ToolCallState>,
             lines: super::sse_buffer::LineBuffer,
+            /// Accumulated assistant `content` text for this completion. Used
+            /// to recover tool calls a provider emitted as inline XML/DSML
+            /// markup inside `content` rather than as native `tool_calls`
+            /// (see provider::tool_markup).
+            content_buf: String,
+            /// True once we've decided the content is inline tool-call markup
+            /// and should be suppressed from the visible text stream.
+            suppress_text: bool,
         }
 
         let event_stream = stream
@@ -270,6 +278,8 @@ impl Brain for OpenAICompatAdapter {
                 SseState {
                     tools: HashMap::new(),
                     lines: super::sse_buffer::LineBuffer::new(),
+                    content_buf: String::new(),
+                    suppress_text: false,
                 },
                 |state, chunk| {
                     let events: Vec<BrainEvent> = match chunk {
@@ -305,9 +315,26 @@ impl Brain for OpenAICompatAdapter {
                                                 delta.get("content").and_then(|v| v.as_str())
                                             {
                                                 if !text.is_empty() {
-                                                    parsed.push(BrainEvent::TextDelta(
-                                                        text.to_string(),
-                                                    ));
+                                                    state.content_buf.push_str(text);
+                                                    // If this completion's content turns
+                                                    // out to be inline tool-call markup
+                                                    // (DeepSeek DSML / Anthropic-style
+                                                    // <invoke>), suppress it from the
+                                                    // visible text stream — it'll be
+                                                    // converted to real tool calls at
+                                                    // finish_reason.
+                                                    if !state.suppress_text
+                                                        && super::tool_markup::looks_like_tool_markup(
+                                                            &state.content_buf,
+                                                        )
+                                                    {
+                                                        state.suppress_text = true;
+                                                    }
+                                                    if !state.suppress_text {
+                                                        parsed.push(BrainEvent::TextDelta(
+                                                            text.to_string(),
+                                                        ));
+                                                    }
                                                 }
                                             }
                                             // DeepSeek / Moonshot thinking-mode emit
@@ -425,7 +452,54 @@ impl Brain for OpenAICompatAdapter {
                                         {
                                             if !reason.is_empty() && reason != "null" {
                                                 let stop = match reason {
-                                                    "stop" => crate::event::StopReason::EndTurn,
+                                                    "stop" => {
+                                                        // Recover tool calls a provider
+                                                        // emitted as inline XML/DSML
+                                                        // markup in `content` (with
+                                                        // finish_reason "stop") instead
+                                                        // of native tool_calls. Without
+                                                        // this the call leaks as raw
+                                                        // text and never runs.
+                                                        let calls = if super::tool_markup::looks_like_tool_markup(
+                                                            &state.content_buf,
+                                                        ) {
+                                                            super::tool_markup::extract_tool_calls(
+                                                                &state.content_buf,
+                                                            )
+                                                        } else {
+                                                            Vec::new()
+                                                        };
+                                                        if calls.is_empty() {
+                                                            crate::event::StopReason::EndTurn
+                                                        } else {
+                                                            for (i, call) in
+                                                                calls.into_iter().enumerate()
+                                                            {
+                                                                let id = format!(
+                                                                    "markup-call-{}",
+                                                                    i
+                                                                );
+                                                                parsed.push(
+                                                                    BrainEvent::ToolUseStart {
+                                                                        id: id.clone(),
+                                                                        name: call.name,
+                                                                    },
+                                                                );
+                                                                parsed.push(
+                                                                    BrainEvent::ToolUseDelta {
+                                                                        id: id.clone(),
+                                                                        json: call
+                                                                            .args
+                                                                            .to_string(),
+                                                                    },
+                                                                );
+                                                                parsed.push(
+                                                                    BrainEvent::ToolUseEnd { id },
+                                                                );
+                                                            }
+                                                            crate::event::StopReason::ToolUse
+                                                        }
+                                                    }
                                                     "length" => crate::event::StopReason::MaxTokens,
                                                     "tool_calls" => {
                                                         for (_, state) in tool_state.drain() {
