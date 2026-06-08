@@ -361,6 +361,10 @@ pub struct Tui {
     think: crate::event::ThinkStripper,
     /// Known agent names for `@<name>` autocomplete; populated by the host.
     agent_names: Vec<String>,
+    /// Currently active agent (toggled via @picker). None = default pipeline.
+    active_agent: Option<String>,
+    /// Cached agent souls: name → (role, personality_b64).
+    agent_souls: std::collections::HashMap<String, (String, String)>,
 }
 
 impl Tui {
@@ -418,6 +422,8 @@ impl Tui {
             replay_idx: 0,
             think: crate::event::ThinkStripper::new(),
             agent_names: Vec::new(),
+            active_agent: None,
+            agent_souls: std::collections::HashMap::new(),
         }
     }
 
@@ -575,6 +581,55 @@ impl Tui {
     pub fn with_agents(mut self, names: Vec<String>) -> Self {
         self.agent_names = names;
         self
+    }
+
+    /// Toggle an agent on/off. When toggled on, all subsequent tasks run with
+    /// that agent's identity. Toggle again (or toggle another agent) to switch.
+    pub fn toggle_agent(&mut self, name: &str) {
+        if self.active_agent.as_deref() == Some(name) {
+            // Deselect
+            self.active_agent = None;
+        } else {
+            // Select — cache the agent soul
+            self.active_agent = Some(name.to_string());
+            if !self.agent_souls.contains_key(name) {
+                self.cache_agent_soul(name);
+            }
+        }
+    }
+
+    /// Load and cache an agent's soul (role + base64 personality).
+    fn cache_agent_soul(&mut self, name: &str) {
+        let path = dirs::config_dir()
+            .unwrap_or_default()
+            .join("sparrow")
+            .join("agents")
+            .join(format!("{}.soul.toml", name));
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            let role = content.lines()
+                .find(|l| l.starts_with("role"))
+                .and_then(|l| l.split('=').nth(1))
+                .map(|s| s.trim().trim_matches('"').to_string())
+                .unwrap_or_default();
+            let personality = content.lines()
+                .find(|l| l.starts_with("personality"))
+                .and_then(|l| l.split('=').nth(1))
+                .map(|s| s.trim().trim_matches('"').to_string())
+                .unwrap_or_default();
+            use base64::{Engine as _, engine::general_purpose::STANDARD};
+            let b64 = STANDARD.encode(personality.as_bytes());
+            self.agent_souls.insert(name.to_string(), (role, b64));
+        }
+    }
+
+    /// Build the agent dispatch prefix for task sending.
+    fn agent_prefix(&self) -> String {
+        if let Some(ref name) = self.active_agent {
+            if let Some((role, b64)) = self.agent_souls.get(name) {
+                return format!("__agent:{}__{}__{}__ ", name, role, b64);
+            }
+        }
+        String::new()
     }
 
     pub fn with_channels(
@@ -1029,13 +1084,25 @@ impl Tui {
                         KeyCode::Home => self.scroll = 0,
                         KeyCode::End => self.scroll = u16::MAX,
 
-                        // Tab → autocomplete first slash-command match
+                        // Tab → autocomplete or toggle agent
                         KeyCode::Tab => {
-                            let matches = self.autocomplete_matches();
-                            if let Some(first) = matches.first() {
-                                self.input_lines = vec![first.to_string()];
-                                self.cursor_row = 0;
-                                self.cursor_col = first.len();
+                            let line = &self.input_lines[0];
+                            // @agent → toggle, not insert
+                            if line.starts_with('@') {
+                                let name = &line[1..].trim().to_string();
+                                if !name.is_empty() && self.agent_names.contains(name) {
+                                    self.toggle_agent(name);
+                                    self.input_lines = vec![String::new()];
+                                    self.cursor_row = 0;
+                                    self.cursor_col = 0;
+                                }
+                            } else {
+                                let matches = self.autocomplete_matches();
+                                if let Some(first) = matches.first() {
+                                    self.input_lines = vec![first.to_string()];
+                                    self.cursor_row = 0;
+                                    self.cursor_col = first.len();
+                                }
                             }
                         }
 
@@ -1150,7 +1217,12 @@ impl Tui {
                                         let to_send = if self.inject_pending {
                                             format!("__inject__:{}", task)
                                         } else {
-                                            task.clone()
+                                            let prefix = self.agent_prefix();
+                                            if prefix.is_empty() {
+                                                task.clone()
+                                            } else {
+                                                format!("{}{}", prefix, task)
+                                            }
                                         };
                                         self.inject_pending = false;
                                         if let Some(tx) = &self.task_tx {
@@ -1426,6 +1498,17 @@ impl Tui {
             Span::styled(
                 format!("{:<9}  ", verb),
                 Style::default().fg(self.theme.dim),
+            ),
+            // active agent indicator (when toggled)
+            Span::styled(
+                if let Some(ref agent) = self.active_agent {
+                    format!("🐦 {}  ", agent.to_uppercase())
+                } else {
+                    String::new()
+                },
+                Style::default()
+                    .fg(self.theme.gold)
+                    .add_modifier(Modifier::BOLD),
             ),
             // route
             Span::styled(
