@@ -492,6 +492,12 @@ pub enum SessionAction {
         #[arg(long, default_value_t = 30)]
         older_than_days: u64,
     },
+    /// Full-text search across sessions
+    Search {
+        query: String,
+        #[arg(long, default_value_t = 10)]
+        limit: usize,
+    },
 }
 
 #[derive(Subcommand)]

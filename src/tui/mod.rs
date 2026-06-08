@@ -20,6 +20,7 @@ use tokio::sync::mpsc;
 pub mod formatters;
 pub mod renderer;
 pub mod theme;
+pub mod ansi_bridge;
 
 type CrosstermTerminal = ratatui::Terminal<ratatui::backend::CrosstermBackend<io::Stdout>>;
 
@@ -365,6 +366,8 @@ pub struct Tui {
     active_agent: Option<String>,
     /// Cached agent souls: name → (role, personality_b64).
     agent_souls: std::collections::HashMap<String, (String, String)>,
+    /// Rich terminal renderer (syntax highlighting, markdown, diffs).
+    term_renderer: crate::tui::renderer::TermRenderer,
 }
 
 impl Tui {
@@ -424,6 +427,9 @@ impl Tui {
             agent_names: Vec::new(),
             active_agent: None,
             agent_souls: std::collections::HashMap::new(),
+            term_renderer: crate::tui::renderer::TermRenderer::new(
+                crate::tui::renderer::RenderConfig::default(),
+            ),
         }
     }
 
@@ -640,6 +646,38 @@ impl Tui {
         self.task_tx = Some(task_tx);
         self.event_rx = Some(event_rx);
         self
+    }
+
+    /// Format a log line with auto-detected content type.
+    /// Applies syntax highlighting to code, colors to diffs, etc.
+    fn format_line(&self, text: &str) -> String {
+        // Detect content type
+        let trimmed = text.trim();
+
+        // Code blocks (start with ``` or indented 4+ spaces)
+        if trimmed.starts_with("```") || text.lines().all(|l| l.starts_with("    ") || l.is_empty()) {
+            return self.term_renderer.render_code(text, "");
+        }
+
+        // Diff output (starts with diff --git, @@, +++, ---)
+        if trimmed.contains("diff --git") || trimmed.starts_with("@@") || trimmed.starts_with("--- a/") || trimmed.starts_with("+++ b/") {
+            return self.term_renderer.render_diff(text);
+        }
+
+        // JSON (starts with { or [)
+        if trimmed.starts_with('{') || trimmed.starts_with('[') {
+            if serde_json::from_str::<serde_json::Value>(trimmed).is_ok() {
+                return self.term_renderer.render_json(text);
+            }
+        }
+
+        // Markdown headers (# Title, ## Section)
+        if trimmed.starts_with("# ") || trimmed.starts_with("## ") || trimmed.starts_with("### ") {
+            return self.term_renderer.render_markdown(text);
+        }
+
+        // Default: plain text
+        text.to_string()
     }
 
     pub fn push_event(&mut self, event: Event) {
@@ -1658,11 +1696,19 @@ impl Tui {
                         style,
                     )))
                 } else {
+                    let formatted = self.format_line(&log.text);
                     let prefix = "  ".repeat(log.indent as usize);
-                    Some(Line::from(Span::styled(
-                        format!("{}{}", prefix, log.text),
+                    let rendered_line = crate::tui::ansi_bridge::render_line(
+                        &formatted,
                         Style::default().fg(log.style.color(&self.theme)),
-                    )))
+                    );
+                    // Prepend indent prefix
+                    let mut final_spans = vec![Span::styled(
+                        prefix,
+                        Style::default().fg(self.theme.dim),
+                    )];
+                    final_spans.extend(rendered_line.spans);
+                    Some(Line::from(final_spans))
                 }
             })
             .collect();

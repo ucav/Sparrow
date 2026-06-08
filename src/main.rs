@@ -1859,6 +1859,8 @@ async fn run_task(
     let task_for_recording = task.to_string();
     let config_snapshot = redacted_config_snapshot(&run_config);
     let repo_head = current_repo_head();
+    let start_time = std::time::Instant::now();
+    eprintln!("\x1b[36m⚡ Sparrow running: {}\x1b[0m", task);
     let print_handle = tokio::spawn(async move {
         let mut full_reply = String::new();
         let mut reasoning_reply = String::new();
@@ -1979,7 +1981,8 @@ async fn run_task(
     }
 
     let outcome = drive_result?;
-    println!("Status: {}", outcome.status);
+    let elapsed = start_time.elapsed();
+    println!("Status: {}  ⏱ {:.1}s", outcome.status, elapsed.as_secs_f64());
     Ok(())
 }
 
@@ -3352,6 +3355,23 @@ fn handle_sessions(
                 "Removed {} session(s) older than {} day(s).",
                 removed, older_than_days
             );
+        }
+        sparrow::cli::SessionAction::Search { query, limit } => {
+            let fts = sparrow::memory::fts::SessionSearch::open(
+                state_dir.join("sessions_fts.db"),
+            )?;
+            let hits = fts.search(&query, limit)?;
+            if hits.is_empty() {
+                println!("No results for \"{}\".", query);
+            } else {
+                println!("Results for \"{}\" ({}):\n", query, hits.len());
+                for hit in &hits {
+                    let title = hit.title.as_deref().unwrap_or("(untitled)");
+                    println!("  {} — {}", hit.session_id, title);
+                    println!("    {}", hit.snippet);
+                    println!();
+                }
+            }
         }
     }
     Ok(())
