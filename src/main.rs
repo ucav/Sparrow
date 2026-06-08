@@ -4167,6 +4167,7 @@ fn extract_webview_protocol_prefixes(
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod webview_protocol_tests {
     use super::extract_webview_protocol_prefixes;
     use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -4237,7 +4238,6 @@ async fn handle_webview(
     port: u16,
 ) -> anyhow::Result<()> {
     use sparrow::engine::Engine;
-    use sparrow::engine::Identity;
     use sparrow::router::BasicRouter;
     use std::net::SocketAddr;
     use std::sync::RwLock;

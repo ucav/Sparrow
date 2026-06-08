@@ -113,6 +113,13 @@ impl WebViewServer {
             // friendly: Ctrl+R picks up edits without recompile). Otherwise
             // serves the include_str!()'d copy baked at compile time.
             .route("/", get(|| async { Html(console_html().into_owned()) }))
+            // /healthz: lightweight liveness probe used by the VS Code
+            // extension and any external orchestrator to know the cockpit is
+            // up before opening a webview pointing at it.
+            .route(
+                "/healthz",
+                get(|| async { axum::Json(serde_json::json!({"ok": true})) }),
+            )
             .route("/run", post(run_task))
             .route("/plan", post(plan_task))
             .route("/cli", post(run_cli_command))

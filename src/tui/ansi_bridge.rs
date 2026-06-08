@@ -52,7 +52,6 @@ fn apply_sgr_codes(params: &str, mut style: Style) -> Style {
 }
 
 fn apply_sgr(code: &str, style: Style) -> Style {
-    let mut style = style;
     match code {
         "0" | "" => Style::default(),
         "1" => Style::default().add_modifier(Modifier::BOLD),

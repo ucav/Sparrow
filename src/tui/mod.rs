@@ -1164,8 +1164,8 @@ impl Tui {
                         KeyCode::Tab => {
                             let line = &self.input_lines[0];
                             // @agent → toggle, not insert
-                            if line.starts_with('@') {
-                                let name = &line[1..].trim().to_string();
+                            if let Some(rest) = line.strip_prefix('@') {
+                                let name = &rest.trim().to_string();
                                 if !name.is_empty() && self.agent_names.contains(name) {
                                     self.toggle_agent(name);
                                     self.input_lines = vec![String::new()];
