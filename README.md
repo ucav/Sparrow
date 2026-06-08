@@ -21,7 +21,7 @@
 
 *One event stream. Terminal UI, WebView cockpit, JSON output, or gateway — your choice.*
 
-[![asciicast](https://asciinema.org/a/PLEprnQSdv4lqOH2.svg)](https://asciinema.org/a/PLEprnQSdv4lqOH2)
+[![▶ Watch the 30-second demo](https://img.shields.io/badge/▶_watch-30--second_demo-f2a93c?style=for-the-badge)](https://ucav.github.io/Sparrow/demo.html)
 
 
 [Quick Start](#quick-start) · [Why Sparrow](#why-sparrow-vs-claude-code--codex--aider) · [Commands](#common-commands) · [Architecture](#architecture) · [Docs](#docs) · [Releases](https://github.com/ucav/Sparrow/releases)

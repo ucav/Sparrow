@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sparrow — 30-second demo</title>
+<meta name="description" content="One binary. 38 providers. Git checkpoints. Hard budget caps. Watch a full Sparrow run and rewind in 30 seconds." />
+<meta property="og:title" content="Sparrow — 30-second demo" />
+<meta property="og:description" content="A full agentic run, checkpointed and rewound, in 30 seconds." />
+<meta property="og:type" content="website" />
+<meta property="og:url" content="https://ucav.github.io/Sparrow/demo.html" />
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/asciinema-player@3.8.0/dist/bundle/asciinema-player.css" />
+<style>
+  :root{ --bg:#0e0b08; --fg:#ece2cf; --dim:#897d6c; --amber:#f2a93c; --line:#2c251c; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--bg);color:var(--fg);
+    font-family:'JetBrains Mono',ui-monospace,'SF Mono',monospace;min-height:100vh}
+  body{display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:32px 20px;gap:24px;
+    background:
+      radial-gradient(1100px 700px at 70% -10%, rgba(242,169,60,.14), transparent 60%),
+      radial-gradient(900px 600px at 12% 112%, rgba(240,103,74,.10), transparent 55%),
+      var(--bg);}
+  .brand{display:flex;align-items:center;gap:12px;font-weight:700;letter-spacing:3px;font-size:15px;color:var(--amber)}
+  .brand .dot{width:10px;height:10px;border-radius:50%;background:var(--amber);box-shadow:0 0 14px var(--amber)}
+  h1{font-size:26px;font-weight:800;letter-spacing:-1px;text-align:center;line-height:1.25}
+  h1 small{display:block;color:var(--dim);font-size:14px;font-weight:500;letter-spacing:0;margin-top:8px}
+  .player{width:min(960px,100%);border:1px solid var(--line);border-radius:12px;overflow:hidden;
+    box-shadow:0 24px 80px rgba(0,0,0,.5)}
+  .cta{display:flex;gap:14px;flex-wrap:wrap;justify-content:center;align-items:center;margin-top:4px}
+  .cta code{background:#1d1710;border:1px solid var(--line);color:var(--amber);
+    padding:10px 16px;border-radius:8px;font-size:15px}
+  .cta a{color:var(--dim);text-decoration:none;font-size:14px;border-bottom:1px dashed var(--line)}
+  .cta a:hover{color:var(--amber)}
+  footer{color:var(--dim);font-size:12px;margin-top:8px;text-align:center;line-height:1.7}
+</style>
+</head>
+<body>
+  <div class="brand"><span class="dot"></span> SPARROW</div>
+  <h1>one run. checkpointed. rewound. 30 seconds.
+    <small>route to the cheapest model · cap the bill · undo everything</small>
+  </h1>
+
+  <div class="player"><div id="player"></div></div>
+
+  <div class="cta">
+    <code>cargo install sparrow-cli</code>
+    <a href="https://github.com/ucav/Sparrow">github.com/ucav/Sparrow</a>
+  </div>
+
+  <footer>
+    Local-first Rust agent cockpit · 38 providers · MIT · zero telemetry<br />
+    No API key needed — first run offers a free provider or local Ollama.
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/asciinema-player@3.8.0/dist/bundle/asciinema-player.min.js"></script>
+  <script>
+    AsciinemaPlayer.create('./sparrow-demo.cast', document.getElementById('player'), {
+      autoPlay: true,
+      loop: true,
+      theme: 'asciinema',
+      poster: 'npt:0:03',
+      cols: 100,
+      rows: 28,
+      fit: 'width',
+      idleTimeLimit: 2,
+      terminalFontSize: '14px'
+    });
+  </script>
+</body>
+</html>
