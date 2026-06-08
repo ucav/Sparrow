@@ -2350,7 +2350,7 @@ impl Engine {
                                         // assistant message with a tool_calls array is
                                         // also the correct OpenAI/Anthropic shape.
                                         let drained: Vec<_> =
-                                            tool_results_pending.drain(..).collect();
+                                            std::mem::take(&mut tool_results_pending);
 
                                         let mut assistant_blocks = Vec::new();
                                         if !reasoning_buf.is_empty() {
