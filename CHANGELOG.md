@@ -2,6 +2,36 @@
 
 All notable changes to Sparrow will be documented in this file.
 
+## [0.5.4] — 2026-06-07
+
+Launch-ready pass — every public-facing asset needed for HN/X/Reddit day.
+
+### Added
+- `assets/sparrow-demo.cast` — real 30-second asciinema demo in English
+  (was 3 lines of error output; now a working cast playable via
+  `asciinema play` or uploadable to asciinema.org).
+- `assets/launch/og-card.svg` — Open Graph card (1200×630).
+- `assets/launch/x-hook-receipt.svg` — the `$847` visual for the X hook.
+- `assets/launch/comparison-card.svg` — vs Claude Code / Codex / Aider table.
+- `assets/launch/cli-demo-card.svg` — terminal still for threads without GIFs.
+- `assets/launch/install-card.svg` — 6 install channels at a glance.
+- `docs/launch/hn-show.md` — final Show HN copy + post hygiene + timing.
+- `docs/launch/x-thread.md` — 8-tweet thread, media rotation, mention list.
+- `docs/launch/x-hook-variants.md` — 5 A/B variants of the hook tweet.
+- `docs/launch/reddit-rust.md` — r/rust post (factual, no marketing).
+- `docs/launch/reddit-localllama.md` — r/LocalLLaMA post (offline-first).
+- `docs/launch/reddit-programming.md` — r/programming essay form.
+- `docs/launch/producthunt.md` — name, tagline, description, maker first
+  comment, gallery slots.
+- `docs/launch/devto-longform.md` — 1500-word essay for SEO/Dev.to.
+- `docs/launch/press-kit.md` — one-liner, 30s, 2min, 5min pitches, bios.
+- `docs/launch/faq-hn-preloaded.md` — 15 HN-typical questions pre-answered.
+- `docs/launch/voice-guide.md` — voice rules + banned words list.
+- `docs/launch/checklist.md` — J-7 → J+7 launch playbook.
+- `docs/launch/responses/01..10.txt` — 10 pre-loaded reply files.
+- `SUPPORT.md` — channel routing, response-time expectations.
+- `.github/FUNDING.yml` — GitHub Sponsors button.
+
 ## [0.5.3] — 2026-06-07
 
 Adoption pass — packaging, IDE, drop-in compat, opt-in telemetry, signed releases.
