@@ -258,8 +258,10 @@
     background:var(--panel2);border:1px solid transparent;cursor:pointer;transition:.15s;margin-bottom:5px}
   .drw-row:hover{border-color:var(--line-hot)}
   .drw-row.cur{border-color:color-mix(in srgb,var(--brand) 55%,var(--line));background:color-mix(in srgb,var(--brand) 10%,var(--panel))}
-  .drw-row .ttl{font-size:11.5px;color:var(--fg);font-weight:500;display:flex;align-items:center;gap:6px;
-    overflow-wrap:break-word;word-break:normal;white-space:normal;min-width:0;text-overflow:ellipsis}
+  .drw-row{overflow:hidden}
+  .drw-row .ttl{font-size:11.5px;color:var(--fg);font-weight:500;display:block;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .drw-row .ttl .led{display:inline-block;vertical-align:middle;margin-right:6px}
   .drw-row .ttl .led{width:6px;height:6px;border-radius:50%;background:var(--add);box-shadow:0 0 6px var(--add)}
   .drw-row .meta{font-size:10px;color:var(--dim);display:flex;gap:8px;flex-wrap:wrap}
   .drw-row .meta b{color:var(--fg);font-weight:500}
@@ -925,7 +927,7 @@
       <button class="chip-btn" id="verboseBtn" title="Verbose mode — show tool args, token ticks, internal reasoning" aria-pressed="false">⊕ verbose</button>
       <button class="chip-btn" id="themeBtn" title="Cmd+Shift+L toggle theme">☾</button>
       <button class="btn sm" id="cfgBtn">config</button>
-      <span style="font-size:11px;color:var(--dimmer)">v0.3.6</span>
+      <span id="appVersion" style="font-size:11px;color:var(--dimmer)">v—</span>
     </span>
   </div>
 
@@ -1406,8 +1408,30 @@ function compactChain(chain){
   return `${list[0]} → ${list[1]}${list.length>2?` · +${list.length-2}`:''}`;
 }
 function setSwarm(role,state,msg){
-  const lane=$('swarm-'+role);
-  if(!lane)return;
+  let lane=$('swarm-'+role);
+  if(!lane){
+    const slug=String(role||'').toLowerCase().replace(/[^a-z0-9-]+/g,'-').replace(/^-+|-+$/g,'');
+    lane=document.getElementById('swarm-extra-'+slug);
+  }
+  if(!lane){
+    const anchor=document.getElementById('swarm-extras-anchor');
+    const more=document.getElementById('swarm-more');
+    if(anchor && more){
+      lane=document.createElement('div');
+      lane.className='lane steel working';
+      lane.id='swarm-extra-'+String(role||'agent').toLowerCase().replace(/[^a-z0-9-]+/g,'-');
+      lane.title=role||'sub-agent';
+      const head=document.createElement('div');head.className='lane-head';
+      const who=document.createElement('span');who.className='who';who.textContent=role||'agent';
+      const st=document.createElement('span');st.className='st';
+      const led=document.createElement('span');led.className='led-mini';
+      const txt=document.createElement('span');txt.setAttribute('data-role-state','');txt.textContent='working';
+      st.append(led,txt);head.append(who,st);
+      const m=document.createElement('span');m.className='msg';m.setAttribute('data-role-msg','');m.textContent=msg||'spawned';
+      lane.append(head,m);
+      anchor.parentNode.insertBefore(lane,more);
+    } else return;
+  }
   const cleanState=String(state||'idle').toLowerCase();
   lane.classList.remove('idle','working','done','error');
   lane.classList.add(cleanState.includes('error')?'error':cleanState.includes('done')?'done':cleanState.includes('work')||cleanState.includes('think')?'working':'idle');
@@ -1831,7 +1855,24 @@ async function loadSessionsPanel(){
         try{
           const rr=await fetch('/sessions/load',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});
           const jj=await rr.json();
-          if(jj.ok){toast(`session loaded · ${id.slice(0,8)}`,'ok');}
+          if(jj.ok){
+            const termEl=document.getElementById('term');
+            if(termEl) termEl.innerHTML='';
+            localStorage.setItem('sparrow-turn-count','0');
+            const session=sess.find(s=>s.id===id);
+            let msgs=[];
+            try{msgs=JSON.parse(session?.messages_json||'[]');}catch(_){}
+            msgs.forEach(m=>{
+              const role=(m.role||'').toLowerCase();
+              const text=(typeof m.content==='string'?m.content:JSON.stringify(m.content||'')).trim();
+              if(!text)return;
+              const cls=role==='user'?'user':role==='assistant'?'agent':'muted';
+              const label=role==='user'?'you':role==='assistant'?'sparrow':role;
+              line(`<span class="${cls}"><b>${esc(label)}</b> · ${esc(text).slice(0,4000).replace(/\n/g,'<br>')}</span>`);
+            });
+            line(`<span class="muted">↳ session restored · ${esc(session?.name||id)} · ${msgs.length} turns</span>`);
+            toast(`session loaded · ${id.slice(0,18)}`,'ok');
+          }
           else{toast('load failed: '+(jj.message||''),'error');}
         }catch(e){toast('load failed: '+e.message,'error');}
       });
@@ -1906,14 +1947,38 @@ async function loadSecurityPanel(){
     host.innerHTML=html;
   }catch(_){host.innerHTML='<div class="drw-empty">_none yet_ · unable to load /security</div>';}
 }
+// In-session ledger of files written by sparrow (DiffApplied events).
+window.SPARROW_WRITTEN=window.SPARROW_WRITTEN||new Map();
+function recordWrittenFile(file){
+  if(!file)return;
+  const prev=window.SPARROW_WRITTEN.get(file)||{count:0};
+  window.SPARROW_WRITTEN.set(file,{count:prev.count+1,ts:Date.now()});
+  const badge=document.getElementById('drw-artifacts-count');
+  if(badge){
+    const uploads=parseInt(badge.dataset.uploads||'0',10);
+    badge.textContent=String(uploads+window.SPARROW_WRITTEN.size);
+  }
+}
 async function loadArtifactsPanel(){
   const host=document.getElementById('drw-artifacts-list');
   try{
     const r=await fetch('/artifacts');const j=await r.json();
-    const its=Array.isArray(j.items)?j.items:[];
-    document.getElementById('drw-artifacts-count').textContent=its.length;
-    if(!its.length){host.innerHTML='<div class="drw-empty">_none yet_ · drag a file onto the page to upload.</div>';return;}
-    host.innerHTML=its.map(it=>`<div class="drw-row" title="${escHtml(it.path||'')}"><div class="ttl">${escHtml(it.name)}</div><div class="meta"><span>${escHtml(it.kind||'file')}</span><span>${Math.round((it.size||0)/1024)} KB</span></div></div>`).join('');
+    const uploads=Array.isArray(j.items)?j.items:[];
+    const written=[...window.SPARROW_WRITTEN.entries()].sort((a,b)=>b[1].ts-a[1].ts);
+    const badge=document.getElementById('drw-artifacts-count');
+    badge.dataset.uploads=String(uploads.length);
+    badge.textContent=String(uploads.length+written.length);
+    if(!uploads.length && !written.length){host.innerHTML='<div class="drw-empty">_none yet_ · drag a file onto the page to upload, or run a task that writes files.</div>';return;}
+    let html='';
+    if(written.length){
+      html+='<div style="font-size:10px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;margin:4px 6px">written by sparrow</div>';
+      html+=written.map(([file,meta])=>`<div class="drw-row" title="${escHtml(file)}"><div class="ttl">${escHtml(file.split(/[\\/]/).pop()||file)}</div><div class="meta"><span>${escHtml(file)}</span><span>×${meta.count}</span></div></div>`).join('');
+    }
+    if(uploads.length){
+      html+='<div style="font-size:10px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;margin:8px 6px 4px">uploaded</div>';
+      html+=uploads.map(it=>`<div class="drw-row" title="${escHtml(it.path||'')}"><div class="ttl">${escHtml(it.name)}</div><div class="meta"><span>${escHtml(it.kind||'file')}</span><span>${Math.round((it.size||0)/1024)} KB</span></div></div>`).join('');
+    }
+    host.innerHTML=html;
   }catch(_){host.innerHTML='<div class="drw-empty">_none yet_ · unable to load /artifacts</div>';}
 }
 
@@ -3051,11 +3116,6 @@ function handleEvent(ev){
     case 'RunStarted':{
       const turnCount=parseInt(localStorage.getItem('sparrow-turn-count')||'0',10)+1;
       localStorage.setItem('sparrow-turn-count',String(turnCount));
-      // Sparrow bird on first run and every 5 runs
-      if(turnCount===1||turnCount%5===1){
-        line(BIRD,'bird');
-        line('<span class="tagline" style="color:var(--dim);font-size:12px;letter-spacing:1px;margin-bottom:6px"><b style="background:linear-gradient(90deg,var(--brand),var(--coral));-webkit-background-clip:text;background-clip:text;color:transparent;font-weight:700;letter-spacing:2px">SPARROW</b> — one cli · grows with you</span>');
-      }
       // The frontend already echoed `sparrow > <task>` when the user submitted
       // (runTask line()). Re-printing `▸ started: <task>` here was a noisy
       // double-render. Show a compact "started" indicator only.
@@ -3116,12 +3176,22 @@ function handleEvent(ev){
     // an artefact panel was appearing when clicking a session (because
     // unrelated diff events were leaking through). The card stays inline;
     // click the file name in the card to open the side viewer.
-    case 'DiffApplied':renderDiffCard(ev);runDiffsApplied++;break;
+    case 'DiffApplied':renderDiffCard(ev);recordWrittenFile(ev.file);runDiffsApplied++;break;
     case 'Compacted':renderCompactBanner(ev);break;
-    case 'ApprovalRequested':
-      line(`<span class="warn">◌ approval required · ${esc(ev.summary)}</span>`);
-      showApprovalModal(ev);
+    case 'ApprovalRequested':{
+      const id=escAttr(ev.id||'');
+      const summary=esc(ev.summary||'Sparrow is asking before it acts.');
+      const risk=esc(ev.risk||'unknown');
+      line(`<div class="approval-card-inline" data-approval-id="${id}" style="margin:6px 0 10px;padding:10px 12px;border:1px solid var(--line-hot);border-radius:10px;background:color-mix(in srgb,var(--panel) 80%,transparent)">
+        <div style="font-size:11px;color:var(--brand);letter-spacing:1.6px;text-transform:uppercase;margin-bottom:4px">◌ approval required <span style="color:var(--gold);margin-left:8px;font-size:10px">risk: ${risk}</span></div>
+        <div style="font-size:12px;color:var(--fg);line-height:1.5;overflow-wrap:anywhere">${summary}</div>
+        <span class="approval-actions" style="margin-top:8px;margin-left:0">
+          <button class="approve" onclick="resolveApproval('${id}','approve',this)">approve</button>
+          <button class="deny" onclick="resolveApproval('${id}','deny',this)">deny</button>
+        </span>
+      </div>`);
       break;
+    }
     case 'ApprovalResolved':line(`<span class="muted">↳ approval: <span class="planner">${esc(ev.decision)}</span></span>`);break;
     case 'AgentSpawned':setSwarm(ev.role,'working',`model ${ev.model} online`);line(`<span class="${roleCls(ev.role)}">◆ ${esc(ev.role)} spawned (${esc(ev.model)})</span>`);updateCrewLiveStatus(ev.role||ev.name,'working',`spawned · ${ev.model}`);break;
     case 'AgentStatus':{
@@ -3315,6 +3385,10 @@ function setRunActive(active){
 document.addEventListener('DOMContentLoaded',()=>{
   const cab=document.getElementById('abortChromeBtn');
   if(cab)cab.addEventListener('click',stopRun);
+  fetch('/status').then(r=>r.json()).then(s=>{
+    const el=document.getElementById('appVersion');
+    if(el && s && s.version) el.textContent='v'+s.version;
+  }).catch(()=>{});
 });
 {
   const cab=document.getElementById('abortChromeBtn');

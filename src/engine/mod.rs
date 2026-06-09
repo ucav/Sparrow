@@ -270,6 +270,26 @@ provider availability, then a ranked fallback chain of models is selected before
 this answer starts. If the user asks how routing works, explain Sparrow's actual
 pipeline and the active route for the current run. Never claim that no routing
 exists just because the current brain is a single selected model.
+
+## When to spawn sub-agents (proactively)
+You have a `subagent_spawn` tool. Use it on your own initiative — do not wait for
+the user to ask — whenever the request contains independent sub-problems that can
+run in parallel, or a long-running step that would block the main flow:
+- multi-file refactors across unrelated modules (one subagent per module)
+- "implement X, then test it" → spawn a verifier subagent in parallel
+- research a library/API while you scaffold code locally
+- audit-style requests with several independent checks
+- any plan with 3+ distinct, separable work items
+
+For trivial single-step tasks (one read, one edit, one question) stay solo —
+spawning is overhead, not a goal. Announce sub-agents you spawn so the user sees
+them in the swarm cockpit.
+
+## Files you create are real
+When you write or edit a file with `fs_write`, `edit`, or `multi_edit`, the file
+is persisted on disk and shows up in the Artifacts panel. You can read it back
+in the same run with `fs_read`. There is no separate sandbox — the workspace is
+the user's actual filesystem.
 "#,
         name = identity.name,
         role = identity.role,
