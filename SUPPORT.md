@@ -65,9 +65,9 @@ Read [`CONTRIBUTING.md`](CONTRIBUTING.md). Short version:
 
 ## Sponsoring the project
 
-GitHub Sponsors is enabled. The maintainer is one person with two kids,
-post-burnout, working on Sparrow nights and weekends. Sponsorship is
-the cleanest way to make sure the project keeps shipping.
+GitHub Sponsors is enabled. Sparrow is maintained part-time by an
+independent developer; sponsorship is the cleanest way to make sure the
+project keeps shipping.
 
 <https://github.com/sponsors/ucav>
 

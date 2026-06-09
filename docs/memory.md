@@ -99,10 +99,10 @@ sparrow memory consolidate
 sparrow memory docs
 sparrow memory search "<query>" --limit 10
 sparrow memory scroll <session> --around 4 --before 3 --after 3
-sparrow memory graph upsert-node user:abdou Abdou --kind user
+sparrow memory graph upsert-node user:alice Alice --kind user
 sparrow memory graph upsert-node project:sparrow Sparrow --kind project
-sparrow memory graph upsert-edge user:abdou works_on project:sparrow
-sparrow memory graph neighbors user:abdou --direction outgoing
+sparrow memory graph upsert-edge user:alice works_on project:sparrow
+sparrow memory graph neighbors user:alice --direction outgoing
 sparrow memory graph search sparrow
 sparrow memory graph export
 ```

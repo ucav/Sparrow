@@ -24,7 +24,7 @@ fn session_round_trips_messages_across_reopen() {
             Msg {
                 role: "user".into(),
                 content: vec![ContentBlock::Text {
-                    text: "remember my name is Abdou".into(),
+                    text: "remember my name is Alice".into(),
                 }],
             },
             Msg {
@@ -44,7 +44,7 @@ fn session_round_trips_messages_across_reopen() {
         let msgs: Vec<Msg> = serde_json::from_str(&sess.messages_json).unwrap();
         assert_eq!(msgs.len(), 2);
         match &msgs[0].content[0] {
-            ContentBlock::Text { text } => assert!(text.contains("Abdou")),
+            ContentBlock::Text { text } => assert!(text.contains("Alice")),
             _ => panic!("expected text block"),
         }
 

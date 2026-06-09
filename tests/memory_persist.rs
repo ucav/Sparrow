@@ -181,8 +181,8 @@ fn sqlite_memory_persists_knowledge_graph_nodes_edges() {
         let memory = SqliteMemory::open(&db).unwrap();
         memory
             .upsert_graph_node(GraphNode {
-                id: "user:abdou".into(),
-                label: "Abdou".into(),
+                id: "user:alice".into(),
+                label: "Alice".into(),
                 kind: "user".into(),
                 properties: serde_json::json!({"prefers": "local-first"}),
                 created_at: "2026-06-04T00:00:00Z".into(),
@@ -201,8 +201,8 @@ fn sqlite_memory_persists_knowledge_graph_nodes_edges() {
             .unwrap();
         memory
             .upsert_graph_edge(GraphEdge {
-                id: "user:abdou:works_on:project:sparrow".into(),
-                from_id: "user:abdou".into(),
+                id: "user:alice:works_on:project:sparrow".into(),
+                from_id: "user:alice".into(),
                 to_id: "project:sparrow".into(),
                 relation: "works_on".into(),
                 weight: 1.0,
@@ -218,7 +218,7 @@ fn sqlite_memory_persists_knowledge_graph_nodes_edges() {
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].id, "project:sparrow");
 
-    let neighbors = reopened.graph_neighbors("user:abdou", GraphDirection::Outgoing, 10);
+    let neighbors = reopened.graph_neighbors("user:alice", GraphDirection::Outgoing, 10);
     assert_eq!(neighbors.len(), 1);
     assert_eq!(neighbors[0].0.relation, "works_on");
     assert_eq!(neighbors[0].1.id, "project:sparrow");

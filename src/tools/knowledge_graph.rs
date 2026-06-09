@@ -246,16 +246,16 @@ mod tests {
     fn neo4j_payload_uses_parameterized_statements() {
         let graph = KnowledgeGraph {
             nodes: vec![GraphNode {
-                id: "user:abdou".into(),
-                label: "Abdou".into(),
+                id: "user:alice".into(),
+                label: "Alice".into(),
                 kind: "user".into(),
                 properties: json!({"prefers": "local-first"}),
                 created_at: "2026-06-04T00:00:00Z".into(),
                 updated_at: "2026-06-04T00:00:00Z".into(),
             }],
             edges: vec![GraphEdge {
-                id: "user:abdou:works_on:project:sparrow".into(),
-                from_id: "user:abdou".into(),
+                id: "user:alice:works_on:project:sparrow".into(),
+                from_id: "user:alice".into(),
                 to_id: "project:sparrow".into(),
                 relation: "works_on".into(),
                 weight: 1.0,
@@ -272,6 +272,6 @@ mod tests {
                 .unwrap()
                 .contains("MERGE")
         );
-        assert_eq!(statements[0]["parameters"]["id"], "user:abdou");
+        assert_eq!(statements[0]["parameters"]["id"], "user:alice");
     }
 }

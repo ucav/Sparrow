@@ -38,7 +38,7 @@ fn tui_agent_picker_returns_matches_after_at_sign() {
 #[test]
 fn tui_agent_picker_does_not_fire_inside_an_email() {
     let mut tui = Tui::new().with_agents(vec!["scout".into()]);
-    type_into(&mut tui, "ping abdou@example.com");
+    type_into(&mut tui, "ping alice@example.com");
     assert!(
         tui.agent_matches().is_empty(),
         "picker must not trigger on emails: {:?}",

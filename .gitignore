@@ -39,6 +39,11 @@ agents/nova.*
 docs/launch/
 assets/launch/
 
+# Test scratch dirs created during local interactive runs
+.preview-demo/
+sp-ckpt/
+sparrow-smoke/
+
 # Internal planning / process docs — local only
 PLAN.md
 PLAN_*.md
