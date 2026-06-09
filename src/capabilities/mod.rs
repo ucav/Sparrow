@@ -264,7 +264,7 @@ impl FsSkillLibrary {
     }
 
     /// Scan the skills directory and load all SKILL.md files
-    fn scan(&self) -> Vec<Skill> {
+    pub fn scan(&self) -> Vec<Skill> {
         let mut skills = Vec::new();
         if let Ok(entries) = std::fs::read_dir(&self.skills_dir) {
             for entry in entries.flatten() {

@@ -1682,6 +1682,8 @@ impl Engine {
                                         run: run_id.clone(),
                                         id: id.clone(),
                                         summary: summary.clone(),
+                                        tool: Some(proposed.tool_name.clone()),
+                                        risk: Some(format!("{:?}", proposed.risk)),
                                     });
                                     // OnApprovalRequested hook so external
                                     // notifiers (Slack, email, …) can ping the
@@ -1936,6 +1938,8 @@ impl Engine {
                                                 approval_name,
                                                 approval_args
                                             ),
+                                            tool: Some(approval_name.clone()),
+                                            risk: Some(format!("{:?}", approval_risk)),
                                         });
 
                                         // Wait for user input on stdin

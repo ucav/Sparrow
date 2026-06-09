@@ -416,7 +416,7 @@ impl Tui {
             .ok()
             .map(|n| crate::tui::theme::by_name(&n))
             .unwrap_or_default();
-        Self {
+        let mut tui = Self {
             theme,
             lines: Vec::new(),
             route: "idle".into(),

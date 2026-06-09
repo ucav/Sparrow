@@ -288,6 +288,10 @@ pub enum Event {
         run: RunId,
         id: String,
         summary: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        tool: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        risk: Option<String>,
     },
     ApprovalResolved {
         run: RunId,

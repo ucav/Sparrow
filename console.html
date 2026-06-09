@@ -91,12 +91,19 @@
     max-height:200px;overflow-y:auto}
   .swarm-cockpit::-webkit-scrollbar{width:5px}
   .swarm-cockpit::-webkit-scrollbar-thumb{background:#2c2419;border-radius:6px}
-  .lane{flex:1 1 220px;min-width:220px;
-    display:flex;flex-direction:column;gap:4px;
-    padding:8px clamp(13px,1.4vw,20px);
+  .lane{flex:1 1 180px;min-width:160px;max-width:240px;
+    display:flex;flex-direction:column;gap:2px;
+    padding:6px 12px;
     border-right:1px solid var(--line);
     border-bottom:1px solid color-mix(in srgb,var(--line) 60%, transparent);
     animation:lanein .35s ease both}
+  /* Persistent agents (idle and not in the active triad) stay compact:
+     name + dot only, no description body, half opacity. */
+  .lane.idle-card .msg{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden;font-size:10px;opacity:.7}
+  .lane.idle-card{padding:5px 10px;max-width:160px;min-width:120px}
+  .lane.idle-card .lane-head .who{font-size:10.5px}
+  .lane.working,.lane.done{flex:1 1 240px;max-width:340px}
+  .lane.working .msg,.lane.done .msg{-webkit-line-clamp:3;font-size:11px;opacity:1}
   .lane .lane-head{display:flex;align-items:center;gap:8px}
   .lane .who{font-weight:700;letter-spacing:.4px;font-size:11px}
   .lane.planner .who{color:var(--planner)}
@@ -816,6 +823,9 @@
     <button class="cfg-tab active" data-cfg-tab="providers">providers &amp; models</button>
     <button class="cfg-tab" data-cfg-tab="routing">routing &amp; autonomy</button>
     <button class="cfg-tab" data-cfg-tab="permissions">permissions</button>
+    <button class="cfg-tab" data-cfg-tab="appearance">appearance</button>
+    <button class="cfg-tab" data-cfg-tab="memory">memory &amp; telemetry</button>
+    <button class="cfg-tab" data-cfg-tab="mcp">MCP &amp; hooks</button>
   </div>
 
   <!-- Tab: providers & models -->
@@ -899,6 +909,79 @@
     </div>
   </div>
 
+  <!-- Tab: appearance -->
+  <div data-cfg-pane="appearance" style="display:none">
+    <div class="row"><label>theme</label>
+      <select id="cfgThemeSelect" onchange="document.documentElement.setAttribute('data-theme',this.value);localStorage.setItem('sparrow-theme',this.value)">
+        <option value="captain">captain (dark)</option>
+        <option value="paper">paper (light)</option>
+      </select>
+    </div>
+    <div class="row"><label>typography</label>
+      <select id="cfgFontSelect" onchange="document.documentElement.style.setProperty('--font-size-base',this.value+'px');localStorage.setItem('sparrow-font',this.value)">
+        <option value="12">12 px · compact</option>
+        <option value="13">13 px · default</option>
+        <option value="14">14 px · comfortable</option>
+        <option value="15">15 px · large</option>
+      </select>
+    </div>
+    <div class="row"><label>verbose chat</label>
+      <input type="checkbox" id="cfgVerboseToggle" onchange="VERBOSE=this.checked;localStorage.setItem('sparrow-verbose',this.checked?'1':'0')">
+      <span class="muted" style="font-size:10px">show sub-agent status, tool args, token ticks inline</span>
+    </div>
+    <div class="row"><label>chirp on events</label>
+      <input type="checkbox" id="cfgSoundToggle" onchange="SOUND_ON=this.checked;localStorage.setItem('sparrow-sound',this.checked?'1':'0')">
+      <span class="muted" style="font-size:10px">discreet WebAudio blip on checkpoints &amp; skills</span>
+    </div>
+  </div>
+
+  <!-- Tab: memory & telemetry -->
+  <div data-cfg-pane="memory" style="display:none">
+    <div class="cfg-section">
+      <h4>persistent memory</h4>
+      <div class="row"><label>auto-summarize sessions</label>
+        <input type="checkbox" id="cfgAutoSummary" checked>
+        <span class="muted" style="font-size:10px">distill long runs into MEMORY.md on close</span>
+      </div>
+      <div class="row"><label>max memory size</label>
+        <input type="number" id="cfgMemMax" value="16000" min="2000" max="200000" step="1000" style="width:120px"><span class="muted" style="font-size:10px">chars · older facts pruned by score</span>
+      </div>
+      <div class="row"><label>checkpoints retention</label>
+        <input type="number" id="cfgCheckRetain" value="30" min="1" max="365" style="width:80px"><span class="muted" style="font-size:10px">days · older checkpoints pruned</span>
+      </div>
+    </div>
+    <div class="cfg-section">
+      <h4>telemetry &amp; privacy</h4>
+      <div class="row"><label>anonymous usage</label>
+        <input type="checkbox" id="cfgTelemetry">
+        <span class="muted" style="font-size:10px">opt-in · counts only, never your prompts</span>
+      </div>
+      <div class="row"><label>redact secrets in logs</label>
+        <input type="checkbox" id="cfgRedact" checked>
+        <span class="muted" style="font-size:10px">strip api keys / tokens from event stream</span>
+      </div>
+      <div class="row"><label>session db path</label>
+        <input type="text" id="cfgSessionDb" readonly placeholder="(loaded from /status)" style="flex:1;background:var(--panel2);color:var(--dim)">
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: MCP & hooks -->
+  <div data-cfg-pane="mcp" style="display:none">
+    <div class="cfg-section">
+      <h4>MCP connectors</h4>
+      <p style="font-size:10.5px;color:var(--dim);line-height:1.5;margin-bottom:6px">External servers exposing tools/resources. Edit <code>~/.sparrow/mcp.toml</code> to add stdio/sse/http connectors.</p>
+      <button class="btn sm" onclick="fetch('/mcp/list').then(r=>r.json()).then(j=>{const el=document.getElementById('mcpList');el.textContent=JSON.stringify(j,null,2)}).catch(_=>document.getElementById('mcpList').textContent='/mcp/list not exposed yet — edit mcp.toml directly')">refresh list</button>
+      <pre id="mcpList" style="margin-top:8px;font-size:10.5px;color:var(--dim);max-height:160px;overflow:auto;background:var(--panel2);padding:8px;border-radius:6px">click refresh</pre>
+    </div>
+    <div class="cfg-section">
+      <h4>hooks</h4>
+      <p style="font-size:10.5px;color:var(--dim);line-height:1.5;margin-bottom:6px">Run shell commands on lifecycle events (PreToolUse, OnApprovalRequested, PostCompact…). Edit <code>~/.sparrow/hooks.toml</code> or your project's <code>.sparrow/hooks.toml</code>.</p>
+      <button class="btn sm" onclick="fetch('/hooks').then(r=>r.json()).then(j=>{document.getElementById('hooksList').textContent=JSON.stringify(j,null,2)}).catch(_=>document.getElementById('hooksList').textContent='/hooks not exposed yet — edit hooks.toml directly')">refresh hooks</button>
+      <pre id="hooksList" style="margin-top:8px;font-size:10.5px;color:var(--dim);max-height:160px;overflow:auto;background:var(--panel2);padding:8px;border-radius:6px">click refresh</pre>
+    </div>
+  </div>
+
   <div class="row" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
     <button class="btn" id="saveConfig">save all</button>
     <span class="dimd" id="saveMsg" style="font-size:11px"></span>
@@ -939,6 +1022,7 @@
     <button class="ico" data-panel="memory" title="Memory"><span aria-hidden="true">✦</span></button>
     <button class="ico" data-panel="plugins" title="Plugins"><span aria-hidden="true">⌗</span></button>
     <button class="ico" data-panel="tools" title="Tools"><span aria-hidden="true">⚒</span></button>
+    <button class="ico" data-panel="skills" title="Skills"><span aria-hidden="true">✸</span></button>
     <button class="ico" data-panel="permissions" title="Permissions"><span aria-hidden="true">◉</span></button>
     <button class="ico" data-panel="security" title="Security"><span aria-hidden="true">⛨</span></button>
     <button class="ico" data-panel="route" title="Route Explorer"><span aria-hidden="true">⇄</span></button>
@@ -969,6 +1053,10 @@
     <div class="panel" data-panel-body="tools">
       <h3>Tools <span class="count" id="drw-tools-count">0</span></h3>
       <div id="drw-tools-list"><div class="drw-empty">_none yet_ · no tools loaded</div></div>
+    </div>
+    <div class="panel" data-panel-body="skills">
+      <h3>Skills <span class="count" id="drw-skills-count">0</span></h3>
+      <div id="drw-skills-list"><div class="drw-empty">_none yet_ · skills library is empty</div></div>
     </div>
     <div class="panel" data-panel-body="permissions">
       <h3>Permissions</h3>
@@ -1027,6 +1115,38 @@
     </div>
     <span id="swarm-extras-anchor" hidden></span>
     <div class="lane-more" id="swarm-more" hidden></div>
+    <button id="swarm-new-agent" class="lane-more" title="Create a new persistent agent" style="cursor:pointer;border:0;border-left:1px dashed var(--line-hot);background:transparent;color:var(--brand);font-size:14px;padding:0 16px" onclick="openAgentCreator()">＋ new agent</button>
+  </div>
+
+  <!-- Persistent-agent creator panel (overlay) -->
+  <div id="agentCreator" class="config-panel" style="position:fixed;top:0;right:0;bottom:0;width:min(540px,92vw);background:var(--panel);border-left:1px solid var(--line-hot);z-index:1200;display:none;flex-direction:column;box-shadow:-30px 0 80px rgba(0,0,0,.5)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--line)">
+      <h3 style="margin:0;font-size:13px;letter-spacing:1.6px;text-transform:uppercase;color:var(--brand)">＋ new persistent agent</h3>
+      <button onclick="closeAgentCreator()" style="background:transparent;border:0;color:var(--dim);font-size:18px;cursor:pointer">×</button>
+    </div>
+    <div style="padding:14px 18px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:12px;font-size:12px">
+      <label style="display:flex;flex-direction:column;gap:4px"><span style="color:var(--dim);font-size:10.5px;letter-spacing:1px;text-transform:uppercase">name <span style="color:var(--rem)">*</span></span><input id="ag-name" placeholder="e.g. reviewer" style="padding:7px 9px;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--fg);font-family:inherit"></label>
+      <label style="display:flex;flex-direction:column;gap:4px"><span style="color:var(--dim);font-size:10.5px;letter-spacing:1px;text-transform:uppercase">role / title</span><input id="ag-role" placeholder="e.g. security reviewer" style="padding:7px 9px;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--fg);font-family:inherit"></label>
+      <label style="display:flex;flex-direction:column;gap:4px"><span style="color:var(--dim);font-size:10.5px;letter-spacing:1px;text-transform:uppercase">short description</span><textarea id="ag-desc" rows="2" placeholder="What this agent does in one or two sentences" style="padding:7px 9px;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--fg);font-family:inherit;resize:vertical"></textarea></label>
+      <div style="display:flex;gap:10px">
+        <label style="flex:1;display:flex;flex-direction:column;gap:4px"><span style="color:var(--dim);font-size:10.5px;letter-spacing:1px;text-transform:uppercase">preferred model</span><input id="ag-model" placeholder="provider:model or auto" style="padding:7px 9px;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--fg);font-family:inherit"></label>
+        <label style="flex:0 0 130px;display:flex;flex-direction:column;gap:4px"><span style="color:var(--dim);font-size:10.5px;letter-spacing:1px;text-transform:uppercase">accent color</span>
+          <select id="ag-color" style="padding:7px 9px;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--fg);font-family:inherit">
+            <option value="steel">steel</option><option value="gold">gold</option>
+            <option value="coral">coral</option><option value="planner">planner-blue</option>
+            <option value="coder">coder-green</option><option value="verifier">verifier-purple</option>
+          </select>
+        </label>
+      </div>
+      <label style="display:flex;flex-direction:column;gap:4px"><span style="color:var(--dim);font-size:10.5px;letter-spacing:1px;text-transform:uppercase">allowed tools (comma-separated)</span><input id="ag-tools" placeholder="fs_read, fs_write, edit, search …  (blank = inherit)" style="padding:7px 9px;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--fg);font-family:inherit"></label>
+      <label style="display:flex;flex-direction:column;gap:4px"><span style="color:var(--dim);font-size:10.5px;letter-spacing:1px;text-transform:uppercase">soul.toml override (advanced)</span><textarea id="ag-soul" rows="4" placeholder="Leave blank to auto-generate from fields above" style="padding:7px 9px;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--fg);font-family:'JetBrains Mono',monospace;font-size:11px;resize:vertical"></textarea></label>
+      <label style="display:flex;flex-direction:column;gap:4px"><span style="color:var(--dim);font-size:10.5px;letter-spacing:1px;text-transform:uppercase">agent.md (long-form persona / instructions)</span><textarea id="ag-md" rows="6" placeholder="# Persona&#10;&#10;Background, tone, goals, examples…" style="padding:7px 9px;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--fg);font-family:'JetBrains Mono',monospace;font-size:11px;resize:vertical"></textarea></label>
+      <div id="ag-feedback" style="font-size:11px;color:var(--dim);min-height:16px"></div>
+    </div>
+    <div style="display:flex;gap:10px;padding:12px 18px;border-top:1px solid var(--line);justify-content:flex-end">
+      <button onclick="closeAgentCreator()" style="padding:7px 14px;border-radius:7px;border:1px solid var(--line);background:transparent;color:var(--dim);cursor:pointer;font-family:inherit">cancel</button>
+      <button onclick="saveNewAgent()" id="ag-save" style="padding:7px 16px;border-radius:7px;border:1px solid rgba(116,194,88,.4);background:rgba(116,194,88,.18);color:var(--add);cursor:pointer;font-family:inherit;font-weight:600">create agent</button>
+    </div>
   </div>
 
   <div id="term"></div>
@@ -1658,6 +1778,7 @@ const PANEL_LOADERS={
   memory:loadMemoryPanel,
   plugins:loadPluginsPanel,
   tools:loadToolsPanel,
+  skills:loadSkillsPanel,
   permissions:loadPermissionsPanel,
   security:loadSecurityPanel,
   artifacts:loadArtifactsPanel,
@@ -1917,6 +2038,18 @@ async function loadToolsPanel(){
     if(!ts.length){host.innerHTML='<div class="drw-empty">_none yet_ · no tools metadata loaded</div>';return;}
     host.innerHTML=ts.map(t=>`<div class="drw-row" title="${escHtml(t.toolset||'')}"><div class="ttl">${escHtml(t.name)}</div><div class="meta"><span>${escHtml(t.toolset||'')}</span>${t.exec?'<span style="color:var(--rem)">exec</span>':''}${t.mutates_files?'<span style="color:var(--verifier)">mutates</span>':''}${t.network?'<span>net</span>':''}</div></div>`).join('');
   }catch(_){host.innerHTML='<div class="drw-empty">_none yet_ · unable to load /tools</div>';}
+}
+async function loadSkillsPanel(){
+  const host=document.getElementById('drw-skills-list');
+  try{
+    const r=await fetch('/skills');
+    if(!r.ok){host.innerHTML='<div class="drw-empty">_none yet_ · skills library is empty.</div>';document.getElementById('drw-skills-count').textContent='0';return;}
+    const j=await r.json();
+    const sk=Array.isArray(j.skills)?j.skills:(Array.isArray(j.items)?j.items:[]);
+    document.getElementById('drw-skills-count').textContent=sk.length;
+    if(!sk.length){host.innerHTML='<div class="drw-empty">_none yet_ · skills library is empty. Sparrow will learn as you go.</div>';return;}
+    host.innerHTML=sk.map(s=>`<div class="drw-row" title="${escHtml(s.description||s.summary||'')}"><div class="ttl">${escHtml(s.name||s.id||'skill')}</div><div class="meta"><span>${escHtml((s.description||s.summary||'').slice(0,90))}</span>${s.uses?`<span>×${s.uses}</span>`:''}</div></div>`).join('');
+  }catch(_){host.innerHTML='<div class="drw-empty">_none yet_ · unable to load /skills</div>';document.getElementById('drw-skills-count').textContent='0';}
 }
 async function loadPermissionsPanel(){
   const host=document.getElementById('drw-permissions-body');
@@ -2630,6 +2763,15 @@ function ensureStreamRoot(){
   if(STREAM_BUF&&STREAM_BUF.isConnected)return;
   STREAM_BUF=document.createElement('div');
   STREAM_BUF.className='ln streaming-line';
+  // The user-facing voice is always "sparrow" — the swarm cockpit indicates
+  // which sub-agent is actually working under the hood. This keeps the
+  // chat thread coherent (one assistant talking back, not a parade of role
+  // labels).
+  const tag=document.createElement('span');
+  tag.className='acc';
+  tag.style.cssText='font-size:10.5px;letter-spacing:1.2px;text-transform:uppercase;color:var(--brand);margin-right:8px';
+  tag.textContent='sparrow ›';
+  STREAM_BUF.appendChild(tag);
   term.appendChild(STREAM_BUF);
   STREAM_STATE={mode:'prose',el:null,cardEl:null,lang:'',codeStarted:false,pending:''};
   openProseSpan();
@@ -3180,36 +3322,60 @@ function handleEvent(ev){
     case 'Compacted':renderCompactBanner(ev);break;
     case 'ApprovalRequested':{
       const id=escAttr(ev.id||'');
-      const summary=esc(ev.summary||'Sparrow is asking before it acts.');
+      const tool=esc(ev.tool||'tool');
       const risk=esc(ev.risk||'unknown');
-      line(`<div class="approval-card-inline" data-approval-id="${id}" style="margin:6px 0 10px;padding:10px 12px;border:1px solid var(--line-hot);border-radius:10px;background:color-mix(in srgb,var(--panel) 80%,transparent)">
-        <div style="font-size:11px;color:var(--brand);letter-spacing:1.6px;text-transform:uppercase;margin-bottom:4px">◌ approval required <span style="color:var(--gold);margin-left:8px;font-size:10px">risk: ${risk}</span></div>
-        <div style="font-size:12px;color:var(--fg);line-height:1.5;overflow-wrap:anywhere">${summary}</div>
-        <span class="approval-actions" style="margin-top:8px;margin-left:0">
-          <button class="approve" onclick="resolveApproval('${id}','approve',this)">approve</button>
-          <button class="deny" onclick="resolveApproval('${id}','deny',this)">deny</button>
-        </span>
-      </div>`);
+      const summary=esc(ev.summary||'');
+      // Auto-approve if this tool was allowed for the session already.
+      window.SPARROW_SESSION_ALLOW=window.SPARROW_SESSION_ALLOW||new Set();
+      if(window.SPARROW_SESSION_ALLOW.has(ev.tool||'')){
+        line(`<span class="muted" style="font-size:11px">↳ <span class="ok">${tool}</span> auto-approved (session)</span>`);
+        fetch('/approval',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:ev.id,decision:'allow_once'})});
+        break;
+      }
+      const card=line(`<details open class="approval-card-inline" data-approval-id="${id}" data-tool="${esc(ev.tool||'')}" style="margin:4px 0 6px;padding:6px 10px;border:1px solid var(--line-hot);border-radius:8px;background:color-mix(in srgb,var(--panel) 75%,transparent);font-size:11.5px">
+        <summary style="cursor:pointer;display:flex;align-items:center;gap:8px;list-style:none">
+          <span style="color:var(--brand);letter-spacing:1.4px;text-transform:uppercase;font-size:10px">◌ approve</span>
+          <span style="color:var(--fg);font-weight:600">${tool}</span>
+          <span style="color:var(--gold);font-size:10px">risk: ${risk}</span>
+          <span class="approval-actions" style="margin-left:auto;margin-top:0">
+            <button class="approve" title="Allow once" style="padding:3px 8px;font-size:11px" onclick="resolveApproval('${id}','allow_once',this)">once</button>
+            <button class="approve" title="Allow for the rest of this session" style="padding:3px 8px;font-size:11px;background:rgba(116,194,88,.18)" onclick="resolveApproval('${id}','allow_session',this)">session</button>
+            <button class="approve" title="Allow always (persists)" style="padding:3px 8px;font-size:11px;background:rgba(111,166,230,.18);border-color:rgba(111,166,230,.4);color:var(--planner)" onclick="resolveApproval('${id}','allow_always',this)">always</button>
+            <button class="deny" style="padding:3px 8px;font-size:11px" onclick="resolveApproval('${id}','deny',this)">deny</button>
+          </span>
+        </summary>
+        <div style="font-size:11px;color:var(--dim);line-height:1.45;margin-top:6px;overflow-wrap:anywhere">${summary}</div>
+      </details>`);
       break;
     }
     case 'ApprovalResolved':line(`<span class="muted">↳ approval: <span class="planner">${esc(ev.decision)}</span></span>`);break;
-    case 'AgentSpawned':setSwarm(ev.role,'working',`model ${ev.model} online`);line(`<span class="${roleCls(ev.role)}">◆ ${esc(ev.role)} spawned (${esc(ev.model)})</span>`);updateCrewLiveStatus(ev.role||ev.name,'working',`spawned · ${ev.model}`);break;
+    case 'AgentSpawned':
+      setSwarm(ev.role,'working',`spawned · ${ev.model}`);
+      updateCrewLiveStatus(ev.role||ev.name,'working',`spawned · ${ev.model}`);
+      // Quiet in normal mode (visible in the cockpit lane), inline in verbose.
+      if(VERBOSE)verboseLine(`◆ ${ev.role} spawned (${ev.model})`);
+      break;
     case 'AgentStatus':{
       const isThinking=ev.status==='Thinking'||ev.status==='Working';
       const note=ev.note||'';
       const verbedNote=isThinking&&!note.includes('·')?FLIGHT_VERBS[(_vi++)%FLIGHT_VERBS.length]+' · '+note:note;
       setSwarm(ev.role,ev.status,verbedNote);
-      // Strip carets/activity from the PREVIOUS active line so the spinner
-      // only animates on the agent that is currently working.
-      stripActiveDecorations();
-      const dot=icon(ev.status);
-      const roleCl=roleCls(ev.role);
-      const newLine=line('<span class="'+roleCl+'">'+dot+'</span> <span class="'+roleCl+'" style="font-weight:500">'+esc(ev.role)+'</span>'+(isThinking?' <span class="sp">◌</span>':'')+' <span class="muted">'+esc(verbedNote)+'</span>'+(isThinking?'<span class="caret"></span>':'')+(isThinking?'<span class="agent-activity">'+esc(note||'working')+'</span>':''));
-      if(isThinking){
-        LAST_AGENT_LINE=newLine;
-        LAST_ACTIVITY=newLine.querySelector('.agent-activity');
-      }
       updateCrewLiveStatus(ev.role||ev.name,ev.status,verbedNote);
+      // The main agent surface is "sparrow". Worker activity (planner/coder/
+      // verifier/sub-agents) lives in the swarm cockpit, not in the chat
+      // thread. We surface it inline only when verbose mode is on — in
+      // normal mode the user sees clean prose from sparrow with the
+      // cockpit indicating what the crew is doing.
+      stripActiveDecorations();
+      if(VERBOSE){
+        const dot=icon(ev.status);
+        const roleCl=roleCls(ev.role);
+        const newLine=line('<span class="'+roleCl+'">'+dot+'</span> <span class="'+roleCl+'" style="font-weight:500">'+esc(ev.role)+'</span>'+(isThinking?' <span class="sp">◌</span>':'')+' <span class="muted">'+esc(verbedNote)+'</span>'+(isThinking?'<span class="caret"></span>':'')+(isThinking?'<span class="agent-activity">'+esc(note||'working')+'</span>':''));
+        if(isThinking){
+          LAST_AGENT_LINE=newLine;
+          LAST_ACTIVITY=newLine.querySelector('.agent-activity');
+        }
+      }
       break;
     }
     case 'CheckpointCreated':line(`<span class="acc">● checkpoint:</span> <span class="muted">${esc(ev.label)}</span>`);addCheckpointNode(ev.label,ev.id);runCheckpoints++;chirp(1400,.07);break;
@@ -3944,15 +4110,94 @@ $('approvalModal').addEventListener('click',e=>{if(e.target.id==='approvalModal'
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&$('approvalModal').classList.contains('show'))closeApprovalModal()});
 
 async function resolveApproval(id,decision,btn){
+  const card=btn.closest('.approval-card-inline');
   const wrap=btn.closest('.approval-actions');
-  [...wrap.querySelectorAll('button')].forEach(b=>b.disabled=true);
+  if(wrap)[...wrap.querySelectorAll('button')].forEach(b=>b.disabled=true);
+  const tool=card?.dataset?.tool||'';
+  // Persist the rule client-side before the API call so the next prompt
+  // for the same tool gets auto-resolved.
+  if(decision==='allow_session' && tool){
+    window.SPARROW_SESSION_ALLOW=window.SPARROW_SESSION_ALLOW||new Set();
+    window.SPARROW_SESSION_ALLOW.add(tool);
+  }
+  if(decision==='allow_always' && tool){
+    try{
+      const pr=await fetch('/permissions');const pj=await pr.json();
+      const allow=Array.isArray(pj.allow)?pj.allow.slice():[];
+      if(!allow.includes(tool))allow.push(tool);
+      await fetch('/permissions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({allow})});
+    }catch(_){}
+  }
   try{
     const r=await fetch('/approval',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,decision})});
     const j=await r.json();
-    if(j.ok){wrap.innerHTML=`<span class="${decision==='approve'?'ok':'warn'}">${decision==='approve'?'approved':'denied'}</span>`}
-    else{wrap.innerHTML=`<span class="err">${esc(j.message)}</span>`}
-  }catch(e){wrap.innerHTML=`<span class="err">${esc(e.message)}</span>`}
+    if(j.ok){
+      const label={allow_once:'allowed (once)',allow_session:'allowed (session)',allow_always:'allowed (always)',approve:'allowed',deny:'denied'}[decision]||decision;
+      const cls=decision==='deny'?'warn':'ok';
+      if(card){
+        card.open=false;
+        const summaryEl=card.querySelector('summary');
+        if(summaryEl){
+          summaryEl.innerHTML=`<span style="color:var(--dim);font-size:10px;letter-spacing:1px">↳ ${esc(tool||'tool')}</span> <span class="${cls}" style="margin-left:8px;font-size:11px">${label}</span>`;
+        }
+        card.style.borderColor='var(--line)';
+        card.style.background='transparent';
+      } else if(wrap){
+        wrap.innerHTML=`<span class="${cls}">${label}</span>`;
+      }
+    }else{
+      if(wrap)wrap.innerHTML=`<span class="err">${esc(j.message)}</span>`;
+    }
+  }catch(e){if(wrap)wrap.innerHTML=`<span class="err">${esc(e.message)}</span>`;}
 }
+
+// ─── Persistent-agent creator ─────────────────────────────────────────
+function openAgentCreator(){
+  const el=document.getElementById('agentCreator');
+  if(!el)return;
+  el.style.display='flex';
+  setTimeout(()=>document.getElementById('ag-name')?.focus(),50);
+}
+function closeAgentCreator(){
+  const el=document.getElementById('agentCreator');
+  if(!el)return;
+  el.style.display='none';
+  document.getElementById('ag-feedback').textContent='';
+}
+async function saveNewAgent(){
+  const name=document.getElementById('ag-name').value.trim();
+  const fb=document.getElementById('ag-feedback');
+  if(!name){fb.style.color='var(--rem)';fb.textContent='name is required';return;}
+  if(!/^[A-Za-z0-9_-]+$/.test(name)){fb.style.color='var(--rem)';fb.textContent='name must be ascii letters/digits/_/-';return;}
+  const body={
+    name,
+    role:document.getElementById('ag-role').value.trim()||undefined,
+    description:document.getElementById('ag-desc').value.trim()||undefined,
+    model:document.getElementById('ag-model').value.trim()||undefined,
+    color_key:document.getElementById('ag-color').value||undefined,
+    allowed_tools:document.getElementById('ag-tools').value.split(',').map(s=>s.trim()).filter(Boolean),
+    soul:document.getElementById('ag-soul').value.trim()||undefined,
+    agent_md:document.getElementById('ag-md').value.trim()||undefined,
+  };
+  if(!body.allowed_tools.length)delete body.allowed_tools;
+  const btn=document.getElementById('ag-save');btn.disabled=true;
+  fb.style.color='var(--dim)';fb.textContent='creating…';
+  try{
+    const r=await fetch('/agents',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const j=await r.json();
+    if(j.ok){
+      fb.style.color='var(--add)';fb.textContent='created · '+j.soul_path;
+      // Refresh the swarm + crew immediately
+      loadSwarmAgents().catch(()=>{});
+      loadCrewPanel?.().catch(()=>{});
+      setTimeout(closeAgentCreator,900);
+    } else {
+      fb.style.color='var(--rem)';fb.textContent=j.message||'failed';
+    }
+  }catch(e){fb.style.color='var(--rem)';fb.textContent=e.message;}
+  btn.disabled=false;
+}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.getElementById('agentCreator')?.style.display==='flex')closeAgentCreator();});
 
 // ─── CONFIG panel ────────────────────────────────────────────────────
 function openConfig(){$('overlay').classList.add('show');$('configPanel').classList.add('show');(async()=>{await loadConfig();await loadRouting();})();setTimeout(()=>$('provSelect').focus(),60)}

@@ -139,7 +139,9 @@ impl WebViewServer {
             .route("/sessions", get(list_sessions))
             .route("/sessions/load", post(load_session))
             .route("/history", get(get_history))
-            .route("/agents", get(list_agents))
+            .route("/agents", get(list_agents).post(create_agent))
+            .route("/agents/:name", axum::routing::delete(delete_agent))
+            .route("/skills", get(list_skills))
             .route("/upload", post(upload_attachment))
             .route("/artifacts", get(list_artifacts))
             .route("/providers/scan", post(scan_provider_models))
@@ -964,12 +966,17 @@ async fn resolve_approval(
         });
     };
     let decision = match req.decision.trim().to_lowercase().as_str() {
-        "allow" | "approve" | "approved" => Decision::Allow,
+        // The scope (once/session/always) is enforced client-side: the frontend
+        // remembers session-approved tool names and skips the next prompt; an
+        // "always" decision should be paired with a separate POST /permissions
+        // call to persist the rule. All three map to Allow at the engine level.
+        "allow" | "approve" | "approved" | "allow_once" | "allow_session"
+        | "allow_always" => Decision::Allow,
         "deny" | "reject" | "rejected" => Decision::Deny,
         _ => {
             return axum::extract::Json(RunResponse {
                 ok: false,
-                message: "decision must be approve or deny".into(),
+                message: "decision must be approve/allow_once/allow_session/allow_always/deny".into(),
             });
         }
     };
@@ -1378,6 +1385,170 @@ async fn list_artifacts() -> axum::extract::Json<serde_json::Value> {
         "ok": true,
         "items": items,
         "dir": dir.to_string_lossy().to_string(),
+    }))
+}
+
+/// `GET /skills` — return the local skill library so the drawer panel can list
+/// names + descriptions. Reads from the same dir the runtime uses.
+async fn list_skills() -> axum::extract::Json<serde_json::Value> {
+    use crate::capabilities::FsSkillLibrary;
+    let skills_dir = dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("sparrow")
+        .join("skills");
+    let lib = FsSkillLibrary::new(skills_dir.clone());
+    let scanned = lib.scan();
+    let skills: Vec<serde_json::Value> = scanned
+        .into_iter()
+        .map(|s| {
+            serde_json::json!({
+                "name": s.name,
+                "description": s.description,
+                "uses": s.usage_count,
+                "score": s.score,
+                "auto_generated": s.auto_generated,
+            })
+        })
+        .collect();
+    axum::extract::Json(serde_json::json!({
+        "ok": true,
+        "skills": skills,
+        "dir": skills_dir.to_string_lossy().to_string(),
+    }))
+}
+
+#[derive(serde::Deserialize)]
+struct CreateAgentReq {
+    name: String,
+    role: Option<String>,
+    description: Option<String>,
+    model: Option<String>,
+    color_key: Option<String>,
+    soul: Option<String>,        // raw markdown for .soul.toml personality
+    agent_md: Option<String>,    // raw markdown for .agent.md long-form
+    allowed_tools: Option<Vec<String>>,
+}
+
+/// `POST /agents` — create a persistent agent on disk under the user's local
+/// `./agents/` dir (workdir). Writes `<name>.soul.toml` (TOML config) and
+/// optionally `<name>.agent.md` (long-form persona / instructions).
+async fn create_agent(
+    axum::extract::Json(req): axum::extract::Json<CreateAgentReq>,
+) -> axum::extract::Json<serde_json::Value> {
+    let name = req.name.trim();
+    if name.is_empty()
+        || name.contains(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
+    {
+        return axum::extract::Json(serde_json::json!({
+            "ok": false,
+            "message": "agent name must be ascii alphanumeric/_/- only",
+        }));
+    }
+    let dir = std::env::current_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .join("agents");
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        return axum::extract::Json(serde_json::json!({
+            "ok": false,
+            "message": format!("could not create agents dir: {e}"),
+        }));
+    }
+    let role = req.role.as_deref().unwrap_or("custom agent");
+    let description = req.description.as_deref().unwrap_or("");
+    let color_key = req.color_key.as_deref().unwrap_or("steel");
+    let model = req.model.as_deref().unwrap_or("");
+    let allowed_tools = req.allowed_tools.unwrap_or_default();
+    let soul_path = dir.join(format!("{name}.soul.toml"));
+    let soul = req.soul.unwrap_or_else(|| {
+        let tools_block = if allowed_tools.is_empty() {
+            String::new()
+        } else {
+            format!(
+                "allowed_tools = [{}]\n",
+                allowed_tools
+                    .iter()
+                    .map(|t| format!("\"{}\"", t.replace('"', "\\\"")))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        };
+        format!(
+            "# Sparrow persistent agent\n\
+             name = \"{name}\"\n\
+             role = \"{role}\"\n\
+             description = \"\"\"{description}\"\"\"\n\
+             color_key = \"{color_key}\"\n\
+             {model_line}\
+             {tools_block}\n\
+             [personality]\n\
+             tone = \"concise, competent, direct\"\n",
+            name = name,
+            role = role.replace('"', "\\\""),
+            description = description.replace('"', "\\\""),
+            color_key = color_key,
+            model_line = if model.is_empty() {
+                String::new()
+            } else {
+                format!("model = \"{}\"\n", model.replace('"', "\\\""))
+            },
+            tools_block = tools_block,
+        )
+    });
+    if let Err(e) = std::fs::write(&soul_path, soul) {
+        return axum::extract::Json(serde_json::json!({
+            "ok": false,
+            "message": format!("could not write soul file: {e}"),
+        }));
+    }
+    if let Some(md) = req.agent_md {
+        if !md.trim().is_empty() {
+            let md_path = dir.join(format!("{name}.agent.md"));
+            if let Err(e) = std::fs::write(&md_path, md) {
+                return axum::extract::Json(serde_json::json!({
+                    "ok": false,
+                    "message": format!("could not write agent.md: {e}"),
+                }));
+            }
+        }
+    }
+    axum::extract::Json(serde_json::json!({
+        "ok": true,
+        "name": name,
+        "soul_path": soul_path.to_string_lossy().to_string(),
+        "message": "agent created",
+    }))
+}
+
+/// `DELETE /agents/:name` — remove a persistent agent's local files.
+async fn delete_agent(
+    axum::extract::Path(name): axum::extract::Path<String>,
+) -> axum::extract::Json<serde_json::Value> {
+    if name.is_empty()
+        || name.contains(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_')
+    {
+        return axum::extract::Json(serde_json::json!({
+            "ok": false,
+            "message": "invalid agent name",
+        }));
+    }
+    let dir = std::env::current_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .join("agents");
+    let soul = dir.join(format!("{name}.soul.toml"));
+    let md = dir.join(format!("{name}.agent.md"));
+    let mut removed = 0u32;
+    if soul.exists() {
+        let _ = std::fs::remove_file(&soul);
+        removed += 1;
+    }
+    if md.exists() {
+        let _ = std::fs::remove_file(&md);
+        removed += 1;
+    }
+    axum::extract::Json(serde_json::json!({
+        "ok": removed > 0,
+        "removed": removed,
+        "message": if removed > 0 { "deleted" } else { "not found" },
     }))
 }
 
