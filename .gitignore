@@ -65,3 +65,8 @@ get_twitter_followers.py
 # Env files
 .env
 .env.local
+
+# Claude playground files
+fun-calculator.html
+greet.py
+haiku.txt
