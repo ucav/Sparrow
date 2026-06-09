@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NovaCalc ⚡</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background: #0a0a0f;
+    font-family: 'Orbitron', monospace;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* ---- animated background ---- */
+  .bg {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+  }
+  .bg canvas { display: block; }
+
+  /* ---- calculator shell ---- */
+  .calc {
+    position: relative;
+    z-index: 1;
+    width: 400px;
+    background: linear-gradient(145deg, #1a1a2e 0%, #16213e 100%);
+    border-radius: 28px;
+    padding: 28px 24px 24px;
+    box-shadow:
+      0 0 40px rgba(0, 255, 255, 0.15),
+      0 0 80px rgba(255, 0, 255, 0.08),
+      0 20px 60px rgba(0,0,0,0.6),
+      inset 0 1px 0 rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    animation: floatIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+  }
+
+  @keyframes floatIn {
+    from { transform: translateY(60px) scale(0.9); opacity: 0; }
+    to   { transform: translateY(0) scale(1); opacity: 1; }
+  }
+
+  /* ---- brand ---- */
+  .brand {
+    text-align: center;
+    margin-bottom: 16px;
+    font-size: 0.65rem;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    background: linear-gradient(90deg, #00ffff, #ff00ff);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: hueShift 4s linear infinite;
+  }
+
+  @keyframes hueShift {
+    0%   { filter: hue-rotate(0deg); }
+    100% { filter: hue-rotate(360deg); }
+  }
+
+  /* ---- display ---- */
+  .display {
+    background: #0d0d1a;
+    border-radius: 16px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+    text-align: right;
+    min-height: 90px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    border: 1px solid rgba(0,255,255,0.15);
+    box-shadow: inset 0 4px 12px rgba(0,0,0,0.5), 0 0 20px rgba(0,255,255,0.05);
+    overflow: hidden;
+    position: relative;
+  }
+
+  .expression {
+    font-size: 0.9rem;
+    color: rgba(255,255,255,0.35);
+    min-height: 22px;
+    transition: all 0.2s;
+  }
+
+  .result {
+    font-size: 2.6rem;
+    font-weight: 900;
+    color: #fff;
+    text-shadow: 0 0 18px rgba(0,255,255,0.6);
+    transition: all 0.15s;
+    letter-spacing: 1px;
+    line-height: 1.1;
+  }
+
+  .result.bump {
+    animation: bump 0.3s ease-out;
+  }
+
+  @keyframes bump {
+    0%   { transform: scale(1); }
+    40%  { transform: scale(1.12); color: #00ffff; }
+    100% { transform: scale(1); }
+  }
+
+  .result.error {
+    color: #ff4477;
+    text-shadow: 0 0 18px rgba(255,68,119,0.6);
+    font-size: 1.4rem;
+  }
+
+  /* ---- scanline ---- */
+  .scanline {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: rgba(0,255,255,0.06);
+    animation: scanDown 3s linear infinite;
+    pointer-events: none;
+  }
+  @keyframes scanDown {
+    0%   { top: 0%; }
+    100% { top: 100%; }
+  }
+
+  /* ---- buttons grid ---- */
+  .buttons {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+  }
+
+  .btn {
+    position: relative;
+    padding: 18px 0;
+    font-family: 'Orbitron', monospace;
+    font-size: 1.15rem;
+    font-weight: 700;
+    border: none;
+    border-radius: 14px;
+    cursor: pointer;
+    color: #e0e0ff;
+    background: rgba(255,255,255,0.04);
+    backdrop-filter: blur(4px);
+    transition: all 0.12s ease;
+    overflow: hidden;
+    outline: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  }
+
+  .btn:hover {
+    background: rgba(255,255,255,0.1);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0,0,0,0.4);
+  }
+
+  .btn:active {
+    transform: scale(0.93);
+    transition: transform 0.08s;
+  }
+
+  /* ---- ripple ---- */
+  .ripple {
+    position: absolute;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.25);
+    transform: scale(0);
+    animation: rippleAnim 0.5s ease-out forwards;
+    pointer-events: none;
+  }
+
+  @keyframes rippleAnim {
+    to { transform: scale(4); opacity: 0; }
+  }
+
+  /* ---- button variants ---- */
+  .btn.op {
+    background: rgba(0,255,255,0.08);
+    color: #00ffff;
+    text-shadow: 0 0 8px rgba(0,255,255,0.4);
+  }
+
+  .btn.fn {
+    background: rgba(255,0,255,0.08);
+    color: #ff88cc;
+    font-size: 1rem;
+  }
+
+  .btn.equals {
+    background: linear-gradient(135deg, #00bcd4, #7c4dff);
+    color: #fff;
+    font-size: 1.4rem;
+    text-shadow: 0 0 12px rgba(255,255,255,0.5);
+    box-shadow: 0 4px 20px rgba(0,188,212,0.35);
+  }
+
+  .btn.equals:hover {
+    box-shadow: 0 6px 30px rgba(124,77,255,0.55);
+  }
+
+  .btn.zero {
+    grid-column: span 2;
+  }
+
+  /* ---- particles ---- */
+  .particles-container {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 10;
+  }
+
+  .particle {
+    position: absolute;
+    font-size: 1.4rem;
+    animation: popUp 0.7s ease-out forwards;
+    pointer-events: none;
+  }
+
+  @keyframes popUp {
+    0%   { transform: translateY(0) scale(0.3); opacity: 1; }
+    100% { transform: translateY(-120px) scale(1.4); opacity: 0; }
+  }
+
+  /* ---- shake on error ---- */
+  .shake {
+    animation: shake 0.45s ease-out;
+  }
+
+  @keyframes shake {
+    0%,100% { transform: translateX(0); }
+    15%     { transform: translateX(-8px); }
+    30%     { transform: translateX(8px); }
+    45%     { transform: translateX(-6px); }
+    60%     { transform: translateX(6px); }
+    75%     { transform: translateX(-2px); }
+    90%     { transform: translateX(2px); }
+  }
+</style>
+</head>
+<body>
+
+<!-- animated starfield background -->
+<div class="bg"><canvas id="stars"></canvas></div>
+
+<!-- particles layer -->
+<div class="particles-container" id="particles"></div>
+
+<div class="calc" id="calc">
+  <div class="brand">NovaCalc ⚡ Synthwave Edition</div>
+
+  <div class="display" id="display">
+    <div class="expression" id="expression"></div>
+    <div class="result" id="result">0</div>
+    <div class="scanline"></div>
+  </div>
+
+  <div class="buttons" id="buttons">
+    <!-- row 1 -->
+    <button class="btn fn" data-action="clear">C</button>
+    <button class="btn fn" data-action="sign">±</button>
+    <button class="btn fn" data-action="percent">%</button>
+    <button class="btn op" data-action="divide">÷</button>
+    <!-- row 2 -->
+    <button class="btn" data-action="digit" data-value="7">7</button>
+    <button class="btn" data-action="digit" data-value="8">8</button>
+    <button class="btn" data-action="digit" data-value="9">9</button>
+    <button class="btn op" data-action="multiply">×</button>
+    <!-- row 3 -->
+    <button class="btn" data-action="digit" data-value="4">4</button>
+    <button class="btn" data-action="digit" data-value="5">5</button>
+    <button class="btn" data-action="digit" data-value="6">6</button>
+    <button class="btn op" data-action="subtract">−</button>
+    <!-- row 4 -->
+    <button class="btn" data-action="digit" data-value="1">1</button>
+    <button class="btn" data-action="digit" data-value="2">2</button>
+    <button class="btn" data-action="digit" data-value="3">3</button>
+    <button class="btn op" data-action="add">+</button>
+    <!-- row 5 -->
+    <button class="btn zero" data-action="digit" data-value="0">0</button>
+    <button class="btn" data-action="decimal">.</button>
+    <button class="btn equals" data-action="equals">=</button>
+  </div>
+</div>
+
+<script>
+  // ==================== BACKGROUND STARFIELD ====================
+  const bgCanvas = document.getElementById('stars');
+  const bgCtx = bgCanvas.getContext('2d');
+  let stars = [];
+
+  function resizeBg() {
+    bgCanvas.width = window.innerWidth;
+    bgCanvas.height = window.innerHeight;
+  }
+  resizeBg();
+  window.addEventListener('resize', resizeBg);
+
+  // Create stars
+  for (let i = 0; i < 140; i++) {
+    stars.push({
+      x: Math.random() * bgCanvas.width,
+      y: Math.random() * bgCanvas.height,
+      r: Math.random() * 1.6 + 0.3,
+      speed: Math.random() * 0.4 + 0.1,
+      twinkle: Math.random() * Math.PI * 2,
+      twinkleSpeed: Math.random() * 0.03 + 0.01,
+    });
+  }
+
+  function drawStars() {
+    bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
+    for (const s of stars) {
+      s.twinkle += s.twinkleSpeed;
+      const alpha = 0.4 + 0.6 * Math.abs(Math.sin(s.twinkle));
+      bgCtx.beginPath();
+      bgCtx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      bgCtx.fillStyle = `rgba(180,220,255,${alpha})`;
+      bgCtx.fill();
+      // occasional colored star
+      if (Math.random() < 0.002) {
+        bgCtx.fillStyle = `rgba(0,255,255,${alpha * 0.7})`;
+        bgCtx.fill();
+      }
+      s.y -= s.speed;
+      if (s.y < -5) { s.y = bgCanvas.height + 5; s.x = Math.random() * bgCanvas.width; }
+    }
+    requestAnimationFrame(drawStars);
+  }
+  drawStars();
+
+  // ==================== CALCULATOR STATE ====================
+  const expressionEl = document.getElementById('expression');
+  const resultEl = document.getElementById('result');
+  const displayEl = document.getElementById('display');
+  const calcEl = document.getElementById('calc');
+  const particlesContainer = document.getElementById('particles');
+
+  let current   = '0';       // what's currently typed
+  let previous  = '';        // previous value
+  let operation = null;      // '+', '-', '*', '/'
+  let shouldReset = false;   // after equals, next digit resets
+  let expression = '';       // full expression string
+
+  function updateDisplay() {
+    expressionEl.textContent = expression || '';
+    resultEl.textContent = current;
+
+    // Auto-shrink font if result is long
+    const len = current.length;
+    if (len > 12) resultEl.style.fontSize = '1.4rem';
+    else if (len > 9) resultEl.style.fontSize = '1.8rem';
+    else if (len > 7) resultEl.style.fontSize = '2.2rem';
+    else resultEl.style.fontSize = '2.6rem';
+  }
+
+  function bump() {
+    resultEl.classList.remove('bump');
+    void resultEl.offsetWidth; // reflow
+    resultEl.classList.add('bump');
+  }
+
+  function addRipple(e, btn) {
+    const ripple = document.createElement('span');
+    ripple.className = 'ripple';
+    const rect = btn.getBoundingClientRect();
+    const size = Math.max(rect.width, rect.height);
+    ripple.style.width = ripple.style.height = size + 'px';
+    ripple.style.left = (e.clientX - rect.left - size / 2) + 'px';
+    ripple.style.top  = (e.clientY - rect.top - size / 2) + 'px';
+    btn.appendChild(ripple);
+    ripple.addEventListener('animationend', () => ripple.remove());
+  }
+
+  function spawnParticles(x, y, count = 10) {
+    const emojis = ['✨','💫','⚡','💎','🌟','🔥','💜','💙'];
+    for (let i = 0; i < count; i++) {
+      const p = document.createElement('span');
+      p.className = 'particle';
+      p.textContent = emojis[Math.floor(Math.random() * emojis.length)];
+      p.style.left = x + 'px';
+      p.style.top  = y + 'px';
+      p.style.animationDuration = (0.4 + Math.random() * 0.8) + 's';
+      p.style.setProperty('--dx', (Math.random() - 0.5) * 160 + 'px');
+      // Override animation to include horizontal drift
+      p.style.animation = `none`;
+      p.offsetHeight; // reflow
+      p.style.animation = `popUp ${0.4 + Math.random() * 0.8}s ease-out forwards`;
+      p.style.transform = `translateX(${(Math.random()-0.5)*140}px)`;
+      particlesContainer.appendChild(p);
+      p.addEventListener('animationend', () => p.remove());
+    }
+  }
+
+  function shakeDisplay() {
+    displayEl.classList.remove('shake');
+    void displayEl.offsetWidth;
+    displayEl.classList.add('shake');
+  }
+
+  function setError(msg) {
+    current = msg;
+    resultEl.classList.add('error');
+    expression = '';
+    updateDisplay();
+    shakeDisplay();
+    setTimeout(() => { resultEl.classList.remove('error'); clearAll(); }, 1200);
+  }
+
+  function clearAll() {
+    current = '0';
+    previous = '';
+    operation = null;
+    shouldReset = false;
+    expression = '';
+    updateDisplay();
+  }
+
+  function compute(a, op, b) {
+    const x = parseFloat(a);
+    const y = parseFloat(b);
+    switch (op) {
+      case '+': return x + y;
+      case '-': return x - y;
+      case '*': return x * y;
+      case '/': return y === 0 ? NaN : x / y;
+      default: return y;
+    }
+  }
+
+  function formatResult(num) {
+    if (!isFinite(num)) return 'Erreur';
+    // avoid floating point weirdness
+    const str = parseFloat(num.toPrecision(12)).toString();
+    return str.length > 14 ? parseFloat(num.toPrecision(10)).toString() : str;
+  }
+
+  // ==================== BUTTON HANDLING ====================
+  const buttonsContainer = document.getElementById('buttons');
+
+  buttonsContainer.addEventListener('click', (e) => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+
+    addRipple(e, btn);
+
+    const action = btn.dataset.action;
+    const value  = btn.dataset.value;
+
+    switch (action) {
+      // ---- digits ----
+      case 'digit':
+        if (shouldReset) {
+          current = value;
+          shouldReset = false;
+          expression = value;
+        } else {
+          if (current === '0' && value !== '0') current = value;
+          else if (current === '0' && value === '0') { /* stay at 0 */ }
+          else current += value;
+          expression += value;
+        }
+        break;
+
+      // ---- decimal ----
+      case 'decimal':
+        if (shouldReset) {
+          current = '0.';
+          shouldReset = false;
+          expression = '0.';
+        } else if (!current.includes('.')) {
+          current += '.';
+          expression += '.';
+        }
+        break;
+
+      // ---- operations ----
+      case 'add':
+      case 'subtract':
+      case 'multiply':
+      case 'divide':
+        if (operation && !shouldReset) {
+          const result = compute(previous, operation, current);
+          if (isNaN(result) || !isFinite(result)) { setError('Erreur'); return; }
+          previous = formatResult(result);
+          current = previous;
+        } else {
+          previous = current;
+        }
+        operation = {
+          add: '+', subtract: '-', multiply: '*', divide: '/'
+        }[action];
+        expression = previous + ' ' + (btn.textContent.trim()) + ' ';
+        shouldReset = true;
+        break;
+
+      // ---- equals ----
+      case 'equals':
+        if (operation && !shouldReset) {
+          const result = compute(previous, operation, current);
+          if (isNaN(result) || !isFinite(result)) { setError('Erreur'); return; }
+          expression = previous + ' ' + {
+            '+':'+','-':'−','*':'×','/':'÷'
+          }[operation] + ' ' + current + ' =';
+          current = formatResult(result);
+          previous = '';
+          operation = null;
+          shouldReset = true;
+          bump();
+          // Spawn particles at equals button
+          const eqBtn = btn;
+          const rect = eqBtn.getBoundingClientRect();
+          spawnParticles(rect.left + rect.width/2, rect.top);
+        }
+        break;
+
+      // ---- clear ----
+      case 'clear':
+        clearAll();
+        break;
+
+      // ---- sign toggle ----
+      case 'sign':
+        if (current !== '0' && current !== 'Erreur') {
+          current = current.startsWith('-') ? current.slice(1) : '-' + current;
+          // update expression
+        }
+        break;
+
+      // ---- percent ----
+      case 'percent':
+        if (current !== '0' && current !== 'Erreur') {
+          current = formatResult(parseFloat(current) / 100);
+        }
+        break;
+    }
+
+    updateDisplay();
+  });
+
+  // ==================== KEYBOARD SUPPORT ====================
+  document.addEventListener('keydown', (e) => {
+    const key = e.key;
+    if (key >= '0' && key <= '9') {
+      const btn = document.querySelector(`button[data-value="${key}"]`);
+      if (btn) { btn.click(); spawnParticles(e.clientX, e.clientY, 2); }
+    } else if (key === '.') {
+      document.querySelector('button[data-action="decimal"]')?.click();
+    } else if (key === '+') {
+      document.querySelector('button[data-action="add"]')?.click();
+    } else if (key === '-') {
+      document.querySelector('button[data-action="subtract"]')?.click();
+    } else if (key === '*') {
+      document.querySelector('button[data-action="multiply"]')?.click();
+    } else if (key === '/') {
+      e.preventDefault();
+      document.querySelector('button[data-action="divide"]')?.click();
+    } else if (key === 'Enter' || key === '=') {
+      e.preventDefault();
+      document.querySelector('button[data-action="equals"]')?.click();
+    } else if (key === 'Escape' || key === 'c' || key === 'C') {
+      document.querySelector('button[data-action="clear"]')?.click();
+    } else if (key === '%') {
+      document.querySelector('button[data-action="percent"]')?.click();
+    } else if (key === 'Backspace') {
+      if (current.length > 1) {
+        current = current.slice(0, -1);
+        expression = expression.slice(0, -1);
+      } else {
+        current = '0';
+        expression = expression.slice(0, -1);
+      }
+      updateDisplay();
+    }
+  });
+
+  // ==================== INIT ====================
+  updateDisplay();
+  console.log('⚡ NovaCalc ready — tape sur ton clavier, mec.');
+</script>
+</body>
+</html>
