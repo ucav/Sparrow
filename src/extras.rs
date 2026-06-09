@@ -513,7 +513,15 @@ impl ChatSession {
                         io::stdout().flush()?;
                     }
                     Event::RunFinished { outcome, .. } => {
-                        println!("\n── {} | ${:.4} ──", outcome.status, outcome.cost_usd);
+                        println!(
+                            "\n── {} | ${:.4} {}──",
+                            outcome.status,
+                            outcome.cost_usd,
+                            crate::cost::format_comparison_oneliner(
+                                outcome.cost_usd,
+                                &outcome.tokens
+                            )
+                        );
                     }
                     Event::Error { message, .. } => {
                         eprintln!("\nError: {}", message);

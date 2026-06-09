@@ -1938,8 +1938,14 @@ async fn run_task(
                         let _ = std::io::stdout().flush();
                     }
                     println!(
-                        "\nDone. Cost: ${:.4}, Tokens: {} in / {} out",
-                        outcome.cost_usd, outcome.tokens.input, outcome.tokens.output
+                        "\nDone. Cost: ${:.4}, Tokens: {} in / {} out{}",
+                        outcome.cost_usd,
+                        outcome.tokens.input,
+                        outcome.tokens.output,
+                        sparrow::cost::format_comparison_oneliner(
+                            outcome.cost_usd,
+                            &outcome.tokens
+                        )
                     );
                 }
                 sparrow::event::Event::Error { message, .. }
@@ -2827,8 +2833,13 @@ async fn handle_replay(
                     }
                     sparrow::event::Event::RunFinished { outcome, .. } => {
                         println!(
-                            "\n--- Done: {} | Cost: ${:.4} ---",
-                            outcome.status, outcome.cost_usd
+                            "\n--- Done: {} | Cost: ${:.4} {}---",
+                            outcome.status,
+                            outcome.cost_usd,
+                            sparrow::cost::format_comparison_oneliner(
+                                outcome.cost_usd,
+                                &outcome.tokens
+                            )
                         );
                     }
                     sparrow::event::Event::Error { message, .. }

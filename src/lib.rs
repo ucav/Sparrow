@@ -34,6 +34,7 @@ pub mod completions;
 pub mod config;
 pub mod console;
 pub mod context;
+pub mod cost;
 pub mod demo;
 pub mod engine;
 pub mod errors;
