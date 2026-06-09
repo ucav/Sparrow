@@ -60,9 +60,9 @@ See [`docs/comparison/vs-competitors.md`](docs/comparison/vs-competitors.md) for
 
 ---
 
-## ✨ What's New — v0.6.0
+## ✨ What's New — v0.6.1
 
-> **Cockpit & agent launch** — compact swarm lanes, inline tiered approvals, agent creator with full SOUL editor, expanded config panel (6 tabs), skill library browser.
+> **Engine & console polish** — full skill catalog injected into system prompt so agents discover all 105 skills. Agent creator modal properly centered. Console layout fixes.
 
 **WebView cockpit**
 - **Compact swarm** — idle agents show icon + name + 1-line status; active triad expands. Sub-agents auto-appear as lanes.
@@ -83,7 +83,7 @@ See [`docs/comparison/vs-competitors.md`](docs/comparison/vs-competitors.md) for
 - **5 cron job presets** — health check, auto-commit, security audit, session cleanup, knowledge distillation.
 
 **Install & distribution**
-- **`cargo install sparrow-cli` v0.6.0** on crates.io.
+- **`cargo install sparrow-cli` v0.6.1** on crates.io.
 - **Homebrew tap, Scoop bucket, winget manifests** with cross-compiled binaries.
 - **`sparrow launch`** — first-run wizard auto-detects 20+ provider keys, ranks by cost tier, offers free fallbacks.
 - **`sparrow demo`** — 30-second snake game live coding demo.
