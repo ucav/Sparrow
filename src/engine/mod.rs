@@ -251,6 +251,7 @@ fn build_system_prompt(
     memory_docs: &[MemoryDoc],
     instruction_docs: &[InstructionDoc],
     skills: &[crate::capabilities::Skill],
+    skill_catalog: &[crate::capabilities::Skill],
 ) -> String {
     let mut parts = vec![format!(
         r#"You are {name}, a {role}.
@@ -323,8 +324,37 @@ the user's actual filesystem.
         }
     }
 
+    // Skill catalog: a short index of every skill installed in the user's
+    // library. The agent must know what's available before it can decide to
+    // invoke one — without this list it has no way to discover that, say,
+    // a `code-review` skill exists. Bodies of the top-N pre-selected
+    // relevant skills follow below for fast in-context use.
+    if !skill_catalog.is_empty() {
+        let relevant_names: std::collections::HashSet<&str> =
+            skills.iter().map(|s| s.name.as_str()).collect();
+        let mut lines = vec![format!(
+            "## Skill library ({} installed)\nUse `skill_invoke <name>` to load any skill below by name. The bodies marked ★ are already loaded into this prompt for the current task.",
+            skill_catalog.len()
+        )];
+        for s in skill_catalog {
+            let star = if relevant_names.contains(s.name.as_str()) {
+                "★ "
+            } else {
+                "  "
+            };
+            let desc = s.description.trim();
+            let one_liner = if desc.is_empty() {
+                "(no description)".to_string()
+            } else {
+                desc.lines().next().unwrap_or(desc).chars().take(140).collect()
+            };
+            lines.push(format!("- {star}**{}** — {}", s.name, one_liner));
+        }
+        parts.push(lines.join("\n"));
+    }
+
     if !skills.is_empty() {
-        parts.push("## Relevant skills for this task:".to_string());
+        parts.push("## Relevant skills for this task (full body):".to_string());
         for skill in skills {
             parts.push(format!("### {}\n{}", skill.name, skill.body));
         }
@@ -1149,11 +1179,19 @@ impl Engine {
             level: autonomy.level.clone(),
         });
 
-        // Load relevant skills
+        // Load relevant skills — top-N pre-selected for full-body inclusion
         let relevant_skills: Vec<crate::capabilities::Skill> = self
             .skills
             .as_ref()
             .map(|s| s.relevant(&task.description, 3))
+            .unwrap_or_default();
+        // And the full catalog (names + descriptions only) so the agent
+        // discovers everything in the library and can invoke a skill it
+        // wasn't pre-fed.
+        let skill_catalog: Vec<crate::capabilities::Skill> = self
+            .skills
+            .as_ref()
+            .map(|s| s.all())
             .unwrap_or_default();
 
         let system = build_system_prompt(
@@ -1179,6 +1217,7 @@ impl Engine {
                 &task.description,
             ),
             &relevant_skills,
+            &skill_catalog,
         );
         let mut system = format!(
             "{}\n\n## Active Sparrow Routing Context\nRequest category: {}\nTask tier: {}\nRequired tools: {}\nRequired vision: {}\nPreferred local: {}\nSelected fallback chain: {}\nRouting policy: free_first={}, session_budget_usd={:.2}.\nWhen answering routing questions, describe this context concretely.",
