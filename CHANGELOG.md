@@ -2,6 +2,27 @@
 
 All notable changes to Sparrow will be documented in this file.
 
+## [0.6.0] — 2026-06-09
+
+Cockpit & agent launch — compact swarm lanes, tiered approvals, agent creator.
+
+### Added
+- Compact swarm cockpit: idle agents stay small, active triad expands
+- Tiered approvals: once/session/always/deny with client-side rule memorization
+- Agent creator: full form, writes `.soul.toml` + `.agent.md` instantly
+- Config panel v2: 6 tabs (providers, routing, permissions, appearance, memory, MCP)
+- Skills tab in left rail
+- `GET /skills` endpoint
+- `POST /agents`, `DELETE /agents/:name` endpoints
+- TUI rich splash screen with formatted code/diff/JSON demo on boot
+- Agent toggle in TUI: @agent + Tab switches full pipeline identity
+- Auto-detect content formatting in TUI (code, diffs, JSON, markdown)
+
+### Changed
+- WebView stream prefix: "sparrow ›" instead of leaking agent role
+- Skill library scan promoted to pub for API endpoint
+- README updated to v0.6.0
+
 ## [0.5.8] — 2026-06-09
 
 Audit-driven polish — every defect surfaced by `cargo test --all-targets`,
