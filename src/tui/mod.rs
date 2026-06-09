@@ -512,6 +512,46 @@ impl Tui {
         self
     }
 
+    /// Test-only: force the cockpit past the boot animation so a render
+    /// snapshot exercises the live layout rather than the splash screen.
+    #[doc(hidden)]
+    pub fn force_booted(&mut self) {
+        self.booted = true;
+    }
+
+    /// Test-only: drive the boot animation to a given progress so the splash
+    /// renders its mid/late state (wordmark, boot log, ready) instead of the
+    /// intentionally-blank first frame.
+    #[doc(hidden)]
+    pub fn debug_set_boot_progress(&mut self, progress: u32) {
+        self.boot_progress = progress;
+    }
+
+    /// Test-only: render one frame to an in-memory [`TestBackend`] and return
+    /// the buffer as plain text lines (one `String` per terminal row). This is
+    /// the only way to exercise the real `render` path headlessly — the
+    /// interactive `run`/`main_loop` require a live terminal.
+    ///
+    /// [`TestBackend`]: ratatui::backend::TestBackend
+    #[doc(hidden)]
+    pub fn render_to_lines(&mut self, width: u16, height: u16) -> Vec<String> {
+        let backend = ratatui::backend::TestBackend::new(width, height);
+        let mut terminal = ratatui::Terminal::new(backend).expect("test terminal");
+        terminal
+            .draw(|f| self.render(f, 0.0))
+            .expect("render must not fail");
+        let buf = terminal.backend().buffer().clone();
+        (0..height)
+            .map(|y| {
+                (0..width)
+                    .map(|x| buf[(x, y)].symbol())
+                    .collect::<String>()
+                    .trim_end()
+                    .to_string()
+            })
+            .collect()
+    }
+
     /// Rebuild the log from replay events up to `replay_idx`.
     fn rebuild_replay(&mut self) {
         let Some(events) = self.replay_events.clone() else {
@@ -1597,49 +1637,28 @@ impl Tui {
             "◉"
         };
 
-        let line = Line::from(vec![
-            // braille spinner
+        // ── Right HUD zone (cost · tokens · autonomy pill) ────────────────
+        // This block carries the load-bearing numbers — spend, token burn and
+        // the autonomy level. It is laid out in its own right-aligned chunk so
+        // it stays visible even on an 80-column terminal; only the route (left
+        // zone) truncates when space is tight, never the budget readout.
+        let cost_str = if self.cost_usd > 0.0 {
+            format!("${:.4} ▲  ", self.cost_usd)
+        } else {
+            format!("${:.4}  ", self.cost_usd)
+        };
+        let tok_str = format!("{} tok  ", self.total_tokens);
+        let aut_upper = self.autonomy.to_uppercase();
+        // Reserve the plain-text width of the right zone (+1 leading gap).
+        let right_w = (cost_str.chars().count()
+            + tok_str.chars().count()
+            + 2 // led + space
+            + aut_upper.chars().count()
+            + 1) as u16;
+
+        let right = Line::from(vec![
             Span::styled(
-                format!("{} ", spinner),
-                Style::default()
-                    .fg(self.theme.brand)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            // wordmark
-            Span::styled(
-                "SPARROW  ",
-                Style::default()
-                    .fg(self.theme.brand)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            // flight verb (cycling, fixed-width so cockpit doesn't jump)
-            Span::styled(
-                format!("{:<9}  ", verb),
-                Style::default().fg(self.theme.dim),
-            ),
-            // active agent indicator (when toggled)
-            Span::styled(
-                if let Some(ref agent) = self.active_agent {
-                    format!("🐦 {}  ", agent.to_uppercase())
-                } else {
-                    String::new()
-                },
-                Style::default()
-                    .fg(self.theme.gold)
-                    .add_modifier(Modifier::BOLD),
-            ),
-            // route
-            Span::styled(
-                format!("route: {}  ", self.route),
-                Style::default().fg(self.theme.planner),
-            ),
-            // cost with ▲ when non-zero
-            Span::styled(
-                if self.cost_usd > 0.0 {
-                    format!("${:.4} ▲  ", self.cost_usd)
-                } else {
-                    format!("${:.4}  ", self.cost_usd)
-                },
+                cost_str,
                 if self.cost_flash_frames > 0 {
                     Style::default()
                         .fg(self.theme.gold)
@@ -1650,7 +1669,7 @@ impl Tui {
             ),
             // tokens
             Span::styled(
-                format!("{} tok  ", self.total_tokens),
+                tok_str,
                 if self.tok_flash_frames > 0 {
                     Style::default()
                         .fg(self.theme.gold)
@@ -1665,17 +1684,74 @@ impl Tui {
                 Style::default().fg(aut_color).add_modifier(Modifier::BOLD),
             ),
             Span::styled(
-                self.autonomy.to_uppercase(),
+                aut_upper,
                 Style::default().fg(aut_color).add_modifier(Modifier::BOLD),
             ),
         ]);
-        f.render_widget(
-            Paragraph::new(line).block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(self.theme.line)),
+
+        // Draw the frame once, then split its interior so the right HUD gets a
+        // reserved, right-aligned column and the left zone takes the rest.
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(self.theme.line));
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+        let zones = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Min(0), Constraint::Length(right_w)])
+            .split(inner);
+
+        // ── Left zone (spinner · wordmark · verb · agent · route) ─────────
+        // The route is the flexible element: rather than let the paragraph clip
+        // it mid-word, pre-truncate it with an ellipsis to the space the left
+        // zone actually has, so narrow terminals read "…coder" not "qwen2.5-cod".
+        let agent_badge = match &self.active_agent {
+            // 🐦 renders two cells wide; count it as 2 for the width budget.
+            Some(agent) => format!("🐦 {}  ", agent.to_uppercase()),
+            None => String::new(),
+        };
+        let agent_w = if agent_badge.is_empty() {
+            0
+        } else {
+            agent_badge.chars().count() + 1 // +1 for the wide bird glyph
+        };
+        // Fixed left prefix: spinner(2) + "SPARROW  "(9) + verb field(11) +
+        // agent badge + "route: "(7).
+        let prefix_w = 2 + 9 + 11 + agent_w + 7;
+        let route_budget = (zones[0].width as usize).saturating_sub(prefix_w);
+        let route_disp = truncate_for_width(&self.route, route_budget);
+        let left = Line::from(vec![
+            Span::styled(
+                format!("{} ", spinner),
+                Style::default()
+                    .fg(self.theme.brand)
+                    .add_modifier(Modifier::BOLD),
             ),
-            area,
+            Span::styled(
+                "SPARROW  ",
+                Style::default()
+                    .fg(self.theme.brand)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("{:<9}  ", verb),
+                Style::default().fg(self.theme.dim),
+            ),
+            Span::styled(
+                agent_badge,
+                Style::default()
+                    .fg(self.theme.gold)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                format!("route: {}", route_disp),
+                Style::default().fg(self.theme.planner),
+            ),
+        ]);
+        f.render_widget(Paragraph::new(left), zones[0]);
+        f.render_widget(
+            Paragraph::new(right).alignment(ratatui::layout::Alignment::Right),
+            zones[1],
         );
     }
 
