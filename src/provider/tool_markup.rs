@@ -105,7 +105,9 @@ mod tests {
     #[test]
     fn detects_dsml_markup() {
         assert!(looks_like_tool_markup(SAMPLE));
-        assert!(!looks_like_tool_markup("just a normal answer about config.py"));
+        assert!(!looks_like_tool_markup(
+            "just a normal answer about config.py"
+        ));
     }
 
     #[test]

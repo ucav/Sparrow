@@ -910,28 +910,27 @@ async fn main() -> anyhow::Result<()> {
         Some(Commands::Learn) => {
             sparrow::onboarding::Onboarding::default().run_interactive()?;
         }
-        Some(Commands::Voice { action }) => {
-            match action {
-                sparrow::cli::VoiceAction::Speak { text } => {
-                    sparrow::tools::voice::handle_voice(
-                        sparrow::tools::voice::VoiceCommand::Speak { text, output: None }
-                    )?;
-                }
-                sparrow::cli::VoiceAction::Transcribe { file } => {
-                    sparrow::tools::voice::handle_voice(
-                        sparrow::tools::voice::VoiceCommand::Transcribe {
-                            audio_file: file.into(),
-                            language: None,
-                        }
-                    )?;
-                }
-                sparrow::cli::VoiceAction::Providers => {
-                    sparrow::tools::voice::handle_voice(
-                        sparrow::tools::voice::VoiceCommand::ListProviders
-                    )?;
-                }
+        Some(Commands::Voice { action }) => match action {
+            sparrow::cli::VoiceAction::Speak { text } => {
+                sparrow::tools::voice::handle_voice(sparrow::tools::voice::VoiceCommand::Speak {
+                    text,
+                    output: None,
+                })?;
             }
-        }
+            sparrow::cli::VoiceAction::Transcribe { file } => {
+                sparrow::tools::voice::handle_voice(
+                    sparrow::tools::voice::VoiceCommand::Transcribe {
+                        audio_file: file.into(),
+                        language: None,
+                    },
+                )?;
+            }
+            sparrow::cli::VoiceAction::Providers => {
+                sparrow::tools::voice::handle_voice(
+                    sparrow::tools::voice::VoiceCommand::ListProviders,
+                )?;
+            }
+        },
         Some(Commands::Browser { url }) => {
             println!("🌐 Sparrow Browser — testing navigation to {}", url);
             println!("   Install deps first: bash scripts/setup-browser.sh\n");
@@ -1990,7 +1989,11 @@ async fn run_task(
 
     let outcome = drive_result?;
     let elapsed = start_time.elapsed();
-    println!("Status: {}  ⏱ {:.1}s", outcome.status, elapsed.as_secs_f64());
+    println!(
+        "Status: {}  ⏱ {:.1}s",
+        outcome.status,
+        elapsed.as_secs_f64()
+    );
     Ok(())
 }
 
@@ -3365,9 +3368,7 @@ fn handle_sessions(
             );
         }
         sparrow::cli::SessionAction::Search { query, limit } => {
-            let fts = sparrow::memory::fts::SessionSearch::open(
-                state_dir.join("sessions_fts.db"),
-            )?;
+            let fts = sparrow::memory::fts::SessionSearch::open(state_dir.join("sessions_fts.db"))?;
             let hits = fts.search(&query, limit)?;
             if hits.is_empty() {
                 println!("No results for \"{}\".", query);
@@ -4140,10 +4141,9 @@ fn extract_webview_protocol_prefixes(
         if let Some((name, after_name)) = rest.split_once("__") {
             if let Some((role, after_role)) = after_name.split_once("__") {
                 if let Some((b64, after_b64)) = after_role.split_once("__ ") {
-                    let personality = String::from_utf8(
-                        STANDARD.decode(b64.as_bytes()).unwrap_or_default(),
-                    )
-                    .unwrap_or_default();
+                    let personality =
+                        String::from_utf8(STANDARD.decode(b64.as_bytes()).unwrap_or_default())
+                            .unwrap_or_default();
                     identity = Some(sparrow::engine::Identity {
                         name: name.to_string(),
                         role: role.to_string(),
@@ -4304,8 +4304,7 @@ async fn handle_webview(
             let pending_identity: Option<sparrow::engine::Identity>;
             let pending_model_override: Option<String>;
             {
-                let (clean, identity, model) =
-                    extract_webview_protocol_prefixes(&task);
+                let (clean, identity, model) = extract_webview_protocol_prefixes(&task);
                 task = clean;
                 pending_identity = identity;
                 pending_model_override = model;

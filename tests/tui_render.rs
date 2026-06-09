@@ -80,10 +80,7 @@ fn cockpit_renders_core_hud() {
     );
     assert!(text.contains("tok"), "token counter missing:\n{text}");
     assert!(text.contains('$'), "cost readout missing:\n{text}");
-    assert!(
-        text.contains("TRUSTED"),
-        "autonomy pill missing:\n{text}"
-    );
+    assert!(text.contains("TRUSTED"), "autonomy pill missing:\n{text}");
 }
 
 #[test]
@@ -121,10 +118,7 @@ fn diff_panel_renders_file_and_counts() {
         minus: 1,
     });
     let text = joined(&tui.render_to_lines(120, 40));
-    assert!(
-        text.contains("login.rs"),
-        "diff file name missing:\n{text}"
-    );
+    assert!(text.contains("login.rs"), "diff file name missing:\n{text}");
 }
 
 #[test]

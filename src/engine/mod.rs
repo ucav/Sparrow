@@ -346,7 +346,12 @@ the user's actual filesystem.
             let one_liner = if desc.is_empty() {
                 "(no description)".to_string()
             } else {
-                desc.lines().next().unwrap_or(desc).chars().take(140).collect()
+                desc.lines()
+                    .next()
+                    .unwrap_or(desc)
+                    .chars()
+                    .take(140)
+                    .collect()
             };
             lines.push(format!("- {star}**{}** — {}", s.name, one_liner));
         }
@@ -1188,11 +1193,8 @@ impl Engine {
         // And the full catalog (names + descriptions only) so the agent
         // discovers everything in the library and can invoke a skill it
         // wasn't pre-fed.
-        let skill_catalog: Vec<crate::capabilities::Skill> = self
-            .skills
-            .as_ref()
-            .map(|s| s.all())
-            .unwrap_or_default();
+        let skill_catalog: Vec<crate::capabilities::Skill> =
+            self.skills.as_ref().map(|s| s.all()).unwrap_or_default();
 
         let system = build_system_prompt(
             &identity,
@@ -1930,15 +1932,15 @@ impl Engine {
                                                 "fs_write" | "edit" | "multi_edit"
                                             )
                                         {
-                                            if let Some(p) = args.get("path").and_then(|v| v.as_str())
+                                            if let Some(p) =
+                                                args.get("path").and_then(|v| v.as_str())
                                             {
                                                 let _ = event_tx.send(Event::DiffApplied {
                                                     run: run_id.clone(),
                                                     file: p.to_string(),
                                                 });
-                                            } else if let Some(p) = args
-                                                .get("file_path")
-                                                .and_then(|v| v.as_str())
+                                            } else if let Some(p) =
+                                                args.get("file_path").and_then(|v| v.as_str())
                                             {
                                                 let _ = event_tx.send(Event::DiffApplied {
                                                     run: run_id.clone(),

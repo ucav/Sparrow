@@ -466,7 +466,11 @@ impl Tui {
     /// Show a rich-formatted splash screen demonstrating TUI capabilities.
     fn show_splash(&mut self) {
         self.add_line("══════════════════════════════════════", LogStyle::Brand, 0);
-        self.add_line("  🐦 SPARROW — one cli · grows with you", LogStyle::Brand, 0);
+        self.add_line(
+            "  🐦 SPARROW — one cli · grows with you",
+            LogStyle::Brand,
+            0,
+        );
         self.add_line("══════════════════════════════════════", LogStyle::Brand, 0);
         self.add_line("", LogStyle::Cmd, 0);
         self.add_line("Try these (type in the input below):", LogStyle::Cmd, 0);
@@ -484,7 +488,11 @@ impl Tui {
         self.add_line("}", LogStyle::Cmd, 0);
         self.add_line("```", LogStyle::Dim, 0);
         self.add_line("", LogStyle::Cmd, 0);
-        self.add_line("Diffs are colored (additions in green, deletions in red):", LogStyle::Cmd, 0);
+        self.add_line(
+            "Diffs are colored (additions in green, deletions in red):",
+            LogStyle::Cmd,
+            0,
+        );
         self.add_line("--- a/src/main.rs", LogStyle::Dim, 0);
         self.add_line("+++ b/src/main.rs", LogStyle::Dim, 0);
         self.add_line("@@ -10,6 +10,8 @@ fn main() {", LogStyle::Dim, 0);
@@ -497,7 +505,11 @@ impl Tui {
         self.add_line("{", LogStyle::Dim, 0);
         self.add_line("  \"status\": \"ready\",", LogStyle::Ok, 0);
         self.add_line("  \"version\": \"0.5.9\",", LogStyle::Gold, 0);
-        self.add_line("  \"agents\": [\"nova\", \"planner\", \"coder\"]", LogStyle::Cmd, 0);
+        self.add_line(
+            "  \"agents\": [\"nova\", \"planner\", \"coder\"]",
+            LogStyle::Cmd,
+            0,
+        );
         self.add_line("}", LogStyle::Dim, 0);
         self.add_line("", LogStyle::Cmd, 0);
         self.add_line("→ Type a task or /command to begin.", LogStyle::Brand, 0);
@@ -722,12 +734,14 @@ impl Tui {
             .join("agents")
             .join(format!("{}.soul.toml", name));
         if let Ok(content) = std::fs::read_to_string(&path) {
-            let role = content.lines()
+            let role = content
+                .lines()
                 .find(|l| l.starts_with("role"))
                 .and_then(|l| l.split('=').nth(1))
                 .map(|s| s.trim().trim_matches('"').to_string())
                 .unwrap_or_default();
-            let personality = content.lines()
+            let personality = content
+                .lines()
                 .find(|l| l.starts_with("personality"))
                 .and_then(|l| l.split('=').nth(1))
                 .map(|s| s.trim().trim_matches('"').to_string())
@@ -765,12 +779,17 @@ impl Tui {
         let trimmed = text.trim();
 
         // Code blocks (start with ``` or indented 4+ spaces)
-        if trimmed.starts_with("```") || text.lines().all(|l| l.starts_with("    ") || l.is_empty()) {
+        if trimmed.starts_with("```") || text.lines().all(|l| l.starts_with("    ") || l.is_empty())
+        {
             return self.term_renderer.render_code(text, "");
         }
 
         // Diff output (starts with diff --git, @@, +++, ---)
-        if trimmed.contains("diff --git") || trimmed.starts_with("@@") || trimmed.starts_with("--- a/") || trimmed.starts_with("+++ b/") {
+        if trimmed.contains("diff --git")
+            || trimmed.starts_with("@@")
+            || trimmed.starts_with("--- a/")
+            || trimmed.starts_with("+++ b/")
+        {
             return self.term_renderer.render_diff(text);
         }
 
@@ -1076,7 +1095,11 @@ impl Tui {
 
     fn boot(&mut self) {
         self.add_line(
-            concat!("SPARROW  v", env!("CARGO_PKG_VERSION"), " — one cli · grows with you"),
+            concat!(
+                "SPARROW  v",
+                env!("CARGO_PKG_VERSION"),
+                " — one cli · grows with you"
+            ),
             LogStyle::Dim,
             0,
         );
@@ -1859,10 +1882,8 @@ impl Tui {
                         Style::default().fg(log.style.color(&self.theme)),
                     );
                     // Prepend indent prefix
-                    let mut final_spans = vec![Span::styled(
-                        prefix,
-                        Style::default().fg(self.theme.dim),
-                    )];
+                    let mut final_spans =
+                        vec![Span::styled(prefix, Style::default().fg(self.theme.dim))];
                     final_spans.extend(rendered_line.spans);
                     Some(Line::from(final_spans))
                 }

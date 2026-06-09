@@ -1,0 +1,274 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+  :root{
+    --bg0:#0e0b08; --bg1:#171109; --panel:#1d1710; --stroke:#2c251c;
+    --amber:#f2a93c; --amber2:#f8bf57; --coral:#f0674a; --cream:#ece2cf;
+    --dim:#897d6c; --steel:#9aa7b2; --planner:#7fa7d8; --green:#86c98b;
+    --mono:'JetBrains Mono','SF Mono',ui-monospace,'Cascadia Code',monospace;
+    --sans:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:1920px;height:1080px;overflow:hidden;background:#000}
+  #stage{
+    position:relative;width:1920px;height:1080px;
+    background:radial-gradient(120% 120% at 50% 18%, var(--bg1) 0%, var(--bg0) 60%, #060403 100%);
+    font-family:var(--sans);color:var(--cream);
+  }
+  .scene{position:absolute;inset:0;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;will-change:opacity,transform}
+  .center{text-align:center}
+  .vignette{position:absolute;inset:0;pointer-events:none;
+    box-shadow:inset 0 0 380px 90px rgba(0,0,0,.62)}
+  .grain{position:absolute;inset:0;opacity:.04;pointer-events:none;
+    background-image:radial-gradient(rgba(255,255,255,.5) 1px,transparent 1px);
+    background-size:4px 4px}
+
+  /* intro */
+  .wordmark{font-size:172px;font-weight:800;letter-spacing:-6px;color:var(--cream);line-height:.9}
+  .wordmark .a{color:var(--amber)}
+  .tagline{margin-top:26px;font-family:var(--mono);font-size:34px;color:var(--dim);letter-spacing:2px}
+  .mascot{width:300px;height:300px;margin-bottom:14px;filter:drop-shadow(0 18px 50px rgba(242,169,60,.18))}
+
+  /* problem */
+  .kicker{font-family:var(--mono);font-size:22px;letter-spacing:6px;color:var(--dim);text-transform:uppercase}
+  .bignum{font-size:230px;font-weight:800;letter-spacing:-8px;color:var(--cream)}
+  .sub{font-size:34px;color:var(--dim);margin-top:6px}
+  .warn{font-family:var(--mono);font-size:26px;color:var(--coral);margin-top:30px}
+  .turn{font-size:70px;font-weight:800;color:var(--amber);letter-spacing:-1px}
+
+  /* cockpit */
+  .cockpit{width:1620px;font-family:var(--mono);font-size:22px;line-height:1.62}
+  .bar{border:1px solid var(--stroke);border-radius:10px;background:rgba(20,16,11,.6);
+    padding:16px 24px;display:flex;flex-wrap:nowrap;justify-content:space-between;align-items:center;
+    box-shadow:0 24px 80px rgba(0,0,0,.5)}
+  .bar>div{white-space:nowrap;display:flex;align-items:center}
+  .bar .l{color:var(--amber);font-weight:700}
+  .bar .verb{color:var(--dim);font-weight:400;margin:0 14px}
+  .bar .route{color:var(--planner);font-weight:400}
+  .bar .r{display:flex;gap:22px;align-items:center}
+  .bar .cost{color:var(--amber)} .bar .tok{color:var(--steel)} .bar .pill{color:var(--green);font-weight:700}
+  .body{margin-top:18px;padding:6px 10px;color:var(--dim)}
+  .body .ok{color:var(--green)} .body .gold{color:var(--amber)} .body .plus{color:var(--green)} .body .pl{color:var(--planner)}
+  .caption{margin-top:30px;font-family:var(--sans);font-size:30px;color:var(--cream);text-align:center}
+  .caption b{color:var(--amber)}
+
+  /* features */
+  .grid{display:grid;grid-template-columns:repeat(3,360px);gap:26px}
+  .card{border:1px solid var(--stroke);border-radius:16px;background:linear-gradient(180deg,#1b150e,#140f09);
+    padding:34px;height:200px;display:flex;flex-direction:column;justify-content:center}
+  .card .big{font-size:58px;font-weight:800;color:var(--amber);letter-spacing:-1px}
+  .card .lab{margin-top:10px;font-size:24px;color:var(--cream)}
+  .card .sub{font-size:18px;color:var(--dim);margin-top:4px}
+  .h2{font-size:40px;font-weight:700;margin-bottom:42px;color:var(--cream)}
+  .h2 .a{color:var(--amber)}
+
+  /* webview */
+  .browser{width:1560px;border-radius:14px;overflow:hidden;border:1px solid var(--stroke);
+    background:#1d1710;box-shadow:0 40px 120px rgba(0,0,0,.6),0 0 0 1px rgba(242,169,60,.06)}
+  .bbar{height:54px;display:flex;align-items:center;gap:10px;padding:0 20px;background:#241c12;border-bottom:1px solid var(--stroke)}
+  .bbar .url{margin-left:18px;font-family:var(--mono);font-size:20px;color:var(--dim);
+    background:#191309;border:1px solid var(--stroke);border-radius:8px;padding:7px 18px;flex:1;max-width:560px}
+  .shot{display:block;width:1560px;height:auto}
+  .wvcap{margin-top:30px;font-size:30px;color:var(--cream);text-align:center}
+  .wvcap b{color:var(--amber)}
+
+  /* install / outro */
+  .term{width:1080px;border:1px solid var(--stroke);border-radius:14px;background:#141009;
+    font-family:var(--mono);overflow:hidden;box-shadow:0 30px 90px rgba(0,0,0,.55)}
+  .term .top{height:46px;background:#1d1710;display:flex;align-items:center;gap:10px;padding:0 18px;border-bottom:1px solid var(--stroke)}
+  .dot{width:13px;height:13px;border-radius:50%}
+  .term .b{padding:40px 44px;font-size:34px;color:var(--cream)}
+  .term .prompt{color:var(--amber)}
+  .cur{display:inline-block;width:16px;height:34px;background:var(--amber);transform:translateY(6px);margin-left:3px}
+  .cta{margin-top:40px;text-align:center}
+  .cta .repo{font-family:var(--mono);font-size:34px;color:var(--cream)}
+  .cta .meta{margin-top:14px;font-size:24px;color:var(--dim);letter-spacing:1px}
+  .badge{position:absolute;top:60px;right:70px;font-family:var(--mono);font-size:20px;color:var(--dim);
+    border:1px solid var(--stroke);border-radius:999px;padding:8px 18px}
+</style>
+</head>
+<body>
+<!-- master defs: gradients + mascot symbol, referenced via <use> -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="sp-body" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f8bf57"/><stop offset="1" stop-color="#ef9b2f"/></linearGradient>
+    <linearGradient id="sp-wing" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#e8901f"/><stop offset="1" stop-color="#d2761d"/></linearGradient>
+    <linearGradient id="sp-belly" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fde6bd"/><stop offset="1" stop-color="#f7d089"/></linearGradient>
+    <linearGradient id="sp-steel" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#cdc6ba"/><stop offset="1" stop-color="#8f877a"/></linearGradient>
+    <symbol id="sparrow" viewBox="0 0 240 240">
+      <path d="M150 150 q58 6 60 52 q-46 -2 -64 -28 z" fill="url(#sp-wing)"/>
+      <path d="M120 50 C168 50 182 92 182 132 C182 184 154 204 120 204 C86 204 58 184 58 132 C58 92 72 50 120 50 Z" fill="url(#sp-body)" stroke="#7a4f1c" stroke-width="3.5"/>
+      <path d="M112 52 q-4 -22 8 -28 q3 12 0 27 z" fill="url(#sp-wing)" stroke="#7a4f1c" stroke-width="2.4"/>
+      <path d="M122 50 q6 -20 18 -20 q-2 12 -12 24 z" fill="url(#sp-wing)" stroke="#7a4f1c" stroke-width="2.4"/>
+      <ellipse cx="118" cy="150" rx="40" ry="46" fill="url(#sp-belly)"/>
+      <path d="M70 110 C58 132 60 168 86 182 C92 156 88 128 84 112 Z" fill="url(#sp-wing)" stroke="#7a4f1c" stroke-width="3"/>
+      <path d="M104 124 L130 121 L113 142 Z" fill="#f1862a" stroke="#7a4f1c" stroke-width="2.4" stroke-linejoin="round"/>
+      <ellipse cx="92" cy="138" rx="9" ry="6" fill="#f0674a" opacity=".45"/>
+      <g><circle cx="100" cy="106" r="17" fill="#fff" stroke="#7a4f1c" stroke-width="2.6"/><circle cx="103" cy="108" r="8.5" fill="#2a1c0e"/><circle cx="99" cy="103" r="3.4" fill="#fff"/></g>
+      <path d="M86 86 C110 74 150 80 168 100" fill="none" stroke="#221910" stroke-width="6" stroke-linecap="round"/>
+      <ellipse cx="146" cy="108" rx="20" ry="17" fill="#221910"/><ellipse cx="146" cy="106" rx="20" ry="15" fill="#2c2114"/>
+      <circle cx="150" cy="138" r="7" fill="none" stroke="#f2c94c" stroke-width="3.4"/>
+      <path d="M138 150 C166 150 178 168 168 192 C150 188 138 172 134 156 Z" fill="url(#sp-wing)" stroke="#7a4f1c" stroke-width="3"/>
+      <g transform="translate(156,176)"><g transform="rotate(28)"><rect x="-5" y="-44" width="10" height="46" rx="5" fill="url(#sp-steel)" stroke="#5f584d" stroke-width="2"/><path d="M-11 -44 L11 -44 L11 -58 L4.5 -58 L4.5 -50 L-4.5 -50 L-4.5 -58 L-11 -58 Z" fill="url(#sp-steel)" stroke="#5f584d" stroke-width="2" stroke-linejoin="round"/><rect x="-2" y="-40" width="2.6" height="34" rx="1.3" fill="#fff" opacity=".35"/></g></g>
+      <g stroke="#e07e26" stroke-width="5" stroke-linecap="round" fill="none"><path d="M108 200 L108 214 M101 218 L108 214 L115 218 M108 214 L108 220"/><path d="M132 200 L132 214 M125 218 L132 214 L139 218 M132 214 L132 220"/></g>
+    </symbol>
+  </defs>
+</svg>
+
+<div id="stage">
+  <div class="badge">v0.6.2 · MIT · Rust</div>
+
+  <!-- S1 intro -->
+  <div class="scene" id="s1">
+    <div class="center">
+      <svg class="mascot" viewBox="0 0 240 240"><use href="#sparrow"/></svg>
+      <div class="wordmark">Sp<span class="a">a</span>rrow</div>
+      <div class="tagline">route · run · replay · rewind</div>
+    </div>
+  </div>
+
+  <!-- S2 problem -->
+  <div class="scene" id="s2">
+    <div class="center">
+      <div class="kicker">usage — last 4 days</div>
+      <div class="bignum" id="s2num">$847</div>
+      <div class="sub">11 files modified · 3 session crashes · context lost</div>
+      <div class="warn">⚠ no cap configured</div>
+      <div class="turn" id="s2turn" style="margin-top:36px">one static binary.</div>
+    </div>
+  </div>
+
+  <!-- S3 cockpit -->
+  <div class="scene" id="s3">
+    <div>
+      <div class="cockpit">
+        <div class="bar">
+          <div><span class="l">⠋ SPARROW</span><span class="verb">Soaring</span><span class="route" id="s3route">route: ollama/qwen2.5-coder → claude-sonnet-4</span></div>
+          <div class="r"><span class="cost" id="s3cost">$0.0000</span><span class="tok" id="s3tok">0 tok</span><span class="pill">● TRUSTED</span></div>
+        </div>
+        <div class="body">
+          <div class="pl">↳ route: ollama/qwen2.5-coder → claude-sonnet-4</div>
+          <div class="gold">● checkpoint: before-refactor</div>
+          <div>◇ src/auth/login.rs  <span class="plus">+2</span> / <span style="color:var(--coral)">-1</span>  · applied</div>
+          <div class="ok">✓ tests  18 passed · no regressions</div>
+        </div>
+      </div>
+      <div class="caption">every run is <b>visible</b>, <b>budgeted</b>, <b>checkpointed</b> — and now it fits an 80-column terminal.</div>
+    </div>
+  </div>
+
+  <!-- SW webview cockpit -->
+  <div class="scene" id="sw">
+    <div class="center">
+      <div class="browser">
+        <div class="bbar">
+          <span class="dot" style="background:#f0674a"></span><span class="dot" style="background:#f2c94c"></span><span class="dot" style="background:#86c98b"></span>
+          <span class="url">localhost:7878 · sparrow cockpit</span>
+        </div>
+        <img class="shot" src="../assets/launch/video/webview-mockup.png" alt="Sparrow WebView cockpit" />
+      </div>
+      <div class="wvcap">same event stream — now in the <b>WebView cockpit</b>: swarm lanes, live diffs, checkpoints.</div>
+    </div>
+  </div>
+
+  <!-- S4 features -->
+  <div class="scene" id="s4">
+    <div class="center">
+      <div class="h2">one binary. <span class="a">every</span> capability.</div>
+      <div class="grid" id="s4grid">
+        <div class="card"><div class="big">38</div><div class="lab">providers</div><div class="sub">Ollama-first, cloud as fallback</div></div>
+        <div class="card"><div class="big">rewind</div><div class="lab">git checkpoints</div><div class="sub">files + chat + counters, atomically</div></div>
+        <div class="card"><div class="big">hard caps</div><div class="lab">budget in the runtime</div><div class="sub">--max-cost-usd · wall · tokens</div></div>
+        <div class="card"><div class="big">105</div><div class="lab">skills</div><div class="sub">debug, tests, k8s, terraform…</div></div>
+        <div class="card"><div class="big">4</div><div class="lab">surfaces</div><div class="sub">TUI · cockpit · JSON · gateway</div></div>
+        <div class="card"><div class="big">0</div><div class="lab">telemetry by default</div><div class="sub">your keys, your machine</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- S5 install / CTA -->
+  <div class="scene" id="s5">
+    <div class="center">
+      <div class="term">
+        <div class="top"><span class="dot" style="background:#f0674a"></span><span class="dot" style="background:#f2c94c"></span><span class="dot" style="background:#86c98b"></span></div>
+        <div class="b"><span class="prompt">$ </span><span id="s5cmd"></span><span class="cur" id="s5cur"></span></div>
+      </div>
+      <div class="cta">
+        <div class="repo">github.com/ucav/Sparrow</div>
+        <div class="meta">MIT · Rust · single binary · cargo install sparrow-cli</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grain"></div>
+  <div class="vignette"></div>
+</div>
+
+<script>
+const FPS = 30, DUR = 26.4; // seconds
+const clamp=(x,a=0,b=1)=>Math.max(a,Math.min(b,x));
+const lin=(t,a,b)=>clamp((t-a)/(b-a));
+const ease=x=>{x=clamp(x);return x*x*(3-2*x);};         // smoothstep
+const eOut=x=>1-Math.pow(1-clamp(x),3);
+// fade a scene in over [a,a+f], hold, fade out over [b-f,b]; small rise.
+function band(t,a,b,f=0.5){
+  const i=ease(lin(t,a,a+f)), o=1-ease(lin(t,b-f,b));
+  const vis=clamp(Math.min(i,o));
+  return {op:vis, y:(1-i)*26};
+}
+function place(el,s){el.style.opacity=s.op;el.style.transform=`translateY(${s.y}px)`;}
+
+// [intro, problem, tui, webview, features, install]
+const S=[ [0,4.2],[4.0,8.4],[8.2,12.9],[12.7,17.4],[17.2,21.8],[21.6,26.4] ];
+const cmd="cargo install sparrow-cli";
+
+window.seek=function(t){
+  place(s1, band(t,...S[0]));
+  place(s2, band(t,...S[1]));
+  place(s3, band(t,...S[2]));
+  place(sw, band(t,...S[3]));
+  place(s4, band(t,...S[4]));
+  place(s5, band(t,...S[5]));
+
+  // S1 mascot gentle scale-in
+  const p1=ease(lin(t,0,1.4));
+  document.querySelector('.mascot').style.transform=`scale(${0.82+0.18*p1})`;
+
+  // S2: count to 847, then reveal "one static binary."
+  s2num.textContent='$'+Math.round(eOut(lin(t,4.2,6.0))*847);
+  document.querySelector('#s2 .warn').style.opacity=ease(lin(t,5.9,6.3));
+  s2turn.style.opacity=ease(lin(t,6.7,7.4));
+
+  // S3: cost + tokens tick up; body lines stagger in
+  const pc=eOut(lin(t,8.8,11.6));
+  s3cost.textContent='$'+(pc*0.0421).toFixed(4)+(pc>0.02?' ▲':'');
+  s3tok.textContent=Math.round(pc*2000)+' tok';
+  document.querySelectorAll('#s3 .body > div').forEach((el,i)=>{el.style.opacity=ease(lin(t,9.0+i*0.45,9.5+i*0.45));});
+  document.querySelector('#s3 .caption').style.opacity=ease(lin(t,11.2,12.0));
+
+  // SW: browser window scale-in + caption
+  const pw=ease(lin(t,12.9,14.0));
+  document.querySelector('#sw .browser').style.transform=`translateY(${(1-pw)*30}px) scale(${0.96+0.04*pw})`;
+  document.querySelector('#sw .wvcap').style.opacity=ease(lin(t,15.4,16.2));
+
+  // S4: features header + staggered cards
+  document.querySelector('#s4 .h2').style.opacity=ease(lin(t,17.2,17.8));
+  document.querySelectorAll('#s4grid .card').forEach((el,i)=>{
+    const a=17.5+i*0.22, p=ease(lin(t,a,a+0.6));
+    el.style.opacity=p; el.style.transform=`translateY(${(1-p)*22}px) scale(${0.97+0.03*p})`;
+  });
+
+  // S5: typewriter on the install command + CTA
+  const chars=Math.round(eOut(lin(t,22.2,24.2))*cmd.length);
+  s5cmd.textContent=cmd.slice(0,chars);
+  s5cur.style.opacity=(Math.floor(t*2)%2)?1:0.15;
+  document.querySelector('#s5 .cta').style.opacity=ease(lin(t,24.4,25.2));
+};
+window.__DUR=DUR; window.__FPS=FPS;
+window.seek(0);
+</script>
+</body>
+</html>

@@ -970,13 +970,15 @@ async fn resolve_approval(
         // remembers session-approved tool names and skips the next prompt; an
         // "always" decision should be paired with a separate POST /permissions
         // call to persist the rule. All three map to Allow at the engine level.
-        "allow" | "approve" | "approved" | "allow_once" | "allow_session"
-        | "allow_always" => Decision::Allow,
+        "allow" | "approve" | "approved" | "allow_once" | "allow_session" | "allow_always" => {
+            Decision::Allow
+        }
         "deny" | "reject" | "rejected" => Decision::Deny,
         _ => {
             return axum::extract::Json(RunResponse {
                 ok: false,
-                message: "decision must be approve/allow_once/allow_session/allow_always/deny".into(),
+                message: "decision must be approve/allow_once/allow_session/allow_always/deny"
+                    .into(),
             });
         }
     };
@@ -1424,8 +1426,8 @@ struct CreateAgentReq {
     description: Option<String>,
     model: Option<String>,
     color_key: Option<String>,
-    soul: Option<String>,        // raw markdown for .soul.toml personality
-    agent_md: Option<String>,    // raw markdown for .agent.md long-form
+    soul: Option<String>,     // raw markdown for .soul.toml personality
+    agent_md: Option<String>, // raw markdown for .agent.md long-form
     allowed_tools: Option<Vec<String>>,
 }
 
