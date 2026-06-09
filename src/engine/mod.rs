@@ -1047,6 +1047,7 @@ impl Engine {
                     input: 0,
                     output: 0,
                 },
+                cost_comparison: String::new(),
             });
         }
 
@@ -1079,6 +1080,7 @@ impl Engine {
                     input: input_tokens,
                     output: output_tokens,
                 },
+                cost_comparison: String::new(),
             };
             let _ = event_tx.send(Event::RunFinished {
                 run: run_id.clone(),
@@ -2615,6 +2617,7 @@ impl Engine {
                 input: total_input + estimated_input_unconfirmed,
                 output: total_output + estimated_output_unconfirmed,
             },
+            cost_comparison: String::new(),
         };
 
         // Persist task to memory

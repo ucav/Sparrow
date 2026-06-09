@@ -1013,6 +1013,24 @@ impl Tui {
                     LogStyle::Ok,
                     0,
                 );
+                // Cost comparison — Sparrow's moat
+                if outcome.tokens.input > 0 || outcome.tokens.output > 0 {
+                    let comparison =
+                        crate::cost::format_comparison(outcome.cost_usd, &outcome.tokens);
+                    for line in comparison.lines().skip(1) {
+                        // skip the "── Cost ──" header, show data lines
+                        if !line.is_empty() && !line.starts_with("──") {
+                            let style = if line.contains("Sparrow") {
+                                LogStyle::Ok
+                            } else if line.contains("💡") {
+                                LogStyle::Warn
+                            } else {
+                                LogStyle::Rem
+                            };
+                            self.add_line(line, style, 1);
+                        }
+                    }
+                }
             }
             Event::Error { message, .. } => {
                 if !crate::event::is_local_model_unavailable(message) {

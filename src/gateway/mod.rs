@@ -378,10 +378,14 @@ impl MessageRouter {
                         surface: surface_for_done,
                         chat_id: cid.clone(),
                         text: format!(
-                            "Done.\nStatus: {}\nCost: ${:.4}\nFiles: {}",
+                            "Done.\nStatus: {}\nCost: ${:.4}\nFiles: {}{}",
                             outcome.status,
                             outcome.cost_usd,
-                            outcome.diffs.len()
+                            outcome.diffs.len(),
+                            crate::cost::format_comparison_oneliner(
+                                outcome.cost_usd,
+                                &outcome.tokens
+                            )
                         ),
                         reply_to: reply_to.clone(),
                         buttons: vec![],

@@ -365,6 +365,7 @@ impl Runtime for SparrowRuntime {
                                 output: 0,
                             },
                             diffs: vec![],
+                            cost_comparison: String::new(),
                         })
                     }
                 }

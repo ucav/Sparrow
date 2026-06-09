@@ -228,6 +228,10 @@ pub struct OutcomeSummary {
     pub diffs: Vec<FileDiff>,
     pub cost_usd: f64,
     pub tokens: TokenUsage,
+    /// Pre-formatted cost comparison against competitors (empty = no comparison).
+    /// Populated by the orchestrator at run completion so every surface can display it.
+    #[serde(default)]
+    pub cost_comparison: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

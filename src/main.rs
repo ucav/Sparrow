@@ -1938,15 +1938,16 @@ async fn run_task(
                         let _ = std::io::stdout().flush();
                     }
                     println!(
-                        "\nDone. Cost: ${:.4}, Tokens: {} in / {} out{}",
-                        outcome.cost_usd,
-                        outcome.tokens.input,
-                        outcome.tokens.output,
-                        sparrow::cost::format_comparison_oneliner(
-                            outcome.cost_usd,
-                            &outcome.tokens
-                        )
+                        "\nDone. Cost: ${:.4}, Tokens: {} in / {} out",
+                        outcome.cost_usd, outcome.tokens.input, outcome.tokens.output,
                     );
+                    // Full cost comparison — Sparrow's competitive moat
+                    if outcome.tokens.input > 0 || outcome.tokens.output > 0 {
+                        println!(
+                            "{}",
+                            sparrow::cost::format_comparison(outcome.cost_usd, &outcome.tokens)
+                        );
+                    }
                 }
                 sparrow::event::Event::Error { message, .. }
                     if !sparrow::event::is_local_model_unavailable(message) =>
@@ -4380,6 +4381,7 @@ async fn handle_webview(
                                 input: 0,
                                 output: 0,
                             },
+                            cost_comparison: String::new(),
                         },
                     });
                 }

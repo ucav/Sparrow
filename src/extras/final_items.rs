@@ -90,6 +90,7 @@ pub async fn run_team(
             status: if results.iter().all(|r| !r.contains("error")) { "completed".into() } else { "partial".into() },
             diffs: vec![], cost_usd: 0.0,
             tokens: crate::event::TokenUsage { input: 0, output: 0 },
+            cost_comparison: String::new(),
         },
     });
 
