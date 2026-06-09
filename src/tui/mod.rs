@@ -994,7 +994,7 @@ impl Tui {
 
     fn boot(&mut self) {
         self.add_line(
-            "SPARROW  v0.1.0 — one cli · grows with you",
+            concat!("SPARROW  v", env!("CARGO_PKG_VERSION"), " — one cli · grows with you"),
             LogStyle::Dim,
             0,
         );
