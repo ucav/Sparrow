@@ -60,32 +60,39 @@ See [`docs/comparison/vs-competitors.md`](docs/comparison/vs-competitors.md) for
 
 ---
 
-## ✨ What's New — v0.5.8
+## ✨ What's New — v0.6.0
 
-> **Reliability and surface-polish release** — the agentic loop now completes correctly against thinking-mode providers, the Windows TUI renders cleanly, the WebView no longer leaks selector metadata into prompts, and DeepSeek-style inline tool markup is recovered instead of leaking as text.
+> **Cockpit & agent launch** — compact swarm lanes, inline tiered approvals, agent creator with full SOUL editor, expanded config panel (6 tabs), skill library browser.
 
-**Engine**
-- **Multi-tool turns survive thinking-mode** — a single model turn that emits N tool calls is now replayed as one assistant message with `reasoning_content` + all `tool_calls`, instead of N separate messages dropping `reasoning_content`. Fixes the HTTP 400 loop against DeepSeek / Qwen / Moonshot (and routes like `opencode-go`) that left multi-file tasks half-done.
-- **Inline tool-call markup recovery** — providers that emit `<｜｜DSML｜｜invoke …>` or `<invoke name="…">` blocks in `content` (DeepSeek native format, Anthropic XML-style) now have those calls parsed and executed instead of leaked as raw text.
+**WebView cockpit**
+- **Compact swarm** — idle agents show icon + name + 1-line status; active triad expands. Sub-agents auto-appear as lanes.
+- **Tiered approvals** — inline card with 4 buttons: once / session / always / deny. "always" persists to permissions. Folds to a one-liner after decision.
+- **Agent creator** — "＋ new agent" button opens full form (name/role/model/color/tools/soul), writes `.soul.toml` + `.agent.md` instantly.
+- **Config panel v2** — 6 tabs: providers, routing, permissions, appearance, memory & telemetry, MCP & hooks.
+- **Skills tab** — left rail now exposes the local skill library (was missing).
 
-**Windows TUI**
-- **UTF-8 console** — `SetConsoleOutputCP(65001)` is set before alternate-screen entry. The mojibake (`â`, `Â·`, truncated words) is gone and box-drawing/middle-dot/arrows render correctly.
-- **Clean initial buffer** — `terminal.clear()` runs once at startup so stray dots from the parent shell prompt never bleed into empty panels.
+**TUI**
+- **Rich splash screen on boot** — formatted demo with code blocks, colored diffs, and JSON preview so users see rendering quality immediately.
+- **Agent toggle** — `@nova` + Tab switches full pipeline identity; gold indicator in status bar.
+- **Auto-detected content formatting** — code, diffs, JSON, and markdown rendered with syntax colors in the scroll area.
 
-**WebView**
-- **Protocol-prefix isolation** — the `__agent:NAME__ROLE__BASE64__` and `__model:M__` prefixes the console wraps around your input are now stripped at the very top of the dispatch loop. They no longer reach the LLM, the persisted conversation history, or the user-visible transcript.
-- **`GET /healthz`** — lightweight 200 OK liveness probe for IDE extensions and external orchestrators (no more 404).
+**CLI**
+- **20 new tools** including web_search (DuckDuckGo/SearXNG, no API key), code_exec (sandboxed python/js/bash/ruby), browser/vision (Playwright).
+- **105 skills** with rich content — debug-systematically, write-tests, code-review, docker, k8s, terraform, postgres, redis, API design, security audit.
+- **FTS5 session search** — `sparrow sessions search "query"` with relevance-ranked snippets.
+- **5 cron job presets** — health check, auto-commit, security audit, session cleanup, knowledge distillation.
 
 **Install & distribution**
-- **`cargo install sparrow-cli` v0.5.8** on crates.io.
-- **Homebrew tap, Scoop bucket, winget manifests** with real SHA256 against the v0.5.4+ release artifacts.
-- **`sparrow launch`** — first-run wizard auto-detects 20+ provider keys, ranks by cost tier, offers Ollama as a free fallback.
+- **`cargo install sparrow-cli` v0.6.0** on crates.io.
+- **Homebrew tap, Scoop bucket, winget manifests** with cross-compiled binaries.
+- **`sparrow launch`** — first-run wizard auto-detects 20+ provider keys, ranks by cost tier, offers free fallbacks.
+- **`sparrow demo`** — 30-second snake game live coding demo.
 
-**Tier 2 hardening (carried forward from v0.5.x)**
-- CLI rich rendering, streaming + chat composer, TTS/STT/file_search, Memory CLI + FTS5 session search, voice commands.
-- Encrypted credential fallback store; honest hardened-sandbox reporting.
-- Pre-commit secret scanner; typed knowledge graph; Playwright e2e for browser/computer-use.
-- **Humanized French errors** for HTTP 401/429/connection/config failures.
+**What was already here (v0.5.x)**
+- Agentic engine with planner → coder → verifier pipeline, swarm orchestrator, git checkpoints + rewind.
+- CLI rich rendering (syntect), streaming + chat composer, TTS/STT, voice commands.
+- Memory CLI + FTS5 session search, encrypted credential store, pre-commit secret scanner.
+- Humanized French errors, VS Code extension, Claude Code drop-in compat.
 
 ---
 
