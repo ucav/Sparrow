@@ -1880,6 +1880,31 @@ impl Engine {
                                             id: id.clone(),
                                             blocks,
                                         });
+                                        // Surface writes as DiffApplied so the artifacts
+                                        // ledger sees files that fs_write/edit/multi_edit
+                                        // touched even when the tool returned plain text.
+                                        if !is_error
+                                            && matches!(
+                                                proposed.tool_name.as_str(),
+                                                "fs_write" | "edit" | "multi_edit"
+                                            )
+                                        {
+                                            if let Some(p) = args.get("path").and_then(|v| v.as_str())
+                                            {
+                                                let _ = event_tx.send(Event::DiffApplied {
+                                                    run: run_id.clone(),
+                                                    file: p.to_string(),
+                                                });
+                                            } else if let Some(p) = args
+                                                .get("file_path")
+                                                .and_then(|v| v.as_str())
+                                            {
+                                                let _ = event_tx.send(Event::DiffApplied {
+                                                    run: run_id.clone(),
+                                                    file: p.to_string(),
+                                                });
+                                            }
+                                        }
                                         let _ = self
                                             .hooks
                                             .execute(&HookEvent::PostToolUse, &proposed.tool_name)
