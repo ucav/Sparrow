@@ -458,7 +458,49 @@ impl Tui {
             term_renderer: crate::tui::renderer::TermRenderer::new(
                 crate::tui::renderer::RenderConfig::default(),
             ),
-        }
+        };
+        tui.show_splash();
+        tui
+    }
+
+    /// Show a rich-formatted splash screen demonstrating TUI capabilities.
+    fn show_splash(&mut self) {
+        self.add_line("══════════════════════════════════════", LogStyle::Brand, 0);
+        self.add_line("  🐦 SPARROW — one cli · grows with you", LogStyle::Brand, 0);
+        self.add_line("══════════════════════════════════════", LogStyle::Brand, 0);
+        self.add_line("", LogStyle::Cmd, 0);
+        self.add_line("Try these (type in the input below):", LogStyle::Cmd, 0);
+        self.add_line("  @nova     → Tab to toggle Nova agent", LogStyle::Dim, 0);
+        self.add_line("  /help     → list all slash commands", LogStyle::Dim, 0);
+        self.add_line("  Ctrl+R    → rewind to last checkpoint", LogStyle::Dim, 0);
+        self.add_line("", LogStyle::Cmd, 0);
+        // Demo: formatted code
+        self.add_line("# RICH RENDERING DEMO", LogStyle::Gold, 0);
+        self.add_line("", LogStyle::Cmd, 0);
+        self.add_line("Code blocks get syntax highlighting:", LogStyle::Cmd, 0);
+        self.add_line("```rust", LogStyle::Dim, 0);
+        self.add_line("fn main() {", LogStyle::Cmd, 0);
+        self.add_line("    println!(\"Hello, Sparrow!\");", LogStyle::Cmd, 0);
+        self.add_line("}", LogStyle::Cmd, 0);
+        self.add_line("```", LogStyle::Dim, 0);
+        self.add_line("", LogStyle::Cmd, 0);
+        self.add_line("Diffs are colored (additions in green, deletions in red):", LogStyle::Cmd, 0);
+        self.add_line("--- a/src/main.rs", LogStyle::Dim, 0);
+        self.add_line("+++ b/src/main.rs", LogStyle::Dim, 0);
+        self.add_line("@@ -10,6 +10,8 @@ fn main() {", LogStyle::Dim, 0);
+        self.add_line("+    let config = load_config()?;", LogStyle::Ok, 0);
+        self.add_line("     let engine = Engine::new();", LogStyle::Cmd, 0);
+        self.add_line("-    engine.run_old();", LogStyle::Err, 0);
+        self.add_line("+    engine.run_with_config(&config);", LogStyle::Ok, 0);
+        self.add_line("", LogStyle::Cmd, 0);
+        self.add_line("JSON is pretty-printed:", LogStyle::Cmd, 0);
+        self.add_line("{", LogStyle::Dim, 0);
+        self.add_line("  \"status\": \"ready\",", LogStyle::Ok, 0);
+        self.add_line("  \"version\": \"0.5.9\",", LogStyle::Gold, 0);
+        self.add_line("  \"agents\": [\"nova\", \"planner\", \"coder\"]", LogStyle::Cmd, 0);
+        self.add_line("}", LogStyle::Dim, 0);
+        self.add_line("", LogStyle::Cmd, 0);
+        self.add_line("→ Type a task or /command to begin.", LogStyle::Brand, 0);
     }
 
     /// Launch the TUI as a replay scrubber over a recorded transcript.
