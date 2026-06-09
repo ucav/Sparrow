@@ -60,9 +60,9 @@ See [`docs/comparison/vs-competitors.md`](docs/comparison/vs-competitors.md) for
 
 ---
 
-## ✨ What's New — v0.6.1
+## ✨ What's New — v0.6.2
 
-> **Engine & console polish** — full skill catalog injected into system prompt so agents discover all 105 skills. Agent creator modal properly centered. Console layout fixes.
+> **Cockpit polish** — TUI status header no longer truncates cost/tokens/autonomy on 80-column terminals, and the render path now ships with headless test coverage. (v0.6.1: full skill catalog injected into system prompt so agents discover all 105 skills; agent creator modal centered; console layout fixes.)
 
 **WebView cockpit**
 - **Compact swarm** — idle agents show icon + name + 1-line status; active triad expands. Sub-agents auto-appear as lanes.
@@ -83,7 +83,7 @@ See [`docs/comparison/vs-competitors.md`](docs/comparison/vs-competitors.md) for
 - **5 cron job presets** — health check, auto-commit, security audit, session cleanup, knowledge distillation.
 
 **Install & distribution**
-- **`cargo install sparrow-cli` v0.6.1** on crates.io.
+- **`cargo install sparrow-cli` v0.6.2** on crates.io.
 - **Homebrew tap, Scoop bucket, winget manifests** with cross-compiled binaries.
 - **`sparrow launch`** — first-run wizard auto-detects 20+ provider keys, ranks by cost tier, offers free fallbacks.
 - **`sparrow demo`** — 30-second snake game live coding demo.

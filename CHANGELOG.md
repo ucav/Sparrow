@@ -2,7 +2,7 @@
 
 All notable changes to Sparrow will be documented in this file.
 
-## [0.6.1] — 2026-06-09
+## [0.6.2] — 2026-06-09
 
 Launch-polish pass — cockpit HUD hardening and the first headless render tests.
 
@@ -12,17 +12,21 @@ Launch-polish pass — cockpit HUD hardening and the first headless render tests
   route) and a reserved, right-aligned HUD zone (cost · tokens · autonomy pill).
   Only the route truncates — with an ellipsis — when space is tight; the budget
   and autonomy readouts stay visible at standard width.
-- Console: agent creator centered as a proper modal.
-
-### Changed
-- Engine: inject the full skill catalog into the system prompt so agents
-  discover every available skill.
 
 ### Added
 - Headless TUI render coverage (`tests/tui_render.rs`) driving the real `render`
   tree through `ratatui::TestBackend`: boot splash, cockpit HUD, swarm lanes,
   diff panel, checkpoint timeline, toast, replay, and a panic-free sweep from
   40 to 160 columns. The render path had no test coverage before.
+
+## [0.6.1] — 2026-06-09
+
+### Fixed
+- Console: agent creator centered as a proper modal.
+
+### Changed
+- Engine: inject the full skill catalog into the system prompt so agents
+  discover every available skill.
 
 ## [0.6.0] — 2026-06-09
 
