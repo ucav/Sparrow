@@ -2,6 +2,40 @@
 
 All notable changes to Sparrow will be documented in this file.
 
+## [0.5.8] — 2026-06-09
+
+Audit-driven polish — every defect surfaced by `cargo test --all-targets`,
+`cargo clippy --all-targets -- -D warnings`, and a live probe of the cockpit.
+
+### Fixed
+- `tests/docs_site.rs` referenced `docs/tutorials/first-launch.mp4`, which
+  was removed from the repo to keep size down. The test now matches the
+  set of tutorial videos that actually ship.
+- `src/console.rs`: `GET /healthz` now returns `200 {"ok":true}`. The VS
+  Code extension probes exactly this endpoint to detect a running
+  cockpit; without it the extension spawned a duplicate `sparrow console`
+  on every launch.
+- `src/tui/ansi_bridge.rs`: dropped a no-op `let mut style = style;`
+  shadow that tripped clippy under `-D warnings`.
+- `src/tui/mod.rs`: replaced a manual `&line[1..]` slice with
+  `strip_prefix('@')` so the `@agent` toggle slice is bounded by the
+  same condition that proved the `@` was there.
+- `src/main.rs`: dropped an orphaned `use sparrow::engine::Identity` and
+  documented the `#[cfg(test)] mod webview_protocol_tests` placement so
+  the strict-clippy run stays green.
+
+## [0.5.7] — 2026-06-09
+
+### Added
+- `web_search` and `code_exec` tools wired into the engine; 8 skills
+  enriched with their usage.
+
+## [0.5.6] — 2026-06-08
+
+### Added
+- TUI `ansi_bridge` module: render ANSI-coloured agent output inside the
+  TUI cockpit panels.
+
 ## [0.5.5] — 2026-06-08
 
 Critical agentic-loop fix — multi-tool turns no longer abort against thinking-mode models.

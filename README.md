@@ -60,30 +60,31 @@ See [`docs/comparison/vs-competitors.md`](docs/comparison/vs-competitors.md) for
 
 ---
 
-## ✨ What's New — v0.5.2
+## ✨ What's New — v0.5.8
 
-> **Unified release** — v0.4.0 public launch + v0.5.0/v0.5.1 Phases 1→5 + v0.3.6 distribution pass + Tier2 autonomy hardening, all merged upward.
+> **Reliability and surface-polish release** — the agentic loop now completes correctly against thinking-mode providers, the Windows TUI renders cleanly, the WebView no longer leaks selector metadata into prompts, and DeepSeek-style inline tool markup is recovered instead of leaking as text.
 
-**Distribution & install**
-- **`cargo install sparrow-cli`** — published on crates.io.
-- **`sparrow launch`** — one-click first-run with WebView cockpit (`--tui` for terminal).
-- **One-click installers** for Windows, macOS, Linux.
+**Engine**
+- **Multi-tool turns survive thinking-mode** — a single model turn that emits N tool calls is now replayed as one assistant message with `reasoning_content` + all `tool_calls`, instead of N separate messages dropping `reasoning_content`. Fixes the HTTP 400 loop against DeepSeek / Qwen / Moonshot (and routes like `opencode-go`) that left multi-file tasks half-done.
+- **Inline tool-call markup recovery** — providers that emit `<｜｜DSML｜｜invoke …>` or `<invoke name="…">` blocks in `content` (DeepSeek native format, Anthropic XML-style) now have those calls parsed and executed instead of leaked as raw text.
 
-**Experience**
-- **CLI rich rendering** (Phase 1) — markdown, code, diff, JSON, tables.
-- **Streaming + chat composer** (Phase 2) — live progress, persistent sessions.
-- **TTS / STT / `file_search`** (Phase 3) — 30 new bundled skills.
-- **Memory CLI + FTS5 session search** (Phase 4).
-- **`sparrow voice {speak,transcribe,providers}`** (Phase 5).
-- **`sparrow demo`** — 30-second self-contained Planner→Coder→Verifier demo.
-- **`sparrow share`** — session → GitHub Gist in one command.
-- **First-run wizard** — auto-detects 20+ provider keys, ranks by cost tier.
+**Windows TUI**
+- **UTF-8 console** — `SetConsoleOutputCP(65001)` is set before alternate-screen entry. The mojibake (`â`, `Â·`, truncated words) is gone and box-drawing/middle-dot/arrows render correctly.
+- **Clean initial buffer** — `terminal.clear()` runs once at startup so stray dots from the parent shell prompt never bleed into empty panels.
 
-**Safety**
-- **Tier2 autonomy** — encrypted credential fallback store, honest hardened-sandbox reporting.
-- **`sparrow hook install`** — pre-commit secret scanner.
-- **Knowledge graph** — typed SQLite nodes/edges with optional Neo4j sync.
-- **Playwright e2e** — real browser/computer-use regression suite.
+**WebView**
+- **Protocol-prefix isolation** — the `__agent:NAME__ROLE__BASE64__` and `__model:M__` prefixes the console wraps around your input are now stripped at the very top of the dispatch loop. They no longer reach the LLM, the persisted conversation history, or the user-visible transcript.
+- **`GET /healthz`** — lightweight 200 OK liveness probe for IDE extensions and external orchestrators (no more 404).
+
+**Install & distribution**
+- **`cargo install sparrow-cli` v0.5.8** on crates.io.
+- **Homebrew tap, Scoop bucket, winget manifests** with real SHA256 against the v0.5.4+ release artifacts.
+- **`sparrow launch`** — first-run wizard auto-detects 20+ provider keys, ranks by cost tier, offers Ollama as a free fallback.
+
+**Tier 2 hardening (carried forward from v0.5.x)**
+- CLI rich rendering, streaming + chat composer, TTS/STT/file_search, Memory CLI + FTS5 session search, voice commands.
+- Encrypted credential fallback store; honest hardened-sandbox reporting.
+- Pre-commit secret scanner; typed knowledge graph; Playwright e2e for browser/computer-use.
 - **Humanized French errors** for HTTP 401/429/connection/config failures.
 
 ---

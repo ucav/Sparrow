@@ -13,7 +13,7 @@
 [2.42, "o", "n"]
 [2.5, "o", " \"add a rate limiter to the auth endpoint\" \\\r\n     --max-cost-usd 0.10 --max-wall-secs 60\r\n"]
 [3.3, "o", "\r\n"]
-[3.5, "o", "\u001b[38;5;215m🐦 Sparrow v0.5.4\u001b[0m  \u001b[38;5;240m—  workspace ~/api-service\u001b[0m\r\n"]
+[3.5, "o", "\u001b[38;5;215m🐦 Sparrow v0.5.8\u001b[0m  \u001b[38;5;240m—  workspace ~/api-service\u001b[0m\r\n"]
 [3.8, "o", "\r\n"]
 [3.95, "o", "  task      \u001b[38;5;230madd a rate limiter to the auth endpoint\u001b[0m\r\n"]
 [4.1, "o", "  autonomy  \u001b[38;5;250msupervised\u001b[0m  cap $0.10  wall 60s\r\n"]
