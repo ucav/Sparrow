@@ -76,3 +76,4 @@ haiku.txt
 scripts/launch-*
 scripts/webview-card.html
 ROADMAP.md
+package-lock.json
