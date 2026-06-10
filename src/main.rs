@@ -1433,7 +1433,7 @@ async fn handle_webview(
     });
 
     let addr: SocketAddr = format!("0.0.0.0:{}", port).parse()?;
-    let url = format!("http://{}", addr);
+    let url = format!("http://127.0.0.1:{}", port);
     println!("WebView console: {}", url);
     println!("Press Ctrl+C to stop.\n");
 
