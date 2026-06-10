@@ -388,10 +388,19 @@ async fn async_main() -> anyhow::Result<()> {
             }
         }
         Some(Commands::Plan { ref task, json }) => {
-            handle_plan(task, &config, skill_library.clone(), json || cli.json)?;
+            sparrow::cmd_handlers::handle_plan_cmd::handle_plan(
+                task,
+                &config,
+                skill_library.clone(),
+                json || cli.json,
+            )?;
         }
         Some(Commands::Permissions { action }) => {
-            handle_permissions(action, &config, &config_store)?;
+            sparrow::cmd_handlers::handle_permissions_cmd::handle_permissions(
+                action,
+                &config,
+                &config_store,
+            )?;
         }
         Some(Commands::Chat) => {
             handle_chat(&config, memory.clone()).await?;
@@ -414,19 +423,19 @@ async fn async_main() -> anyhow::Result<()> {
             handle_skills(action, &skill_library)?;
         }
         Some(Commands::Plugins { action }) => {
-            handle_plugins(action, &config_dir)?;
+            sparrow::cmd_handlers::handle_plugins_cmd::handle_plugins(action, &config_dir)?;
         }
         Some(Commands::Tools { action }) => {
-            handle_tools(action, &config_store)?;
+            sparrow::cmd_handlers::handle_tools_cmd::handle_tools(action, &config_store)?;
         }
         Some(Commands::Security { action }) => {
-            handle_security(action, &config)?;
+            sparrow::cmd_handlers::handle_security_cmd::handle_security(action, &config)?;
         }
         Some(Commands::Github { action }) => {
-            handle_github(action)?;
+            sparrow::cmd_handlers::handle_github_cmd::handle_github(action)?;
         }
         Some(Commands::Compact { task, out, json }) => {
-            handle_compact(task, out, json)?;
+            sparrow::cmd_handlers::handle_compact_cmd::handle_compact(task, out, json)?;
         }
         Some(Commands::Mcp { action }) => {
             handle_mcp(action, &config_dir).await?;
@@ -464,7 +473,7 @@ async fn async_main() -> anyhow::Result<()> {
             .await?;
         }
         Some(Commands::Sessions { action }) => {
-            handle_sessions(action, &active_state_dir)?;
+            sparrow::cmd_handlers::handle_sessions_cmd::handle_sessions(action, &active_state_dir)?;
         }
         Some(Commands::Model { set, list }) => {
             if list {
@@ -986,10 +995,10 @@ async fn async_main() -> anyhow::Result<()> {
             println!("   sparrow run \"extract the main content from {}\"", url);
         }
         Some(Commands::Init) => {
-            handle_init()?;
+            sparrow::cmd_handlers::handle_init_cmd::handle_init()?;
         }
         Some(Commands::Status) => {
-            handle_status(
+            sparrow::cmd_handlers::handle_status_cmd::handle_status(
                 &(memory.clone() as Arc<dyn Memory>),
                 &config,
                 &scheduler,
@@ -2172,76 +2181,6 @@ fn parse_agent_model_ref(model_ref: &str) -> Option<(String, String)> {
     Some(("custom".into(), model_ref.to_string()))
 }
 
-fn handle_plan(
-    task: &str,
-    config: &sparrow::config::Config,
-    skills: Arc<dyn SkillLibrary>,
-    json: bool,
-) -> anyhow::Result<()> {
-    let project_root = std::env::current_dir()?;
-    let commands =
-        sparrow::commands::all_commands(&project_root, &config.config_dir, Some(skills.as_ref()));
-    let plan = sparrow::plan::build_read_only_plan(task, &commands);
-    if json {
-        println!("{}", serde_json::to_string_pretty(&plan)?);
-    } else {
-        println!("{}", plan.render_markdown());
-    }
-    Ok(())
-}
-
-fn handle_permissions(
-    action: sparrow::cli::PermissionAction,
-    config: &sparrow::config::Config,
-    store: &FsConfigStore,
-) -> anyhow::Result<()> {
-    let mut updated = config.clone();
-    match action {
-        sparrow::cli::PermissionAction::List => {
-            print_permission_policy(&updated);
-            return Ok(());
-        }
-        sparrow::cli::PermissionAction::Set { mode } => {
-            let Some(mode) = sparrow::permissions::PermissionMode::parse(&mode) else {
-                anyhow::bail!(
-                    "Unknown permission mode '{}'. Use read-only, plan, supervised, trusted, autonomous, or emergency-stop.",
-                    mode
-                );
-            };
-            updated.permissions.mode = mode.clone();
-            updated.defaults.autonomy = mode.autonomy_level();
-            println!(
-                "Permission mode set to '{}' (autonomy: {:?}).",
-                mode.as_str(),
-                updated.defaults.autonomy
-            );
-        }
-        sparrow::cli::PermissionAction::AllowTool { tool } => {
-            push_unique(&mut updated.permissions.tools.allow, tool);
-            println!("Tool allow rule added.");
-        }
-        sparrow::cli::PermissionAction::AskTool { tool } => {
-            push_unique(&mut updated.permissions.tools.ask, tool);
-            println!("Tool approval rule added.");
-        }
-        sparrow::cli::PermissionAction::DenyTool { tool } => {
-            push_unique(&mut updated.permissions.tools.deny, tool);
-            println!("Tool deny rule added.");
-        }
-        sparrow::cli::PermissionAction::AllowPath { path } => {
-            push_unique_path(&mut updated.permissions.paths.allow, path);
-            println!("Path allow rule added.");
-        }
-        sparrow::cli::PermissionAction::DenyPath { path } => {
-            push_unique_path(&mut updated.permissions.paths.deny, path);
-            println!("Path deny rule added.");
-        }
-    }
-    store.save(&updated)?;
-    print_permission_policy(&updated);
-    Ok(())
-}
-
 fn push_unique(values: &mut Vec<String>, value: String) {
     if !values.iter().any(|existing| existing == &value) {
         values.push(value);
@@ -2570,220 +2509,11 @@ fn load_skill_from_source(source: &str) -> anyhow::Result<sparrow::capabilities:
     Ok(skill)
 }
 
-fn handle_plugins(
-    action: sparrow::cli::PluginsAction,
-    config_dir: &std::path::Path,
-) -> anyhow::Result<()> {
-    let plugins_dir = config_dir.join("plugins");
-    match action {
-        sparrow::cli::PluginsAction::List => {
-            let registry = sparrow::capabilities::plugin::PluginRegistry::new(plugins_dir);
-            let plugins = registry.scan();
-            if plugins.is_empty() {
-                println!("No plugins installed.");
-            } else {
-                println!("Plugins ({}):", plugins.len());
-                for plugin in plugins {
-                    let audit = registry.audit(&plugin);
-                    println!(
-                        "  {} {} | commands:{} skills:{} hooks:{} | {}",
-                        plugin.manifest.name,
-                        plugin.manifest.version,
-                        plugin.manifest.commands.len(),
-                        plugin.manifest.skills.len(),
-                        plugin.manifest.hooks.len(),
-                        if audit.allowed { "allowed" } else { "blocked" }
-                    );
-                    for warning in audit.warnings {
-                        println!("    - {}", warning);
-                    }
-                }
-            }
-        }
-        sparrow::cli::PluginsAction::Install { source, allow } => {
-            let source_path = std::path::PathBuf::from(&source);
-            let mut allowlist = Vec::new();
-            if allow {
-                if let Ok(plugin) = sparrow::capabilities::plugin::load_plugin(&source_path) {
-                    allowlist.push(plugin.manifest.name);
-                }
-            }
-            let registry = sparrow::capabilities::plugin::PluginRegistry::new(plugins_dir)
-                .with_allowlist(allowlist);
-            let plugin = if source.starts_with("http://")
-                || source.starts_with("https://")
-                || source.ends_with(".git")
-                || source.contains("github.com")
-            {
-                registry.install_github(&source)?
-            } else {
-                registry.install_local(&source_path)?
-            };
-            println!("Installed plugin '{}'.", plugin.manifest.name);
-        }
-        sparrow::cli::PluginsAction::Rm { name } => {
-            let path = plugins_dir.join(&name);
-            if path.exists() {
-                std::fs::remove_dir_all(path)?;
-                println!("Removed plugin '{}'.", name);
-            } else {
-                println!("No plugin named '{}'.", name);
-            }
-        }
-    }
-    Ok(())
-}
-
-fn handle_tools(
-    action: sparrow::cli::ToolsAction,
-    config_store: &FsConfigStore,
-) -> anyhow::Result<()> {
-    match action {
-        sparrow::cli::ToolsAction::List { surface } => {
-            let metas = sparrow::tools::known_tool_metadata(surface.as_deref());
-            println!("Toolsets: {}", sparrow::tools::TOOLSETS.join(", "));
-            println!("Tools ({}):", metas.len());
-            for meta in metas {
-                println!(
-                    "  {:16} set:{:14} risk:{:?} auth:{} mutates:{} network:{} exec:{}",
-                    meta.name,
-                    meta.toolset,
-                    meta.risk,
-                    meta.requires_auth,
-                    meta.mutates_files,
-                    meta.network,
-                    meta.exec
-                );
-            }
-        }
-        sparrow::cli::ToolsAction::Enable { tool } => {
-            let mut cfg = config_store.load()?;
-            cfg.permissions.tools.deny.retain(|item| item != &tool);
-            if !cfg.permissions.tools.allow.contains(&tool) {
-                cfg.permissions.tools.allow.push(tool.clone());
-            }
-            config_store.save(&cfg)?;
-            println!("Tool '{}' enabled in permissions.", tool);
-        }
-        sparrow::cli::ToolsAction::Disable { tool } => {
-            let mut cfg = config_store.load()?;
-            cfg.permissions.tools.allow.retain(|item| item != &tool);
-            if !cfg.permissions.tools.deny.contains(&tool) {
-                cfg.permissions.tools.deny.push(tool.clone());
-            }
-            config_store.save(&cfg)?;
-            println!("Tool '{}' disabled in permissions.", tool);
-        }
-    }
-    Ok(())
-}
-
 // ─── Security audit ─────────────────────────────────────────────────────────────
-
-fn handle_security(
-    action: sparrow::cli::SecurityAction,
-    config: &sparrow::config::Config,
-) -> anyhow::Result<()> {
-    match action {
-        sparrow::cli::SecurityAction::Audit { json } => {
-            let audit = sparrow::security::SecurityAudit::run(config, &config.hooks);
-            if json {
-                println!("{}", audit.to_json());
-            } else {
-                println!("{}", audit.summary());
-                for f in &audit.findings {
-                    let tag = match f.severity {
-                        sparrow::security::Severity::Critical => "CRIT",
-                        sparrow::security::Severity::Warning => "WARN",
-                        sparrow::security::Severity::Info => "INFO",
-                    };
-                    println!("  [{}] {}: {}", tag, f.category, f.message);
-                    if !f.recommendation.is_empty() {
-                        println!("        → {}", f.recommendation);
-                    }
-                }
-            }
-        }
-    }
-    Ok(())
-}
 
 // ─── Context compaction / handoff ───────────────────────────────────────────────
 
-fn handle_compact(
-    task: Option<String>,
-    out: Option<std::path::PathBuf>,
-    json: bool,
-) -> anyhow::Result<()> {
-    use sparrow::context::HandoffDoc;
-
-    let task_str = task.unwrap_or_else(|| "ad-hoc handoff".into());
-    let doc = HandoffDoc::new(task_str);
-
-    let default_path = std::path::PathBuf::from(".sparrow/handoff").join(format!(
-        "{}.md",
-        chrono::Utc::now().format("%Y%m%dT%H%M%SZ")
-    ));
-    let path = out.unwrap_or(default_path);
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let md = doc.to_markdown();
-    std::fs::write(&path, &md)?;
-
-    if json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&serde_json::json!({
-                "ok": true,
-                "path": path.to_string_lossy(),
-                "doc": doc,
-            }))?
-        );
-    } else {
-        println!("handoff written: {}", path.display());
-        println!("---");
-        println!("{}", md);
-    }
-    Ok(())
-}
-
 // ─── GitHub Action / remote PR ──────────────────────────────────────────────────
-
-fn handle_github(action: sparrow::cli::GithubAction) -> anyhow::Result<()> {
-    use sparrow::cli::GithubAction;
-    use sparrow::github;
-
-    match action {
-        GithubAction::Review {
-            pr,
-            dry_run,
-            model,
-            allowed_tools,
-        } => {
-            let mut plan = github::plan_review(pr, model, allowed_tools, dry_run);
-            if dry_run {
-                println!("{}", serde_json::to_string_pretty(&plan)?);
-                return Ok(());
-            }
-            github::require_action_env()?;
-            plan.diff_preview = github::fetch_pr_diff(pr)?;
-            // We intentionally do NOT call the model here. The actual review
-            // is performed by `sparrow run` invoked separately by the Action
-            // composite step, so this command stays a pure data-fetcher.
-            println!("{}", serde_json::to_string_pretty(&plan)?);
-        }
-        GithubAction::Status => {
-            github::require_action_env()?;
-            println!("{}", github::ci_status()?);
-        }
-        GithubAction::Logs { run_id } => {
-            github::require_action_env()?;
-            println!("{}", github::ci_logs(&run_id)?);
-        }
-    }
-    Ok(())
-}
 
 // ─── MCP commands ───────────────────────────────────────────────────────────────
 
@@ -3445,75 +3175,6 @@ fn stop_gateway_process(pid: u32) -> anyhow::Result<()> {
             .status()?;
         if !status.success() {
             anyhow::bail!("kill failed for PID {}", pid);
-        }
-    }
-    Ok(())
-}
-
-fn handle_sessions(
-    action: sparrow::cli::SessionAction,
-    state_dir: &std::path::Path,
-) -> anyhow::Result<()> {
-    let store = sparrow::runtime::session::SessionStore::open(&state_dir.join("sessions.db"))?;
-    match action {
-        sparrow::cli::SessionAction::List => {
-            let sessions = store.list();
-            if sessions.is_empty() {
-                println!("No sessions stored.");
-            } else {
-                println!("Sessions ({}):", sessions.len());
-                for session in sessions {
-                    println!(
-                        "  {} | status:{} | updated:{} | {} bytes",
-                        session.id,
-                        session.status,
-                        session.updated_at,
-                        session.messages_json.len()
-                    );
-                }
-            }
-        }
-        sparrow::cli::SessionAction::Export { id, path } => {
-            let Some(session) = store.load(&id) else {
-                anyhow::bail!("session '{}' not found", id);
-            };
-            let output = path.unwrap_or_else(|| {
-                state_dir.join(format!("session-{}.json", sanitize_file_component(&id)))
-            });
-            if let Some(parent) = output.parent() {
-                std::fs::create_dir_all(parent)?;
-            }
-            std::fs::write(&output, serde_json::to_string_pretty(&session)?)?;
-            println!("Exported session '{}' to {}", id, output.display());
-        }
-        sparrow::cli::SessionAction::Cleanup { older_than_days } => {
-            let cutoff = chrono::Utc::now().timestamp() - (older_than_days as i64 * 86_400);
-            let mut removed = 0usize;
-            for session in store.list() {
-                if session.updated_at < cutoff {
-                    store.delete(&session.id)?;
-                    removed += 1;
-                }
-            }
-            println!(
-                "Removed {} session(s) older than {} day(s).",
-                removed, older_than_days
-            );
-        }
-        sparrow::cli::SessionAction::Search { query, limit } => {
-            let fts = sparrow::memory::fts::SessionSearch::open(state_dir.join("sessions_fts.db"))?;
-            let hits = fts.search(&query, limit)?;
-            if hits.is_empty() {
-                println!("No results for \"{}\".", query);
-            } else {
-                println!("Results for \"{}\" ({}):\n", query, hits.len());
-                for hit in &hits {
-                    let title = hit.title.as_deref().unwrap_or("(untitled)");
-                    println!("  {} — {}", hit.session_id, title);
-                    println!("    {}", hit.snippet);
-                    println!();
-                }
-            }
         }
     }
     Ok(())
@@ -4530,164 +4191,4 @@ async fn handle_webview(
 
 // ─── Init command ──────────────────────────────────────────────────────────────
 
-fn handle_init() -> anyhow::Result<()> {
-    let cwd = std::env::current_dir()?;
-    let sparrow_dir = cwd.join(".sparrow");
-    if sparrow_dir.exists() {
-        println!("Project already initialized (.sparrow/ exists)");
-        return Ok(());
-    }
-    std::fs::create_dir_all(&sparrow_dir)?;
-    std::fs::create_dir_all(sparrow_dir.join("agents"))?;
-    std::fs::create_dir_all(sparrow_dir.join("skills"))?;
-
-    // Write team config template
-    std::fs::write(
-        sparrow_dir.join("team.toml"),
-        r#"# Sparrow team config
-# This file is shared via version control.
-# Individual API keys go in ~/.config/sparrow/config.toml
-
-[routing]
-preferred = "nvidia"
-free_first = true
-
-[budget]
-daily_per_seat_usd = 5.0
-
-[org]
-max_autonomy = "trusted"
-blocked_paths = [".env", "*.pem", "secrets/"]
-"#,
-    )?;
-
-    println!("Initialized .sparrow/ in {}", cwd.display());
-    println!("  .sparrow/team.toml   — shared routing + budget + org policy");
-    println!("  .sparrow/agents/     — team-shared agent definitions");
-    println!("  .sparrow/skills/     — team-shared skills");
-    println!("\nCommit .sparrow/ to your repo to share with the team.");
-    Ok(())
-}
-
 // ─── Status command ────────────────────────────────────────────────────────────
-
-fn handle_status(
-    memory: &Arc<dyn Memory>,
-    config: &sparrow::config::Config,
-    scheduler: &Arc<sparrow::runtime::scheduler::MemoryScheduler>,
-    recorder: &Arc<sparrow::runtime::recorder::FsRecorder>,
-    state_dir: &std::path::PathBuf,
-) -> anyhow::Result<()> {
-    println!("Sparrow Status");
-    println!("──────────────");
-
-    // Budget & autonomy
-    println!(
-        "Budget     : ${:.2}/session  ${:.2}/day",
-        config.budget.session_usd, config.budget.daily_usd
-    );
-    println!("Autonomy   : {:?}", config.defaults.autonomy);
-    println!("Sandbox    : {}", config.defaults.sandbox);
-
-    // Gateway up/down
-    let gw_pid_path = state_dir.join("gateway.pid");
-    let gw_ws_open = std::net::TcpStream::connect_timeout(
-        &"127.0.0.1:9338".parse().unwrap(),
-        std::time::Duration::from_millis(150),
-    )
-    .is_ok();
-    let gw_pid_alive = gw_pid_path
-        .exists()
-        .then(|| {
-            std::fs::read_to_string(&gw_pid_path)
-                .ok()
-                .and_then(|s| s.trim().parse::<u32>().ok())
-        })
-        .flatten()
-        .map(|pid| {
-            #[cfg(windows)]
-            {
-                std::process::Command::new("tasklist")
-                    .args(["/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"])
-                    .output()
-                    .map(|o| String::from_utf8_lossy(&o.stdout).contains(&pid.to_string()))
-                    .unwrap_or(false)
-            }
-            #[cfg(not(windows))]
-            {
-                std::process::Command::new("kill")
-                    .args(["-0", &pid.to_string()])
-                    .status()
-                    .map(|s| s.success())
-                    .unwrap_or(false)
-            }
-        })
-        .unwrap_or(false);
-    println!(
-        "Gateway    : {}",
-        if gw_ws_open || gw_pid_alive {
-            "running"
-        } else {
-            "stopped  (start with: sparrow gateway start)"
-        }
-    );
-
-    // Scheduled jobs
-    let jobs = scheduler.list();
-    if jobs.is_empty() {
-        println!("Cron jobs  : none scheduled");
-    } else {
-        println!("Cron jobs  : {} scheduled", jobs.len());
-        for j in &jobs {
-            let st = if j.enabled { "active" } else { "paused" };
-            let next = j.next_run.as_deref().unwrap_or("pending");
-            println!("  [{}] {}  cron:{}  next:{}", st, j.id, j.cron, next);
-        }
-    }
-
-    // Recent transcripts
-    let transcripts = recorder.list_transcripts();
-    println!("Transcripts: {} total", transcripts.len());
-    for id in transcripts.iter().rev().take(3) {
-        if let Some(tr) = recorder.load(id) {
-            println!(
-                "  {} | {} events | {}",
-                id,
-                tr.events.len(),
-                tr.inputs.task.chars().take(50).collect::<String>()
-            );
-        }
-    }
-
-    // Memory & model cache
-    let mem_stats = memory.memory_stats();
-    println!(
-        "Memory     : {} facts | MEMORY.md {}/{} | USER.md {}/{} chars",
-        mem_stats.facts,
-        mem_stats.memory_chars,
-        mem_stats.memory_limit,
-        mem_stats.user_chars,
-        mem_stats.user_limit
-    );
-    let total_discovered: usize = sparrow::config::providers::provider_registry()
-        .iter()
-        .map(|p| {
-            memory
-                .get_discovered_models(&p.id)
-                .into_iter()
-                .filter(|model| sparrow::provider::discovery::is_chat_model_id(model))
-                .count()
-        })
-        .sum();
-    let static_count: usize = sparrow::config::providers::provider_registry()
-        .iter()
-        .map(|p| p.models.len())
-        .sum();
-    println!(
-        "Models     : {} static + {} discovered (cached 24h)",
-        static_count, total_discovered
-    );
-
-    println!("\nRun 'sparrow doctor' for full diagnostics.");
-    Ok(())
-}
