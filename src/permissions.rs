@@ -325,7 +325,7 @@ mod tests {
             tool_name: "edit",
             risk: RiskLevel::Mutating,
             args: &serde_json::json!({"path":"src/main.rs"}),
-            workspace_root: Path::new("C:/Sparrow"),
+            workspace_root: Path::new("/home/dev/project"),
             provider: None,
             surface: Some("cli"),
         });
@@ -339,7 +339,7 @@ mod tests {
             tool_name: "fs_write",
             risk: RiskLevel::Mutating,
             args: &serde_json::json!({"path":".git/config"}),
-            workspace_root: Path::new("C:/Sparrow"),
+            workspace_root: Path::new("/home/dev/project"),
             provider: None,
             surface: None,
         });
@@ -354,7 +354,7 @@ mod tests {
             tool_name: "exec",
             risk: RiskLevel::Exec,
             args: &serde_json::json!({"cmd":"cargo test"}),
-            workspace_root: Path::new("C:/Sparrow"),
+            workspace_root: Path::new("/home/dev/project"),
             provider: None,
             surface: None,
         });
