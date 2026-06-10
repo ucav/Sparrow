@@ -4,6 +4,8 @@ All notable changes to Sparrow will be documented in this file.
 
 ## [Unreleased]
 
+## [0.7.0] — 2026-06-10
+
 ### Added
 - **Main agent soul: REFLEXION-MAX PROTOCOL V2** — the default agent now
   carries a rigorous reasoning protocol (`src/engine/main_soul.md`, baked in
