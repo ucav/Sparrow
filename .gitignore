@@ -20,6 +20,7 @@ Thumbs.db
 auth.enc
 config.toml
 !config.example.toml
+.sparrow/routing_memory.json
 
 # Nova — agent personnel (local only)
 agents/nova.*

@@ -1,3 +1,5 @@
+pub mod learned;
+
 use std::sync::Arc;
 
 use crate::provider::{
@@ -6,7 +8,7 @@ use crate::provider::{
 
 // ─── Routing need ───────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TaskTier {
     Trivial,
     Small,
