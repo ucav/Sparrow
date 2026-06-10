@@ -516,7 +516,25 @@ pub enum ProfileAction {
 
 #[derive(Subcommand)]
 pub enum ImportSource {
+    /// Import from Claude Code (~/.claude/)
+    ClaudeCode {
+        /// Path to project with .claude/ directory (defaults to cwd)
+        path: Option<PathBuf>,
+    },
+    /// Import from OpenAI Codex CLI (~/.codex/)
+    Codex {
+        /// Path to project with codex config (defaults to cwd)
+        path: Option<PathBuf>,
+    },
+    /// Import from OpenCode (~/.config/opencode/)
+    OpenCode {
+        /// Path to project with opencode.json (defaults to cwd)
+        path: Option<PathBuf>,
+    },
+    /// Import from OpenClaw
     Openclaw { path: Option<PathBuf> },
+    /// Auto-detect installed tools and import all
+    Auto,
 }
 
 #[derive(Subcommand)]

@@ -3694,16 +3694,69 @@ fn parse_json_properties(raw: &str) -> anyhow::Result<serde_json::Value> {
 
 fn handle_full_import(source: sparrow::cli::ImportSource) -> anyhow::Result<()> {
     use sparrow::onboarding::migration::Migration;
-    match source {
+
+    let cwd = || std::env::current_dir().unwrap_or_default();
+
+    let (tool_name, result) = match source {
+        sparrow::cli::ImportSource::ClaudeCode { path } => {
+            let src = path.unwrap_or_else(cwd);
+            ("claude-code", Migration::import_claude_code(&src)?)
+        }
+        sparrow::cli::ImportSource::Codex { path } => {
+            let src = path.unwrap_or_else(cwd);
+            ("codex", Migration::import_codex(&src)?)
+        }
+        sparrow::cli::ImportSource::OpenCode { path } => {
+            let src = path.unwrap_or_else(cwd);
+            ("opencode", Migration::import_opencode(&src)?)
+        }
         sparrow::cli::ImportSource::Openclaw { path } => {
             let src =
                 path.unwrap_or_else(|| dirs::home_dir().unwrap_or_default().join(".openclaw"));
-            let result = Migration::import_openclaw(&src)?;
-            println!(
-                "Imported from OpenClaw: {} agents, {} skills, {} cron jobs",
-                result.agents, result.skills, result.cron_jobs
-            );
+            ("openclaw", Migration::import_openclaw(&src)?)
         }
+        sparrow::cli::ImportSource::Auto => {
+            let found = Migration::detect_installed();
+            if found.is_empty() {
+                println!(
+                    "No supported tools detected. Supported: claude-code, codex, opencode, openclaw, hermes"
+                );
+                return Ok(());
+            }
+            println!("Detected: {}", found.join(", "));
+            // Only import the first detected tool for now
+            let first = &found[0];
+            let cwd = cwd();
+            let result = match first.as_str() {
+                "claude-code" => Migration::import_claude_code(&cwd)?,
+                "codex" => Migration::import_codex(&cwd)?,
+                "opencode" => Migration::import_opencode(&cwd)?,
+                "openclaw" => {
+                    let src = dirs::home_dir().unwrap_or_default().join(".openclaw");
+                    Migration::import_openclaw(&src)?
+                }
+                "hermes" => {
+                    let src = dirs::home_dir().unwrap_or_default().join(".hermes");
+                    Migration::import_hermes(&src)?
+                }
+                _ => {
+                    println!("Tool {} not yet supported for auto-import.", first);
+                    return Ok(());
+                }
+            };
+            (first.as_str(), result)
+        }
+    };
+
+    println!("═══ Import from {} ═══", tool_name);
+    for line in &result.summary {
+        println!("  {}", line);
+    }
+    if result.agents > 0 || result.commands > 0 || result.config_entries > 0 {
+        println!(
+            "\nDone: {} agents, {} commands, {} config entries imported.",
+            result.agents, result.commands, result.config_entries
+        );
     }
     Ok(())
 }
