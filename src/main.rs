@@ -239,7 +239,7 @@ async fn async_main() -> anyhow::Result<()> {
         .await;
         if let Err(err) = setup_result {
             eprintln!("Setup Agent: {} — falling back to interactive setup.", err);
-            handle_setup(&config, &config_store).await?;
+            sparrow::cmd_handlers::setup_cmd::handle_setup(&config, &config_store).await?;
         }
         // Reload config after setup wrote it
         if let Ok(fresh) = config_store.load() {
@@ -301,7 +301,7 @@ async fn async_main() -> anyhow::Result<()> {
                 .await;
                 if let Err(err) = setup_result {
                     eprintln!("Setup Agent: {} - falling back to interactive setup.", err);
-                    handle_setup(&config, &config_store).await?;
+                    sparrow::cmd_handlers::setup_cmd::handle_setup(&config, &config_store).await?;
                 }
                 if let Ok(fresh) = config_store.load() {
                     config = fresh;
@@ -470,7 +470,7 @@ async fn async_main() -> anyhow::Result<()> {
             if list {
                 refresh_discovery_cache(memory.clone(), &config, false, false).await;
                 println!("Configured providers:");
-                let effective = effective_provider_configs(&config);
+                let effective = sparrow::config::effective_provider_configs(&config);
                 for (name, pconfig) in &effective {
                     println!("  {} (adapter: {})", name, pconfig.adapter);
                     for model in &pconfig.models {
@@ -937,7 +937,7 @@ async fn async_main() -> anyhow::Result<()> {
                     "Setup Agent failed: {}\n→ falling back to the legacy interactive flow.",
                     err
                 );
-                handle_setup(&config, &config_store).await?;
+                sparrow::cmd_handlers::setup_cmd::handle_setup(&config, &config_store).await?;
             }
         }
         Some(Commands::Demo) => {
@@ -1300,64 +1300,6 @@ fn migrate_inline_provider_keys(config: &mut sparrow::config::Config, store: &Fs
     }
 }
 
-fn effective_provider_configs(
-    config: &sparrow::config::Config,
-) -> std::collections::HashMap<String, ProviderConfig> {
-    let mut effective = config.providers.clone();
-    let auth = sparrow::auth::store::ChainedAuthStore::new(config.config_dir.clone());
-
-    for (name, pconfig) in effective.iter_mut() {
-        if pconfig.models.is_empty() {
-            pconfig.models = sparrow::config::providers::default_models(name);
-        }
-    }
-
-    for def in sparrow::config::providers::provider_registry() {
-        if effective.contains_key(&def.id) {
-            continue;
-        }
-
-        let has_env_credential = def
-            .api_key_env
-            .as_ref()
-            .map(|env| {
-                if def.adapter == "ollama" {
-                    true
-                } else {
-                    std::env::var(env)
-                        .map(|value| !value.trim().is_empty())
-                        .unwrap_or(false)
-                }
-            })
-            .unwrap_or(def.adapter == "ollama");
-        let has_stored_credential = auth.get(&def.id).is_some();
-
-        if !has_env_credential && !has_stored_credential {
-            continue;
-        }
-
-        let base_url = if def.adapter == "ollama" {
-            std::env::var("OLLAMA_HOST")
-                .ok()
-                .or(Some(def.base_url.clone()))
-        } else {
-            Some(def.base_url.clone())
-        };
-
-        effective.insert(
-            def.id.clone(),
-            ProviderConfig {
-                adapter: def.adapter,
-                base_url,
-                models: sparrow::config::providers::default_models(&def.id),
-                api_key_env: def.api_key_env,
-            },
-        );
-    }
-
-    effective
-}
-
 async fn refresh_discovery_cache(
     memory: Arc<dyn Memory>,
     config: &sparrow::config::Config,
@@ -1454,7 +1396,7 @@ fn build_provider_brains(
     let mut providers: std::collections::HashMap<String, Vec<Arc<dyn sparrow::provider::Brain>>> =
         std::collections::HashMap::new();
 
-    for (name, pconfig) in effective_provider_configs(config) {
+    for (name, pconfig) in sparrow::config::effective_provider_configs(config) {
         // A forced model (--model provider:model) is exclusive: build only that
         // provider so the router can't fall back to a cheaper/free other provider.
         if let Some((forced_provider, _)) = &config.forced_model {
@@ -3869,176 +3811,6 @@ fn parse_json_properties(raw: &str) -> anyhow::Result<serde_json::Value> {
         anyhow::bail!("properties must be a JSON object");
     }
     Ok(value)
-}
-
-// ─── Setup command ──────────────────────────────────────────────────────────────
-
-async fn handle_setup(
-    config: &sparrow::config::Config,
-    store: &FsConfigStore,
-) -> anyhow::Result<()> {
-    use sparrow::tui::theme::boot_sequence;
-    use std::io::{self, Write};
-
-    for line in boot_sequence() {
-        println!("{}", line);
-    }
-    println!();
-    println!("═══ SPARROW SETUP ═══");
-    println!();
-    println!("Sparrow setup configures providers, model routing, budget, and autonomy.");
-    println!();
-    println!("Current configuration:");
-    println!("  Config dir : {:?}", config.config_dir);
-    println!("  State dir  : {:?}", config.state_dir);
-    println!("  Autonomy   : {:?}", config.defaults.autonomy);
-    println!(
-        "  Budget     : ${}/day, ${}/session",
-        config.budget.daily_usd, config.budget.session_usd
-    );
-    println!();
-
-    let effective = effective_provider_configs(config);
-    if effective.is_empty() {
-        println!("No provider detected yet.");
-    } else {
-        println!("Detected/configured providers:");
-        for (name, pconfig) in &effective {
-            println!("  {} (adapter: {})", name, pconfig.adapter);
-            for model in &pconfig.models {
-                println!("    - {}", model);
-            }
-        }
-    }
-
-    println!();
-    println!("Recommended first setup:");
-    println!("  - local/free: ollama");
-    println!("  - cheap cloud: nvidia");
-    println!("  - strong cloud: anthropic");
-    println!();
-    print!("Configure or update a provider now? [Y/n] ");
-    io::stdout().flush().ok();
-    let mut answer = String::new();
-    io::stdin().read_line(&mut answer)?;
-    if matches!(answer.trim().to_lowercase().as_str(), "n" | "no" | "non") {
-        println!("Setup left unchanged. Run 'sparrow console' for the WebView config panel.");
-        return Ok(());
-    }
-
-    let registry = sparrow::config::providers::provider_registry();
-    println!("\nAvailable providers:");
-    for def in registry.iter().take(18) {
-        let env_state = def
-            .api_key_env
-            .as_ref()
-            .map(|env| {
-                if std::env::var(env)
-                    .map(|v| !v.trim().is_empty())
-                    .unwrap_or(false)
-                {
-                    "env found"
-                } else {
-                    "env missing"
-                }
-            })
-            .unwrap_or("no key needed");
-        println!("  {:18} {:22} {}", def.id, def.label, env_state);
-    }
-    println!("  custom             Custom Endpoint");
-
-    print!("\nProvider id [nvidia]: ");
-    io::stdout().flush().ok();
-    let mut provider_id = String::new();
-    io::stdin().read_line(&mut provider_id)?;
-    let provider_id = provider_id.trim();
-    let provider_id = if provider_id.is_empty() {
-        "nvidia"
-    } else {
-        provider_id
-    };
-    let Some(def) = sparrow::config::providers::find_provider(provider_id) else {
-        anyhow::bail!(
-            "Unknown provider '{}'. Use 'sparrow model --list' or the WebView config panel.",
-            provider_id
-        );
-    };
-
-    let default_models = sparrow::config::providers::default_models(&def.id);
-    let default_model = default_models
-        .first()
-        .cloned()
-        .unwrap_or_else(|| "model".into());
-    print!("Model [{}]: ", default_model);
-    io::stdout().flush().ok();
-    let mut model = String::new();
-    io::stdin().read_line(&mut model)?;
-    let model = model.trim();
-    let model = if model.is_empty() {
-        default_model
-    } else {
-        model.to_string()
-    };
-
-    let mut next = config.clone();
-    next.providers.insert(
-        def.id.clone(),
-        ProviderConfig {
-            adapter: def.adapter.clone(),
-            base_url: Some(def.base_url.clone()),
-            models: vec![model],
-            api_key_env: def.api_key_env.clone(),
-        },
-    );
-
-    print!(
-        "Default routing provider for medium tasks [{}]? [Y/n] ",
-        def.id
-    );
-    io::stdout().flush().ok();
-    let mut route_answer = String::new();
-    io::stdin().read_line(&mut route_answer)?;
-    if !matches!(
-        route_answer.trim().to_lowercase().as_str(),
-        "n" | "no" | "non"
-    ) {
-        next.routing.policy.insert("medium".into(), def.id.clone());
-        if def.tags.iter().any(|t| t == "strong" || t == "code") {
-            next.routing.policy.insert("small".into(), def.id.clone());
-        }
-    }
-
-    if let Some(env_name) = &def.api_key_env {
-        if std::env::var(env_name)
-            .map(|v| !v.trim().is_empty())
-            .unwrap_or(false)
-        {
-            println!(
-                "Credential: {} is already present in environment.",
-                env_name
-            );
-        } else {
-            print!(
-                "Paste API key for {} now, or leave empty to use env later: ",
-                def.label
-            );
-            io::stdout().flush().ok();
-            let mut key = String::new();
-            io::stdin().read_line(&mut key)?;
-            let key = key.trim();
-            if !key.is_empty() {
-                let auth = sparrow::auth::store::ChainedAuthStore::new(next.config_dir.clone());
-                auth.set(&def.id, Credential::api_key(key.to_string()))?;
-                println!("Credential stored for {}.", def.id);
-            }
-        }
-    }
-
-    store.save(&next)?;
-    println!("\nSetup saved.");
-    println!("Run 'sparrow doctor' to verify or 'sparrow console' for the graphical WebView.");
-
-    Ok(())
 }
 
 // ─── JSON NDJSON run ────────────────────────────────────────────────────────────

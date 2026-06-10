@@ -369,3 +369,61 @@ impl ConfigStore for FsConfigStore {
         Ok(())
     }
 }
+
+/// Merge configured providers with auto-detected ones (env vars, stored credentials).
+/// Used by setup and routing to show what's actually available.
+pub fn effective_provider_configs(config: &Config) -> HashMap<String, ProviderConfig> {
+    let mut effective = config.providers.clone();
+    let auth = crate::auth::store::ChainedAuthStore::new(config.config_dir.clone());
+
+    for (name, pconfig) in effective.iter_mut() {
+        if pconfig.models.is_empty() {
+            pconfig.models = providers::default_models(name);
+        }
+    }
+
+    for def in providers::provider_registry() {
+        if effective.contains_key(&def.id) {
+            continue;
+        }
+
+        let has_env_credential = def
+            .api_key_env
+            .as_ref()
+            .map(|env| {
+                if def.adapter == "ollama" {
+                    true
+                } else {
+                    std::env::var(env)
+                        .map(|value| !value.trim().is_empty())
+                        .unwrap_or(false)
+                }
+            })
+            .unwrap_or(def.adapter == "ollama");
+        let has_stored_credential = auth.get(&def.id).is_some();
+
+        if !has_env_credential && !has_stored_credential {
+            continue;
+        }
+
+        let base_url = if def.adapter == "ollama" {
+            std::env::var("OLLAMA_HOST")
+                .ok()
+                .or(Some(def.base_url.clone()))
+        } else {
+            Some(def.base_url.clone())
+        };
+
+        effective.insert(
+            def.id.clone(),
+            ProviderConfig {
+                adapter: def.adapter,
+                base_url,
+                models: providers::default_models(&def.id),
+                api_key_env: def.api_key_env,
+            },
+        );
+    }
+
+    effective
+}
