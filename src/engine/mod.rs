@@ -1544,7 +1544,8 @@ impl Engine {
         let mut estimated_output_unconfirmed: u64 = 0;
         let mut estimated_cost_unconfirmed: f64 = 0.0;
         let mut cost_usd: f64 = 0.0;
-        let diffs: Vec<crate::event::FileDiff> = Vec::new();
+        let mut total_tools_called: usize = 0;
+        let mut diffs: Vec<crate::event::FileDiff> = Vec::new();
         let mut current_chain_idx = 0usize;
         let mut tool_results_pending: Vec<(
             String,
@@ -1949,6 +1950,7 @@ impl Engine {
                             BrainEvent::ToolUseStart { id, name } => {
                                 current_tool_name = name.clone();
                                 tools_called_this_turn.push(name.clone());
+                                total_tools_called += 1;
                                 current_tool_json.clear();
                                 // Open this call's per-id accumulator (A1).
                                 pending_tools.insert(id.clone(), (name.clone(), String::new()));
@@ -3219,6 +3221,8 @@ impl Engine {
             "waiting_for_approval".into()
         } else if denied_by_approval {
             "denied".into()
+        } else if diffs.is_empty() && total_tools_called == 0 {
+            "no actions taken".into()
         } else {
             "completed".into()
         };

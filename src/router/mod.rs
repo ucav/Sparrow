@@ -193,6 +193,12 @@ impl BasicRouter {
     }
 
     fn resolve_provider(&self, need: &RoutingNeed) -> &str {
+        // Manual mode: always use the user's chosen provider, no fallback ever.
+        if self.routing_mode == "manual" {
+            if let Some(ref pref) = self.preferred_provider {
+                return pref.as_str();
+            }
+        }
         // If a global preferred provider is configured, use it for all tiers.
         // The scoring loop will still add a +25 bonus for this provider so it
         // bubbles to the top; capability fallback still kicks in if it lacks
@@ -326,6 +332,7 @@ impl Router for BasicRouter {
         // model first (works offline, $0).
         if matches!(need.tier, TaskTier::Trivial | TaskTier::Small)
             && (preferred_is_local || self.free_first)
+            && self.routing_mode != "manual"
         {
             if let Some(pos) = result.iter().position(|(prov, b)| {
                 (prov == "local" || prov == "ollama") || b.caps().cost_input_per_mtok == 0.0
