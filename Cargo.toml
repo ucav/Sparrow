@@ -1,6 +1,6 @@
 [package]
 name = "sparrow-cli"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2024"
 description = "A local-first Rust agent cockpit — route, run, replay, rewind"
 license = "MIT"
@@ -8,6 +8,11 @@ authors = ["ucav <abdou@users.noreply.github.com>"]
 repository = "https://github.com/ucav/Sparrow"
 keywords = ["agent", "ai", "cli", "llm", "coding-assistant"]
 categories = ["command-line-utilities", "development-tools"]
+exclude = [
+    "scripts/launch-*",
+    "scripts/webview-card.html",
+    "ROADMAP.md",
+]
 
 [[bin]]
 name = "sparrow"

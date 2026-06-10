@@ -71,3 +71,8 @@ get_twitter_followers.py
 fun-calculator.html
 greet.py
 haiku.txt
+
+# Launch scripts — local dev tools, never in package
+scripts/launch-*
+scripts/webview-card.html
+ROADMAP.md
