@@ -1,8 +1,8 @@
 // src/cmd_handlers/setup_cmd.rs — sparrow setup command handler
 
-use sparrow::auth::Credential;
 use sparrow::auth::store::ChainedAuthStore;
-use sparrow::config::{Config, FsConfigStore, ProviderConfig};
+use sparrow::auth::{AuthStore, Credential};
+use sparrow::config::{Config, ConfigStore, FsConfigStore, ProviderConfig};
 
 pub async fn handle_setup(config: &Config, store: &FsConfigStore) -> anyhow::Result<()> {
     use sparrow::tui::theme::boot_sequence;

@@ -105,6 +105,9 @@ impl EventFilter {
                 Event::RunFinished { run, .. } => &run.0,
                 Event::Error { run, .. } => &run.0,
                 Event::Compacted { run, .. } => &run.0,
+                // Global event with no per-run id — never matches a specific
+                // subscriber, so route to the empty bucket.
+                Event::UpdateAvailable { .. } => "",
             };
             if event_run != rid {
                 return false;
@@ -139,6 +142,7 @@ impl EventFilter {
                 Event::RunFinished { .. } => "RunFinished",
                 Event::Error { .. } => "Error",
                 Event::Compacted { .. } => "Compacted",
+                Event::UpdateAvailable { .. } => "UpdateAvailable",
             };
             if !self.event_types.contains(&event_type.to_string()) {
                 return false;

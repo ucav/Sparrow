@@ -1,6 +1,5 @@
 // src/cmd_handlers/handle_daemon_cmd.rs
 use super::prelude::*;
-use super::prelude::*;
 pub async fn handle_daemon(
     config: &sparrow::config::Config,
     memory: Arc<dyn Memory>,
@@ -37,7 +36,7 @@ pub async fn handle_daemon(
         tokio::spawn(async move {
             tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             if let Some(info) = sparrow::update::check_update() {
-                let _ = bus.publish(sparrow::event::Event::UpdateAvailable {
+                bus.publish(sparrow::event::Event::UpdateAvailable {
                     current: info.current,
                     latest: info.latest,
                     download_url: info.download_url,

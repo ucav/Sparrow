@@ -23,6 +23,11 @@
     clippy::while_let_loop
 )]
 
+// The cmd_handlers/ modules were extracted from main.rs (a binary) and
+// reference this crate by its public name `sparrow::…`. From inside the
+// lib crate that path would normally fail — this alias makes it work.
+extern crate self as sparrow;
+
 pub mod agent;
 pub mod auth;
 pub mod autonomy;
@@ -30,6 +35,7 @@ pub mod capabilities;
 pub mod chat;
 pub mod cli;
 pub mod cmd_handlers;
+pub mod commands;
 pub mod completions;
 pub mod config;
 pub mod console;

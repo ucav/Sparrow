@@ -109,7 +109,7 @@ pub fn path_list_or_empty(values: &[std::path::PathBuf]) -> String {
 
 // ─── Swarm command ──────────────────────────────────────────────────────────────
 
-async fn run_swarm(
+pub async fn run_swarm(
     task: &str,
     config: &sparrow::config::Config,
     memory: Arc<dyn Memory>,

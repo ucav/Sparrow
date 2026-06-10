@@ -1,6 +1,4 @@
 // src/cmd_handlers/handle_plugins_cmd.rs
-use super::prelude::*;
-use super::prelude::*;
 pub fn handle_plugins(
     action: sparrow::cli::PluginsAction,
     config_dir: &std::path::Path,

@@ -168,6 +168,8 @@ fn event_run_id(event: &Event) -> &str {
         | Event::RunFinished { run, .. }
         | Event::Error { run, .. }
         | Event::Compacted { run, .. } => &run.0,
+        // Global event with no per-run id; bucket it as empty.
+        Event::UpdateAvailable { .. } => "",
     }
 }
 

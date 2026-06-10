@@ -106,6 +106,25 @@ pub enum Commands {
         json: bool,
     },
 
+    /// Adversarial review of the current local diff (uncommitted, staged,
+    /// and commits ahead of `--base`). Read-only — no edits, no commits, no
+    /// network beyond the model call. Findings are structured around
+    /// security, correctness, regressions, performance, and readability.
+    Review {
+        /// Base ref to diff against (defaults to `origin/main`, then `main`,
+        /// then `HEAD~1`).
+        #[arg(long)]
+        base: Option<String>,
+
+        /// Only review changes touching these path globs (repeatable).
+        #[arg(long)]
+        paths: Vec<String>,
+
+        /// Print the prompt the model will see and exit (no model call).
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Interactive multi-turn chat
     Chat,
 

@@ -245,6 +245,83 @@ fn prompt_cache_key(scope: &str, workspace_root: &std::path::Path, tools: &[Tool
 
 // ─── System prompt / SOUL ───────────────────────────────────────────────────────
 
+/// Best-effort snapshot of the workspace's git state — branch, HEAD, and a
+/// dirty-file summary — for injection into the system prompt. Returns None
+/// if the path isn't a git repo or git isn't installed.
+fn read_git_context(workspace_root: &PathBuf) -> Option<String> {
+    use std::process::Command;
+    use std::time::Duration;
+    if !workspace_root.join(".git").exists() {
+        return None;
+    }
+    fn run(workspace_root: &PathBuf, args: &[&str]) -> Option<String> {
+        let mut cmd = Command::new("git");
+        cmd.arg("-C").arg(workspace_root).args(args);
+        let child = cmd
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .ok()?;
+        // 1.5s ceiling per call: a corrupt repo or filesystem hang must not
+        // stall a run (we'd rather silently skip git context than wait).
+        let deadline = std::time::Instant::now() + Duration::from_millis(1_500);
+        let mut child = child;
+        loop {
+            match child.try_wait().ok()? {
+                Some(_) => break,
+                None if std::time::Instant::now() > deadline => {
+                    let _ = child.kill();
+                    return None;
+                }
+                None => std::thread::sleep(Duration::from_millis(20)),
+            }
+        }
+        let output = child.wait_with_output().ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let s = String::from_utf8(output.stdout).ok()?;
+        Some(s.trim().to_string())
+    }
+
+    let branch = run(workspace_root, &["rev-parse", "--abbrev-ref", "HEAD"])
+        .filter(|b| !b.is_empty())
+        .unwrap_or_else(|| "(detached)".into());
+    let head = run(workspace_root, &["rev-parse", "--short", "HEAD"]).unwrap_or_default();
+    let head_subject = run(workspace_root, &["log", "-1", "--pretty=%s"]).unwrap_or_default();
+    let status_porcelain = run(workspace_root, &["status", "--porcelain"]).unwrap_or_default();
+
+    let mut block = String::from("## Git context\n");
+    block.push_str(&format!("- branch: `{}`\n", branch));
+    if !head.is_empty() {
+        if head_subject.is_empty() {
+            block.push_str(&format!("- HEAD: `{}`\n", head));
+        } else {
+            block.push_str(&format!("- HEAD: `{}` — {}\n", head, head_subject));
+        }
+    }
+    if status_porcelain.is_empty() {
+        block.push_str("- working tree: clean\n");
+    } else {
+        let lines: Vec<&str> = status_porcelain.lines().collect();
+        let shown: Vec<&str> = lines.iter().take(8).copied().collect();
+        block.push_str(&format!("- working tree: {} dirty file(s)\n", lines.len()));
+        for line in shown {
+            block.push_str(&format!("    {}\n", line));
+        }
+        if lines.len() > 8 {
+            block.push_str(&format!("    … {} more\n", lines.len() - 8));
+        }
+    }
+    block.push_str(
+        "\nUse this snapshot to ground answers about \"what changed\" or \
+         \"what branch are we on\" without re-running git. It is the state \
+         at the start of THIS run; if you make file edits, the snapshot \
+         here is stale by the next turn.",
+    );
+    Some(block)
+}
+
 fn build_system_prompt(
     identity: &Identity,
     workspace_root: &PathBuf,
@@ -305,6 +382,15 @@ the user's actual filesystem.
     // souls — injecting a generic protocol over them would dilute their roles.
     if identity.name == "sparrow" {
         parts.push(include_str!("main_soul.md").trim().to_string());
+    }
+
+    // ── Auto git context ──────────────────────────────────────────────────
+    // What Claude Code does: every prompt knows the current branch, HEAD
+    // commit, and dirty files without the user having to paste them. Reads
+    // the workspace's `.git/` via a few `git` invocations capped at 1.5 s
+    // each so a corrupt repo can never stall a run. Silent on no-op repos.
+    if let Some(git_block) = read_git_context(workspace_root) {
+        parts.push(git_block);
     }
 
     if !facts.is_empty() {
@@ -1949,9 +2035,15 @@ impl Engine {
                                             }
                                         }
 
+                                        // Pass tool name + args to the hook
+                                        // matcher so PreToolUse hooks can
+                                        // inspect the actual payload (e.g.
+                                        // protect-sensitive-files needs the
+                                        // file path, not just "fs_write").
+                                        let hook_ctx = format!("{} {}", proposed.tool_name, args);
                                         let hook_results = self
                                             .hooks
-                                            .execute(&HookEvent::PreToolUse, &proposed.tool_name)
+                                            .execute(&HookEvent::PreToolUse, &hook_ctx)
                                             .await;
                                         if let Some(reason) = hook_results
                                             .iter()
@@ -2276,6 +2368,14 @@ impl Engine {
                                             true,
                                         ));
                                     }
+                                    // The Allow* tiered decisions came in
+                                    // with the persistent-permissions
+                                    // feature; treat them like Allow at the
+                                    // engine level (the autonomy/permission
+                                    // store handles persistence above).
+                                    Decision::AllowOnce
+                                    | Decision::AllowSession
+                                    | Decision::AllowAlways => {}
                                 }
 
                                 current_tool_json.clear();
@@ -3077,13 +3177,18 @@ mod tests {
             &[],
             &[],
         );
+        // Anchors taken from src/engine/main_soul.md. The soul has been
+        // rewritten more than once; we pin the load-bearing concepts (tier
+        // triage, the tribunal with its three reviewer roles, the
+        // anti-simulation rule, the "real execution beats mental
+        // simulation" instruction) rather than any single section header.
         for marker in [
-            "REFLEXION-MAX PROTOCOL",
-            "TRIAGE",
-            "THE SKEPTIC",
-            "ANTI-SIMULATION",
-            "ANTI-SYCOPHANCY",
-            "STOP CONDITION",
+            "TIER TRIAGE",
+            "Tribunal",
+            "Skeptic",
+            "Adversary",
+            "Anti-simulation",
+            "Real execution beats",
         ] {
             assert!(prompt.contains(marker), "main soul must contain `{marker}`");
         }
@@ -3097,8 +3202,10 @@ mod tests {
             personality: "structured".into(),
         };
         let prompt = build_system_prompt(&planner, &PathBuf::from("."), &[], &[], &[], &[], &[]);
+        // The main soul's signature section header — if it leaks into a
+        // named identity, the focused soul is being diluted.
         assert!(
-            !prompt.contains("REFLEXION-MAX PROTOCOL"),
+            !prompt.contains("TIER TRIAGE"),
             "named souls must not be diluted by the main protocol"
         );
     }

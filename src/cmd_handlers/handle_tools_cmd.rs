@@ -1,6 +1,5 @@
 // src/cmd_handlers/handle_tools_cmd.rs
 use super::prelude::*;
-use super::prelude::*;
 pub fn handle_tools(
     action: sparrow::cli::ToolsAction,
     config_store: &FsConfigStore,

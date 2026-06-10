@@ -1,5 +1,6 @@
 // src/cmd_handlers/handle_agent_cmd.rs
 use super::prelude::*;
+use sparrow::autonomy::Checkpoints; // for GitCheckpoints::rewind, a trait method
 pub async fn handle_agent(
     action: sparrow::cli::AgentAction,
     store: &Arc<dyn AgentStore>,

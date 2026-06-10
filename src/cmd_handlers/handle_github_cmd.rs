@@ -1,6 +1,4 @@
 // src/cmd_handlers/handle_github_cmd.rs
-use super::prelude::*;
-use super::prelude::*;
 pub fn handle_github(action: sparrow::cli::GithubAction) -> anyhow::Result<()> {
     use sparrow::cli::GithubAction;
     use sparrow::github;

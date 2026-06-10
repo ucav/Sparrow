@@ -20,6 +20,13 @@ pub struct UpdateInfo {
     pub install_cmd: String,
 }
 
+impl std::fmt::Display for UpdateInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Status lines just want: "v0.6.2 → v0.7.1".
+        write!(f, "v{} → v{}", self.current, self.latest)
+    }
+}
+
 impl UpdateInfo {
     pub fn up_to_date(current: &str) -> Self {
         UpdateInfo {

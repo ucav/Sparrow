@@ -72,12 +72,54 @@ pub fn handle_skills(
             println!("Installed skill '{}'.", name);
         }
         sparrow::cli::SkillsAction::Update { name } => {
-            let Some(skill) = library.get(&name) else {
-                println!("No skill named '{}'.", name);
-                return Ok(());
+            // Re-read the SKILL.md from disk and reinstall it. The previous
+            // implementation just re-`add`-ed the already-cached struct,
+            // which was a no-op — an edit on disk never made it into the
+            // library until the user restarted Sparrow. Now `update` is the
+            // explicit "I edited SKILL.md, pick it up" command.
+            let Some(root) = library.skills_root() else {
+                anyhow::bail!(
+                    "this library is in-memory only — `sparrow skills update` \
+                     needs a filesystem-backed library."
+                );
             };
+            let dir = root.join(&name);
+            let file = if dir.is_dir() {
+                dir.join("SKILL.md")
+            } else {
+                root.join(format!("{}.md", name))
+            };
+            if !file.exists() {
+                anyhow::bail!(
+                    "No SKILL.md on disk for '{}' (looked at {}). Use \
+                     `sparrow skills install <source>` to fetch it first.",
+                    name,
+                    file.display()
+                );
+            }
+            let content = std::fs::read_to_string(&file)?;
+            let relative_source = file
+                .strip_prefix(&root)
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| file.to_string_lossy().to_string());
+            let Some(skill) =
+                sparrow::capabilities::Skill::from_markdown(&content, &relative_source)
+            else {
+                anyhow::bail!(
+                    "Could not parse SKILL.md at {} — check the frontmatter.",
+                    file.display()
+                );
+            };
+            let body_len = skill.body.len();
+            let trigger_count = skill.trigger.len();
             library.add(skill)?;
-            println!("Skill '{}' refreshed.", name);
+            println!(
+                "Skill '{}' updated from {} ({} chars, {} triggers).",
+                name,
+                file.display(),
+                body_len,
+                trigger_count
+            );
         }
         sparrow::cli::SkillsAction::Prune => {
             let removed = library.prune(0.2)?;

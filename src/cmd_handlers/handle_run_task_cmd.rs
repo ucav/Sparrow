@@ -1,5 +1,42 @@
 // src/cmd_handlers/handle_run_task_cmd.rs
 use super::prelude::*;
+
+/// Snapshot the relevant parts of the config for the recorder, with any
+/// inline secrets in provider entries replaced by "<redacted>". Lives here
+/// (rather than in main.rs) so any handler can reach it via the prelude.
+pub fn redacted_config_snapshot(config: &sparrow::config::Config) -> serde_json::Value {
+    let looks_like_inline_secret = super::handle_agent_cmd::looks_like_inline_secret;
+    serde_json::json!({
+        "theme": config.theme,
+        "autonomy": config.defaults.autonomy,
+        "sandbox": config.defaults.sandbox,
+        "budget": {
+            "daily": config.budget.daily_usd,
+            "session": config.budget.session_usd
+        },
+        "routing": {
+            "free_first": config.routing.free_first,
+            "policy": config.routing.policy,
+            "preferred_provider": config.routing.preferred_provider
+        },
+        "providers": config.providers.iter().map(|(k, v)| {
+            let api_key = match &v.api_key_env {
+                Some(env) if looks_like_inline_secret(env) => Some("<redacted>".to_string()),
+                Some(env) => Some(env.clone()),
+                None => None,
+            };
+            (k.clone(), serde_json::json!({
+                "adapter": v.adapter,
+                "models": v.models,
+                "api_key_env": api_key,
+                "has_key": v.api_key_env.as_ref()
+                    .map(|env| std::env::var(env).map(|v| !v.trim().is_empty()).unwrap_or(false))
+                    .unwrap_or(false)
+            }))
+        }).collect::<serde_json::Map<_, _>>()
+    })
+}
+
 pub async fn run_task(
     task: &str,
     config: &sparrow::config::Config,

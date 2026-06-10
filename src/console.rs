@@ -1817,6 +1817,7 @@ async fn get_permissions(
             ok: false,
             message: "config unavailable".into(),
             permissions: None,
+            persisted_tools: std::collections::HashMap::new(),
         });
     };
     let cfg = shared.read().expect("config lock poisoned").clone();
@@ -1863,10 +1864,11 @@ async fn save_permissions(
                 "ask_user" => crate::event::Decision::AskUser,
                 _ => continue,
             };
+            let config_dir = cfg.config_dir.clone();
             let _ = cfg
                 .permissions
                 .store
-                .set_and_save(tool_name, &decision, &cfg.config_dir);
+                .set_and_save(tool_name, &decision, &config_dir);
         }
     }
 

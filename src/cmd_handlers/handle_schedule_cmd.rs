@@ -1,6 +1,5 @@
 // src/cmd_handlers/handle_schedule_cmd.rs
 use super::prelude::*;
-use super::prelude::*;
 pub async fn handle_schedule(
     task: &str,
     cron: &str,

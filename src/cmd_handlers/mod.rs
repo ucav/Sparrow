@@ -16,6 +16,7 @@ pub mod handle_plan_cmd;
 pub mod handle_plugins_cmd;
 pub mod handle_profile_cmd;
 pub mod handle_replay_cmd;
+pub mod handle_review_cmd;
 pub mod handle_run_task_cmd;
 pub mod handle_schedule_cmd;
 pub mod handle_security_cmd;

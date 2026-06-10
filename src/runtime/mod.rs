@@ -264,6 +264,14 @@ impl SparrowRuntime {
         tracing::debug!("Unix socket not available on this platform; skipping.");
         Ok(())
     }
+
+    /// Public accessor so surfaces can publish events (e.g. update
+    /// notifications). Lives on the concrete type, not on the `Runtime`
+    /// trait — adding it to the trait would force every Runtime impl to
+    /// expose its internal EventBus.
+    pub fn event_bus(&self) -> &EventBus {
+        &self.event_bus
+    }
 }
 
 #[async_trait::async_trait]
@@ -392,11 +400,6 @@ impl Runtime for SparrowRuntime {
 
     fn subscribe_all(&self) -> tokio::sync::broadcast::Receiver<Event> {
         self.event_bus.subscribe_all()
-    }
-
-    /// Public accessor so surfaces can publish events (e.g. update notifications).
-    pub fn event_bus(&self) -> &EventBus {
-        &self.event_bus
     }
 
     async fn interrupt(&self, run_id: &str, msg: &str) -> anyhow::Result<()> {

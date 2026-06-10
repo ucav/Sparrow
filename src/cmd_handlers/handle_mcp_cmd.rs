@@ -1,6 +1,5 @@
 // src/cmd_handlers/handle_mcp_cmd.rs
 use super::prelude::*;
-use super::prelude::*;
 pub async fn handle_mcp(
     action: sparrow::cli::McpAction,
     config_dir: &std::path::PathBuf,

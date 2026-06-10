@@ -1,6 +1,5 @@
 // src/cmd_handlers/handle_memory_cmd.rs
 use super::prelude::*;
-use super::prelude::*;
 pub fn handle_memory(
     action: sparrow::cli::MemoryAction,
     memory: &Arc<dyn Memory>,

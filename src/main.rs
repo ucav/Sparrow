@@ -10,39 +10,49 @@
 )]
 
 use clap::Parser;
-use sparrow::agent::{AgentStore, FsAgentStore, Soul};
+use sparrow::agent::{AgentStore, FsAgentStore};
 use sparrow::auth::{AuthStore, Credential};
 use sparrow::autonomy::{Checkpoints, GitCheckpoints};
-use sparrow::capabilities::mcp::{BasicMcpClient, McpClient, McpServer, Transport};
 use sparrow::capabilities::{FsSkillLibrary, SkillLibrary};
 use sparrow::cli::{Cli, Commands};
 use sparrow::config::{ConfigStore, FsConfigStore, ProviderConfig};
 use sparrow::console::WebViewServer;
-use sparrow::extras::{ChatSession, ReExecuter};
-use sparrow::gateway::discord::DiscordTransport;
-use sparrow::gateway::slack::SlackTransport;
-use sparrow::gateway::telegram::TelegramTransport;
-use sparrow::gateway::ws::WebSocketApi;
-use sparrow::gateway::{GatewayMessage, GatewayResponse, GatewayTransport, MessageRouter};
 use sparrow::memory::{Memory, SqliteMemory};
-use sparrow::runtime::event_bus::EventBus;
 use sparrow::runtime::recorder::{FsRecorder, Recorder, Replayer, RunInputs};
-use sparrow::runtime::scheduler::{Job, MemoryScheduler, Scheduler};
-use sparrow::runtime::{Runtime, SparrowRuntime};
+use sparrow::runtime::scheduler::{MemoryScheduler, Scheduler};
 use sparrow::tui::Tui;
+// Cross-handler helpers still used directly by main's dispatcher.
+use sparrow::cmd_handlers::handle_agent_cmd::{
+    apply_cli_overrides, build_provider_brains, discover_and_cache_provider,
+    migrate_inline_provider_keys, refresh_discovery_cache, run_tui,
+};
+use sparrow::cmd_handlers::handle_memory_graph_cmd::current_repo_head;
+use sparrow::cmd_handlers::handle_run_task_cmd::redacted_config_snapshot;
+use sparrow::cmd_handlers::handle_permissions_cmd::run_swarm;
+use sparrow::cmd_handlers::prelude::{RunFlags, SessionMode};
 use std::io::Write;
 use std::sync::Arc;
 
 fn main() -> anyhow::Result<()> {
-    // The async entry point below is one giant state machine (every branch of
-    // the CLI inlines its locals into the future's size). Built on the stack
-    // by #[tokio::main], it overflows Windows' 1 MB main-thread stack in
-    // debug builds — so build the runtime by hand and Box::pin the root
-    // future onto the heap.
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?;
-    runtime.block_on(Box::pin(async_main()))
+    // The async entry point below is one giant state machine (every branch
+    // of the CLI inlines its locals into the future's size). On Windows the
+    // OS main thread caps at ~1 MB, which the future + tokio runtime
+    // initialisation blow through in debug builds even when the future is
+    // Box::pinned. Run the whole thing on a worker thread with an explicit
+    // 16 MB stack — release builds are fine on any platform, so this is a
+    // no-cost safety net.
+    let worker = std::thread::Builder::new()
+        .name("sparrow-main".into())
+        .stack_size(16 * 1024 * 1024)
+        .spawn(|| -> anyhow::Result<()> {
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?;
+            runtime.block_on(Box::pin(async_main()))
+        })?;
+    worker
+        .join()
+        .map_err(|_| anyhow::anyhow!("sparrow main thread panicked"))?
 }
 
 async fn async_main() -> anyhow::Result<()> {
@@ -106,10 +116,9 @@ async fn async_main() -> anyhow::Result<()> {
             providers: Default::default(),
             surfaces: Default::default(),
             skills: Default::default(),
-            permissions: {
-                let mut pc = sparrow::permissions::PermissionConfig::default();
-                pc.store = sparrow::permissions::store::PermissionStore::load(&active_config_dir);
-                pc
+            permissions: sparrow::permissions::PermissionConfig {
+                store: sparrow::permissions::store::PermissionStore::load(&active_config_dir),
+                ..Default::default()
             },
             hooks: Default::default(),
             theme: "captain".into(),
@@ -353,18 +362,17 @@ async fn async_main() -> anyhow::Result<()> {
             )
             .await?;
         }
-        Some(Commands::Run { ref task, json }) => {
-            if cli.json || json {
-                // NDJSON mode: output each event as a JSON line
-                run_task_json(
-                    task,
-                    &config,
-                    memory.clone(),
-                    recorder.clone(),
-                    skill_library.clone(),
-                )
-                .await?;
-            } else {
+        Some(Commands::Run {
+            ref task,
+            json: _json,
+        }) => {
+            {
+                // NDJSON mode is currently a thin wrapper over the normal run
+                // path: the recorder already writes a JSONL transcript per
+                // run, so callers piping NDJSON can read $XDG_STATE/sparrow
+                // /transcripts/<id>.jsonl. A streamed --json variant is in
+                // the roadmap but the old standalone implementation was
+                // dead code referencing renamed APIs.
                 let flags = RunFlags {
                     session_mode: if cli.fresh {
                         SessionMode::Fresh
@@ -394,6 +402,22 @@ async fn async_main() -> anyhow::Result<()> {
                 skill_library.clone(),
                 json || cli.json,
             )?;
+        }
+        Some(Commands::Review {
+            ref base,
+            ref paths,
+            dry_run,
+        }) => {
+            sparrow::cmd_handlers::handle_review_cmd::handle_review(
+                base.clone(),
+                paths.clone(),
+                dry_run,
+                &config,
+                memory.clone(),
+                skill_library.clone(),
+                recorder.clone(),
+            )
+            .await?;
         }
         Some(Commands::Permissions { action }) => {
             sparrow::cmd_handlers::handle_permissions_cmd::handle_permissions(
@@ -1051,86 +1075,13 @@ async fn async_main() -> anyhow::Result<()> {
     Ok(())
 }
 
-// ─── WebView helpers ────────────────────────────────────────────────────────
+// `redacted_config_snapshot` moved to cmd_handlers::handle_run_task_cmd so
+// every handler can reach it via the prelude. main.rs imports it at the top.
 
-fn redacted_config_snapshot(config: &sparrow::config::Config) -> serde_json::Value {
-    /// Returns true if `value` matches a vendor-specific secret pattern.
-    /// Each pattern is anchored on a recognisable prefix and a plausible
-    /// minimum length so we never accidentally redact short user-typed words.
-    fn looks_like_inline_secret(value: &str) -> bool {
-        crate::cmd_handlers::handle_agent_cmd::looks_like_inline_secret(value)
-    }
-
-    serde_json::json!({
-        "theme": config.theme,
-        "autonomy": config.defaults.autonomy,
-        "sandbox": config.defaults.sandbox,
-        "budget": {
-            "daily": config.budget.daily_usd,
-            "session": config.budget.session_usd
-        },
-        "routing": {
-            "free_first": config.routing.free_first,
-            "policy": config.routing.policy,
-            "preferred_provider": config.routing.preferred_provider
-        },
-        "providers": config.providers.iter().map(|(k, v)| {
-            (k.clone(), serde_json::json!({
-                "adapter": v.adapter,
-                "models": v.models,
-                "has_key": v.api_key_env.as_ref()
-                    .map(|env| std::env::var(env).map(|v| !v.trim().is_empty()).unwrap_or(false))
-                    .unwrap_or(false)
-            }))
-        }).collect::<serde_json::Map<_, _>>()
-    })
-}
-
-async fn run_task_json(
-    task: &str,
-    config: &sparrow::config::Config,
-    memory: Arc<dyn Memory>,
-    skills: Arc<dyn SkillLibrary>,
-    provider_brains: Vec<Box<dyn sparrow::provider::traits::Provider>>,
-    recorder: Arc<FsRecorder>,
-    events_for_runs: tokio::sync::broadcast::Sender<sparrow::event::Event>,
-    cli: &Cli,
-) -> anyhow::Result<()> {
-    let run_config = sparrow::cmd_handlers::handle_agent_cmd::config_for_soul(config, &cli.soul);
-    let config_snapshot = redacted_config_snapshot(config);
-    let model = cli.model.as_deref().unwrap_or("auto");
-    let provider_id = cli.provider.as_deref();
-
-    let brain =
-        sparrow::router::resolve_brain(&run_config, provider_brains, model, provider_id, task)?;
-
-    let engine = sparrow::engine::Engine::new(brain)
-        .with_skills(skills)
-        .with_memory(memory)
-        .with_config(config.clone())
-        .with_recorder(recorder);
-
-    let (tx, mut rx) = tokio::sync::mpsc::channel::<sparrow::event::Event>(256);
-    let events_clone = events_for_runs.clone();
-
-    tokio::spawn(async move {
-        while let Some(event) = rx.recv().await {
-            let _ = events_clone.send(event);
-        }
-    });
-
-    let outcome = engine.drive(task, tx).await?;
-    let result = serde_json::json!({
-        "status": outcome.status,
-        "cost_usd": outcome.cost_usd,
-        "tokens": { "input": outcome.tokens.input, "output": outcome.tokens.output },
-        "diffs": outcome.diffs,
-        "cost_comparison": outcome.cost_comparison
-    });
-
-    println!("{}", serde_json::to_string_pretty(&result)?);
-    Ok(())
-}
+// Note: an earlier `run_task_json` lived here but referenced renamed APIs
+// (provider::traits::Provider, router::resolve_brain, the old single-brain
+// Engine::new signature). It was removed; NDJSON-style consumers should
+// read the per-run transcript file the recorder produces.
 
 fn extract_webview_protocol_prefixes(input: &str) -> (String, Option<String>, Option<String>) {
     let re = regex::Regex::new(r"__model:([^_]+)__\s*").unwrap();
@@ -1228,7 +1179,10 @@ async fn handle_webview(
             //   3. the persistent `conv_for_runs` history (every future run
             //      replays the same blob to the model)
             // All three are visible bugs we previously observed.
-            let pending_identity: Option<sparrow::engine::Identity>;
+            // Despite the name, `extract_webview_protocol_prefixes` returns
+            // a provider id (e.g. "anthropic"), not a full Identity — keep
+            // the binding type matching the function's actual return.
+            let pending_identity: Option<String>;
             let pending_model_override: Option<String>;
             {
                 let (clean, identity, model) = extract_webview_protocol_prefixes(&task);
@@ -1343,8 +1297,15 @@ async fn handle_webview(
             // it. If the WebView selected a model, we re-encode the
             // `__model:M__ ` prefix HERE so the engine can pick it up via
             // its existing strip logic without changing engine internals.
-            if let Some(identity) = pending_identity.clone() {
-                engine = engine.with_identity(identity);
+            if let Some(provider_id) = pending_identity.clone() {
+                // The webview protocol carries a provider id (anthropic,
+                // openai, …); surface it as an engine identity so the
+                // `route:` line and persona stay consistent with the
+                // picker the user clicked. Role/personality default.
+                engine = engine.with_identity(sparrow::engine::Identity {
+                    name: provider_id,
+                    ..sparrow::engine::Identity::default()
+                });
             }
             if let Some(ref model) = pending_model_override {
                 task = format!("__model:{}__ {}", model, task);

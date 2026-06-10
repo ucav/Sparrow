@@ -1,6 +1,4 @@
 // src/cmd_handlers/handle_compact_cmd.rs
-use super::prelude::*;
-use super::prelude::*;
 pub fn handle_compact(
     task: Option<String>,
     out: Option<std::path::PathBuf>,

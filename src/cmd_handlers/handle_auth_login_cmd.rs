@@ -1,6 +1,5 @@
 // src/cmd_handlers/handle_auth_login_cmd.rs
-use super::prelude::*;
-use super::prelude::*;
+
 pub async fn handle_auth_login(
     provider: &str,
     client_id: Option<String>,
@@ -66,22 +65,5 @@ pub async fn handle_auth_login(
     Ok(())
 }
 
-/// How `run_task` resolves the conversation context for this run.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum SessionMode {
-    /// Continue this directory's session (existing behaviour).
-    #[default]
-    Auto,
-    /// Ignore any saved session — start clean.
-    Fresh,
-    /// Continue the most recently updated session from ANY surface.
-    ContinueLast,
-}
-
-/// Per-invocation run options threaded from the CLI flags.
-#[derive(Debug, Clone, Copy, Default)]
-struct RunFlags {
-    session_mode: SessionMode,
-    /// Skip the pre-run quote confirmation (--yes, or non-interactive).
-    assume_yes: bool,
-}
+// `RunFlags` and `SessionMode` previously had duplicate private copies here;
+// they now live in `super::prelude` so every handler shares one definition.

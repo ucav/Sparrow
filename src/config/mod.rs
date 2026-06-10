@@ -373,6 +373,7 @@ impl ConfigStore for FsConfigStore {
 /// Merge configured providers with auto-detected ones (env vars, stored credentials).
 /// Used by setup and routing to show what's actually available.
 pub fn effective_provider_configs(config: &Config) -> HashMap<String, ProviderConfig> {
+    use crate::auth::AuthStore; // bring the .get(...) trait method into scope
     let mut effective = config.providers.clone();
     let auth = crate::auth::store::ChainedAuthStore::new(config.config_dir.clone());
 
