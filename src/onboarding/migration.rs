@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::onboarding::claude_compat::{self, ClaudeImport};
+use crate::onboarding::claude_compat::{self, ClaudeSettings};
 
 // ─── Migration result ──────────────────────────────────────────────────────────
 
@@ -356,10 +356,10 @@ fn write_sparrow_instruction(name: &str, content: &str) -> anyhow::Result<()> {
 
 fn agent_body_to_soul(name: &str, body: &str) -> String {
     // Try YAML frontmatter first (Claude Code agent format)
-    if body.starts_with("---") {
-        if let Some(end) = body[3..].find("---") {
-            let frontmatter = &body[3..3 + end];
-            let content = &body[3 + end + 3..].trim();
+    if let Some(rest) = body.strip_prefix("---") {
+        if let Some(end) = rest.find("---") {
+            let frontmatter = &rest[..end];
+            let content = &rest[end + 3..].trim();
             return format!(
                 "# Imported from Claude Code\n\
                  name = \"{}\"\n\
@@ -380,8 +380,7 @@ fn agent_body_to_soul(name: &str, body: &str) -> String {
     )
 }
 
-fn merge_claude_settings(settings: &serde_json::Value) -> anyhow::Result<usize> {
-    let cfg_file = sparrow_config_file();
+fn merge_claude_settings(settings: &ClaudeSettings) -> anyhow::Result<usize> {
     let mut count = 0;
 
     // Only write a hint file; actual config merge is done interactively
@@ -396,7 +395,7 @@ fn merge_claude_settings(settings: &serde_json::Value) -> anyhow::Result<usize> 
     }
 
     // Also check for env vars in settings
-    if let Some(env) = settings.get("env") {
+    if let Some(env) = &settings.env {
         let env_path = hint_dir.join("claude-env.txt");
         if !env_path.exists() {
             if let Some(obj) = env.as_object() {
@@ -417,8 +416,8 @@ fn merge_claude_settings(settings: &serde_json::Value) -> anyhow::Result<usize> 
     Ok(count)
 }
 
-fn extract_api_keys_from_settings(settings: &serde_json::Value) -> anyhow::Result<usize> {
-    let env = match settings.get("env") {
+fn extract_api_keys_from_settings(settings: &ClaudeSettings) -> anyhow::Result<usize> {
+    let env = match &settings.env {
         Some(e) => e,
         None => return Ok(0),
     };
@@ -518,7 +517,6 @@ fn import_opencode_config(path: &Path) -> anyhow::Result<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
 
     #[test]
     fn test_agent_body_to_soul_with_frontmatter() {

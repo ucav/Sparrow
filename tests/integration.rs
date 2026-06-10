@@ -535,6 +535,7 @@ mod tests {
                         input: 100,
                         output: 50,
                     },
+                    cost_comparison: String::new(),
                 },
             },
         ];
@@ -1229,6 +1230,7 @@ mod tests {
                     input: 100,
                     output: 50,
                 },
+                cost_comparison: String::new(),
             },
         });
 
@@ -1270,6 +1272,7 @@ mod tests {
                         input: 10,
                         output: 5,
                     },
+                    cost_comparison: String::new(),
                 },
             },
         ];
@@ -1443,18 +1446,21 @@ mod tests {
     }
 
     #[test]
-    fn test_migration_openclaw_result_fields() {
+    fn test_migration_result_fields() {
         // Test that MigrationResult struct is well-formed
         let result = sparrow::onboarding::migration::MigrationResult {
-            tool: "openclaw".into(),
+            tool: "claude-code".into(),
             agents: 3,
+            commands: 4,
             skills: 5,
-            cron_jobs: 2,
             config_entries: 10,
-            surfaces: 1,
+            api_keys: 2,
+            mcp_servers: 1,
+            summary: vec!["imported".into()],
         };
         assert_eq!(result.agents, 3);
         assert_eq!(result.skills, 5);
+        assert_eq!(result.mcp_servers, 1);
     }
 
     // ─── WS12 Enterprise Tests ─────────────────────────────────────────

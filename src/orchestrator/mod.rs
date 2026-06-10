@@ -1146,12 +1146,13 @@ impl Orchestrator for DefaultOrchestrator {
             cost_usd: total_cost,
         };
 
+        let cost_comparison = crate::cost::format_comparison(outcome.cost_usd, &total_tokens);
         let outcome_summary = OutcomeSummary {
             status: outcome.status.clone(),
             diffs: outcome.diffs.clone(),
             cost_usd: outcome.cost_usd,
             tokens: total_tokens,
-            cost_comparison: crate::cost::format_comparison(outcome.cost_usd, &total_tokens),
+            cost_comparison,
         };
 
         let _ = event_tx.send(Event::RunFinished {
