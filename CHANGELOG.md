@@ -2,7 +2,7 @@
 
 All notable changes to Sparrow will be documented in this file.
 
-## [Unreleased]
+## [0.8.0] — 2026-06-10
 
 ## [0.7.0] — 2026-06-10
 

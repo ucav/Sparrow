@@ -60,7 +60,7 @@ See [`docs/comparison/vs-competitors.md`](docs/comparison/vs-competitors.md) for
 
 ---
 
-## ✨ What's New — v0.7.1
+## ✨ What's New — v0.8.0
 
 > **Cost routing, zero-friction migration, and a self-improving engine.** Sparrow routes every sub-task to the cheapest capable model (local free for reads, frontier for rewrites), then shows you exactly what you saved vs Claude Code. Import your existing setup in one command. The engine now learns per-repo, escalates on failure, and ships with a hardened reasoning protocol.
 
@@ -89,7 +89,7 @@ See [`docs/comparison/vs-competitors.md`](docs/comparison/vs-competitors.md) for
 - Budget caps work after subcommand: `sparrow run "task" --max-cost-usd 0.50`
 
 **Install & distribution** (v0.6.2 baseline)
-- **`cargo install sparrow-cli` v0.7.1** on crates.io
+- **`cargo install sparrow-cli` v0.8.0** on crates.io
 - **Pre-built binaries** for Linux, macOS, Windows on every release
 - **`sparrow launch`** — first-run wizard with free provider fallbacks
 
