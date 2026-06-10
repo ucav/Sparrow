@@ -2046,6 +2046,7 @@ async fn handle_ws(
     mut event_rx: tokio::sync::broadcast::Receiver<Event>,
     snapshot: Vec<Event>,
 ) {
+    tracing::info!("WebSocket connected, replaying {} events", snapshot.len());
     // Replay the current run so far, so a refresh mid-run never shows a
     // blank feed. The snapshot only holds public events.
     for event in &snapshot {
