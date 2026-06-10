@@ -28,41 +28,41 @@ pub struct Cli {
     pub model: Option<String>,
 
     /// Prefer local/offline models
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub local: bool,
 
     /// Session budget cap (USD)
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub budget: Option<f64>,
 
     /// Hard stop on cumulative USD spent in this run (alias for --budget,
     /// kept separately to match competitor tools' UX).
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub max_cost_usd: Option<f64>,
 
     /// Hard stop on wall-clock seconds elapsed in this run.
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub max_wall_secs: Option<u64>,
 
     /// Hard stop on total tokens consumed in this run.
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub max_tokens: Option<u64>,
 
     /// Bind address for daemon / cockpit servers (default 127.0.0.1).
     /// Use 0.0.0.0 when running under WSL or in a container.
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub bind: Option<String>,
 
     /// Sandbox backend
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub sandbox: Option<String>,
 
     /// Profile name
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub profile: Option<String>,
 
     /// Disable checkpointing
-    #[arg(long)]
+    #[arg(long, global = true)]
     pub no_checkpoint: bool,
 
     /// Run as a named agent
@@ -282,7 +282,7 @@ pub enum Commands {
         action: ProfileAction,
     },
 
-    /// Migrate from OpenClaw
+    /// Import config from another tool (claude-code, codex, opencode, openclaw)
     Import {
         #[command(subcommand)]
         source: ImportSource,
@@ -527,13 +527,17 @@ pub enum ImportSource {
         path: Option<PathBuf>,
     },
     /// Import from OpenCode (~/.config/opencode/)
+    #[command(name = "opencode")]
     OpenCode {
         /// Path to project with opencode.json (defaults to cwd)
         path: Option<PathBuf>,
     },
-    /// Import from OpenClaw
-    Openclaw { path: Option<PathBuf> },
-    /// Auto-detect installed tools and import all
+    /// Import from OpenClaw (~/.openclaw/)
+    Openclaw {
+        /// Path to the OpenClaw config directory (defaults to ~/.openclaw)
+        path: Option<PathBuf>,
+    },
+    /// Auto-detect installed tools and import each one
     Auto,
 }
 
