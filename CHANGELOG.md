@@ -5,6 +5,25 @@ All notable changes to Sparrow will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Verified escalation** — when a model exhausts its fix budget and the
+  verify command still fails, the run escalates to the next model in the
+  chain (bounded) instead of ending silently unverified; if the chain runs
+  out, the run ends honestly as a failure. Cheap-first routing now has a
+  quality floor.
+- **Per-repo routing memory** — verified run outcomes are recorded per tier
+  in `.sparrow/routing_memory.json`; when a tier mostly fails or escalates in
+  a repo, the next run starts one tier higher. Self-correcting (stats are
+  recorded under the classified tier, and counters decay), local-first, no
+  telemetry.
+- **Pre-run quote** — `sparrow run` shows tier, estimated token/cost range
+  (at list price) and the selected route, then asks to proceed. Skipped with
+  `--yes` or when stdin is not a TTY, so CI and pipes never block.
+- **`sparrow --continue` / `--fresh`** — continue the most recently updated
+  session from any surface, or start clean. Session continuity is now
+  visible: runs print "continuing session (N prior messages)" instead of
+  silently carrying context.
+- **`sparrow skills install gh:user/repo[/path]`** — GitHub shorthand for
+  installing skills, on top of the existing git URL and local-path sources.
 - Engine: bounded transient-failure retry — a rate limit, timeout, or 5xx on
   the primary model retries the same model (with backoff, honouring
   Retry-After) before falling back, so one 429 no longer silently downgrades a
