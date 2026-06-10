@@ -1990,7 +1990,7 @@ async function loadSessionsPanel(){
               const text=(typeof m.content==='string'?m.content:JSON.stringify(m.content||'')).trim();
               if(!text)return;
               const cls=role==='user'?'user':role==='assistant'?'agent':'muted';
-              const label=role==='user'?'you':role==='assistant'?'sparrow':role;
+              const label=role==='user'?'you':(role==='assistant'||!role||role==='guard')?'sparrow':('sparrow-'+role);
               line(`<span class="${cls}"><b>${esc(label)}</b> · ${esc(text).slice(0,4000).replace(/\n/g,'<br>')}</span>`);
             });
             line(`<span class="muted">↳ session restored · ${esc(session?.name||id)} · ${msgs.length} turns</span>`);

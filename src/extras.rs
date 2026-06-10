@@ -12,111 +12,225 @@ use tokio::sync::mpsc;
 pub struct Distiller;
 
 impl Distiller {
-    /// Analyze run events and extract facts
-    pub async fn distill(memory: &Arc<dyn Memory>, events: &[Event], _task_description: &str) {
+    /// Analyze run events and extract durable facts about the user and project.
+    /// Called automatically after every successful run (§3.8).
+    pub async fn distill(memory: &Arc<dyn Memory>, events: &[Event], task_description: &str) {
         let mut facts = Vec::new();
 
-        // Extract user preferences from tools used
-        let mut lang_hints = Vec::new();
-        let mut framework_hints = Vec::new();
-        let mut style_hints = Vec::new();
+        // ── 1. Languages & frameworks (from file paths) ──────────────────────
+        let mut lang_hints: Vec<String> = Vec::new();
+        let mut framework_hints: Vec<String> = Vec::new();
+        let mut tool_usage: std::collections::HashMap<String, u32> =
+            std::collections::HashMap::new();
+        let mut style_hints: Vec<String> = Vec::new();
+        let mut pref_hints: Vec<String> = Vec::new();
+        let mut convention_hints: Vec<String> = Vec::new();
 
         for event in events {
             match event {
-                Event::ToolUseProposed { args, .. } => {
+                Event::ToolUseProposed { name, args, .. } => {
+                    // Track tool usage frequency
+                    *tool_usage.entry(name.clone()).or_insert(0) += 1;
+
+                    // Languages from file extensions
                     if let Some(path) = args.get("path").and_then(|v| v.as_str()) {
-                        if path.ends_with(".rs") {
-                            lang_hints.push("Rust".to_string());
-                        }
-                        if path.ends_with(".ts") || path.ends_with(".tsx") {
-                            lang_hints.push("TypeScript".to_string());
-                        }
-                        if path.ends_with(".py") {
-                            lang_hints.push("Python".to_string());
-                        }
-                        if path.ends_with(".go") {
-                            lang_hints.push("Go".to_string());
-                        }
-                        if path.ends_with(".js") || path.ends_with(".jsx") {
-                            lang_hints.push("JavaScript".to_string());
-                        }
+                        detect_languages(path, &mut lang_hints);
+                        detect_conventions(path, &mut convention_hints);
                     }
+                    // Frameworks from content
                     if let Some(content) = args.get("content").and_then(|v| v.as_str()) {
-                        if content.contains("Cargo.toml") {
-                            framework_hints.push("Rust/Cargo".to_string());
-                        }
-                        if content.contains("package.json") {
-                            framework_hints.push("Node.js".to_string());
-                        }
-                        if content.contains("go.mod") {
-                            framework_hints.push("Go modules".to_string());
-                        }
+                        detect_frameworks(content, &mut framework_hints);
                     }
                 }
                 Event::ThinkingDelta { text, .. } => {
+                    // Style preferences
                     if text.contains("refactor") {
-                        style_hints.push("prefers refactoring".to_string());
+                        style_hints.push("refactoring-oriented".to_string());
                     }
                     if text.contains("test") || text.contains("TDD") {
                         style_hints.push("test-driven".to_string());
                     }
+                    if text.contains("async") || text.contains("await") {
+                        style_hints.push("async-first".to_string());
+                    }
+                    // Explicit user preferences mentioned in thinking
+                    detect_preferences(text, &mut pref_hints);
+                }
+                Event::Message { text, role, .. } if role == "user" => {
+                    // User messages often contain preferences
+                    detect_preferences(text, &mut pref_hints);
                 }
                 _ => {}
             }
         }
 
-        // Deduplicate and save facts
-        lang_hints.sort();
-        lang_hints.dedup();
-        framework_hints.sort();
-        framework_hints.dedup();
-        style_hints.sort();
-        style_hints.dedup();
+        // ── 2. Deduplicate ──────────────────────────────────────────────────
+        dedup(&mut lang_hints);
+        dedup(&mut framework_hints);
+        dedup(&mut style_hints);
+        dedup(&mut pref_hints);
+        dedup(&mut convention_hints);
 
+        // ── 3. Save facts ───────────────────────────────────────────────────
         for lang in &lang_hints {
-            facts.push(Fact {
-                id: uuid::Uuid::new_v4().to_string(),
-                key: "user:language".into(),
-                value: lang.clone(),
-                created_at: chrono::Utc::now().format("%Y-%m-%d").to_string(),
-                updated_at: chrono::Utc::now().format("%Y-%m-%d").to_string(),
-            });
+            facts.push(fact("user:language", lang));
         }
         for fw in &framework_hints {
-            facts.push(Fact {
-                id: uuid::Uuid::new_v4().to_string(),
-                key: "user:framework".into(),
-                value: fw.clone(),
-                created_at: chrono::Utc::now().format("%Y-%m-%d").to_string(),
-                updated_at: chrono::Utc::now().format("%Y-%m-%d").to_string(),
-            });
+            facts.push(fact("user:framework", fw));
         }
         for style in &style_hints {
-            facts.push(Fact {
-                id: uuid::Uuid::new_v4().to_string(),
-                key: "user:style".into(),
-                value: style.clone(),
-                created_at: chrono::Utc::now().format("%Y-%m-%d").to_string(),
-                updated_at: chrono::Utc::now().format("%Y-%m-%d").to_string(),
-            });
+            facts.push(fact("user:style", style));
         }
-
-        // Save deduplicated facts
-        let existing = memory.all_facts();
-        let existing_keys: Vec<&str> = existing.iter().map(|f| f.key.as_str()).collect();
-
-        for fact in facts {
-            if !existing_keys.contains(&fact.key.as_str()) {
-                let _ = memory.remember(fact);
+        for pref in &pref_hints {
+            facts.push(fact("user:preference", pref));
+        }
+        for conv in &convention_hints {
+            facts.push(fact("project:convention", conv));
+        }
+        // Tools used 3+ times become learned preferences
+        for (tool, count) in &tool_usage {
+            if *count >= 3 {
+                facts.push(fact(
+                    "user:frequent_tool",
+                    &format!("uses {} frequently ({}x this session)", tool, count),
+                ));
             }
         }
 
-        if !lang_hints.is_empty() || !framework_hints.is_empty() {
+        // ── 4. Persist (skip duplicates) ────────────────────────────────────
+        let existing = memory.all_facts();
+        let existing_keys: Vec<&str> = existing.iter().map(|f| f.key.as_str()).collect();
+        let mut saved = 0;
+
+        for fact in &facts {
+            if !existing_keys.contains(&fact.key.as_str()) {
+                let _ = memory.remember(fact.clone());
+                saved += 1;
+            }
+        }
+
+        if saved > 0 {
             tracing::info!(
-                "Distiller: extracted {} facts from session",
-                lang_hints.len() + framework_hints.len() + style_hints.len()
+                "Distiller: extracted {} facts ({} new) from task: {}",
+                facts.len(),
+                saved,
+                &task_description[..task_description.len().min(60)]
             );
         }
+    }
+}
+
+// ─── Distiller helpers ─────────────────────────────────────────────────────────
+
+fn detect_languages(path: &str, hints: &mut Vec<String>) {
+    let ext_map: &[(&str, &str)] = &[
+        (".rs", "Rust"),
+        (".ts", "TypeScript"),
+        (".tsx", "TypeScript/React"),
+        (".py", "Python"),
+        (".go", "Go"),
+        (".js", "JavaScript"),
+        (".jsx", "JavaScript/React"),
+        (".java", "Java"),
+        (".rb", "Ruby"),
+        (".css", "CSS"),
+        (".html", "HTML"),
+        (".sql", "SQL"),
+        (".tf", "Terraform"),
+        (".yml", "YAML"),
+        (".yaml", "YAML"),
+        (".toml", "TOML"),
+        (".json", "JSON"),
+        (".md", "Markdown"),
+        (".sh", "Shell"),
+    ];
+    let lower = path.to_lowercase();
+    for (ext, lang) in ext_map {
+        if lower.ends_with(ext) {
+            hints.push(lang.to_string());
+            return;
+        }
+    }
+}
+
+fn detect_frameworks(content: &str, hints: &mut Vec<String>) {
+    let fw_map: &[(&str, &str)] = &[
+        ("Cargo.toml", "Rust/Cargo"),
+        ("package.json", "Node.js"),
+        ("go.mod", "Go modules"),
+        ("requirements.txt", "Python/pip"),
+        ("pyproject.toml", "Python/poetry"),
+        ("Dockerfile", "Docker"),
+        ("docker-compose", "Docker Compose"),
+        ("Makefile", "Make"),
+        ("CMakeLists.txt", "CMake"),
+        ("pom.xml", "Java/Maven"),
+        ("build.gradle", "Java/Gradle"),
+    ];
+    for (pattern, fw) in fw_map {
+        if content.contains(pattern) {
+            hints.push(fw.to_string());
+        }
+    }
+}
+
+fn detect_preferences(text: &str, hints: &mut Vec<String>) {
+    let pref_patterns: &[(&str, &str)] = &[
+        ("prefer async", "prefers async/await"),
+        ("prefer sync", "prefers synchronous code"),
+        ("use tabs", "uses tabs for indentation"),
+        ("use spaces", "uses spaces for indentation"),
+        (
+            "prefer unwrap",
+            "prefers .unwrap() over proper error handling",
+        ),
+        ("prefer anyhow", "prefers anyhow for error handling"),
+        ("instead of", "has strong opinions about alternatives"),
+        ("don't use", "has explicit dislikes"),
+        ("always use", "has explicit preferences"),
+        ("I like", "expressed a personal preference"),
+        ("I want", "expressed a desire"),
+    ];
+    let lower = text.to_lowercase();
+    for (pattern, hint) in pref_patterns {
+        if lower.contains(pattern) {
+            hints.push(hint.to_string());
+        }
+    }
+}
+
+fn detect_conventions(path: &str, hints: &mut Vec<String>) {
+    let conv_patterns: &[(&str, &str)] = &[
+        ("src/main.rs", "Rust binary project structure"),
+        ("src/lib.rs", "Rust library project structure"),
+        ("src/index.ts", "TypeScript entry point convention"),
+        ("src/app.py", "Python app entry point"),
+        ("tests/", "has a test directory"),
+        ("spec/", "has a spec directory"),
+        ("docs/", "maintains documentation"),
+        (".github/workflows/", "uses GitHub Actions CI"),
+        (".gitignore", "has gitignore"),
+    ];
+    let lower = path.to_lowercase();
+    for (pattern, hint) in conv_patterns {
+        if lower.contains(&pattern.to_lowercase()) {
+            hints.push(hint.to_string());
+        }
+    }
+}
+
+fn dedup(v: &mut Vec<String>) {
+    v.sort();
+    v.dedup();
+}
+
+fn fact(key: &str, value: &str) -> Fact {
+    Fact {
+        id: uuid::Uuid::new_v4().to_string(),
+        key: key.to_string(),
+        value: value.to_string(),
+        created_at: chrono::Utc::now().format("%Y-%m-%d").to_string(),
+        updated_at: chrono::Utc::now().format("%Y-%m-%d").to_string(),
     }
 }
 

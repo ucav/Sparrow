@@ -342,7 +342,7 @@ the user's actual filesystem.
         let relevant_names: std::collections::HashSet<&str> =
             skills.iter().map(|s| s.name.as_str()).collect();
         let mut lines = vec![format!(
-            "## Skill library ({} installed)\nUse `skill_invoke <name>` to load any skill below by name. The bodies marked ★ are already loaded into this prompt for the current task.",
+            "## Skill library ({} installed)\nSkills marked ★ are already loaded below. Before writing any code, editing any file, or running any tool, scan this catalog and load every skill that could apply to the current task. Use `skill_invoke <name>` to load any additional skill by name.",
             skill_catalog.len()
         )];
         for s in skill_catalog {
@@ -1283,11 +1283,14 @@ impl Engine {
             level: autonomy.level.clone(),
         });
 
-        // Load relevant skills — top-N pre-selected for full-body inclusion
+        // Load relevant skills — top-N pre-selected for full-body inclusion.
+        // The main agent soul requires mandatory skill pre-read before ANY action,
+        // so we load MORE skills than before (5 instead of 3) and the agent
+        // is instructed to scan the full catalog for anything it might need.
         let relevant_skills: Vec<crate::capabilities::Skill> = self
             .skills
             .as_ref()
-            .map(|s| s.relevant(&task.description, 3))
+            .map(|s| s.relevant(&task.description, 5))
             .unwrap_or_default();
         // And the full catalog (names + descriptions only) so the agent
         // discovers everything in the library and can invoke a skill it
@@ -2410,7 +2413,10 @@ impl Engine {
                                                     messages.push(Msg {
                                                         role: "user".into(),
                                                         content: vec![ContentBlock::Text {
-                                                            text: format!("SYSTEM: {}. Call fs_read or search to verify the file/symbol first, then re-state the claim with the raw evidence.", correction),
+                                                            text: format!(
+                                                                "SYSTEM: {}. Call fs_read or search to verify the file/symbol first, then re-state the claim with the raw evidence.",
+                                                                correction
+                                                            ),
                                                         }],
                                                     });
                                                     continue_agent_loop = true;
@@ -2418,8 +2424,38 @@ impl Engine {
                                                 }
                                             }
 
-                                            skill_evidence.push_str(&assistant_text);
-                                            skill_evidence.push('\n');
+                                            // Tool narration guard: detect when the
+                                            // assistant describes using a tool instead
+                                            // of actually calling it. Only triggers when
+                                            // no tools were called this turn but the text
+                                            // contains tool-like language.
+                                            if tools_called_this_turn.is_empty()
+                                                && tool_narration_detected(&assistant_text)
+                                            {
+                                                let correction = "You described using a tool but did not actually call it. When a tool would help, CALL it — never narrate what it would do. Use the exact tool call format.";
+                                                messages.push(Msg {
+                                                    role: "assistant".into(),
+                                                    content: vec![ContentBlock::Text {
+                                                        text: assistant_text.clone(),
+                                                    }],
+                                                });
+                                                let _ = event_tx.send(Event::Message {
+                                                    run: run_id.clone(),
+                                                    role: "guard".into(),
+                                                    text: correction.into(),
+                                                });
+                                                messages.push(Msg {
+                                                    role: "user".into(),
+                                                    content: vec![ContentBlock::Text {
+                                                        text: format!(
+                                                            "SYSTEM: {}. Execute the relevant tool first, then report the actual raw result.",
+                                                            correction
+                                                        ),
+                                                    }],
+                                                });
+                                                continue_agent_loop = true;
+                                                break;
+                                            }
                                             messages.push(assistant_msg);
                                         }
 
@@ -2975,6 +3011,55 @@ impl Engine {
 
         Ok(outcome)
     }
+}
+
+// ─── Tool narration detection ──────────────────────────────────────────────────
+
+/// Detects when the assistant describes using a tool ("I'll run the tests",
+/// "Let me search for...") without actually emitting a ToolUse block.
+/// Returns true when tool-like language is present but no tools were called.
+fn tool_narration_detected(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    let patterns = [
+        "i'll use",
+        "i will use",
+        "let me use",
+        "i'll run",
+        "i will run",
+        "let me run",
+        "i'll search",
+        "i will search",
+        "let me search",
+        "i'll check",
+        "i will check",
+        "let me check",
+        "i'll read",
+        "i will read",
+        "let me read",
+        "i'll write",
+        "i will write",
+        "let me write",
+        "i'll execute",
+        "i will execute",
+        "let me execute",
+        "i'll call",
+        "i will call",
+        "let me call",
+        "i'll fetch",
+        "i will fetch",
+        "let me fetch",
+        "i'll look up",
+        "i will look up",
+        "let me look up",
+        "i'll test",
+        "i will test",
+        "let me test",
+        "running the test",
+        "running the command",
+        "searching for",
+        "looking up",
+    ];
+    patterns.iter().any(|p| lower.contains(p))
 }
 
 #[cfg(test)]
