@@ -159,7 +159,7 @@ impl PromptCacheConfig {
 
 impl Default for PromptCacheConfig {
     fn default() -> Self {
-        Self::enabled(None)
+        Self::disabled()
     }
 }
 
