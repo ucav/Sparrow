@@ -683,16 +683,20 @@ pub enum PermissionAction {
 
 #[derive(Subcommand)]
 pub enum RouteAction {
-    /// Pin the intelligent auto-router to a specific provider for all tiers.
-    /// Example: sparrow route set opencode-go
+    /// Pin routing to a specific provider or provider/model.
+    /// Examples: sparrow route set deepseek | sparrow route set deepseek/deepseek-v4-pro
     Set {
-        /// Provider ID to use for all task tiers (e.g. opencode-go, anthropic, nvidia)
+        /// Provider ID, or provider/model (e.g. \"deepseek/deepseek-v4-pro\")
         provider: String,
     },
-    /// Clear the pinned provider — let the multi-tier policy decide per task.
+    /// Clear the pinned provider/model — let the multi-tier policy decide per task.
     Clear,
     /// Show the current routing config (preferred provider + per-tier policy).
     Show,
+    /// Switch to manual mode — always use the chosen provider/model, never fall back.
+    Manual,
+    /// Switch to auto mode — tier-based policy + free_first fallback (default).
+    Auto,
 }
 
 #[derive(Subcommand)]

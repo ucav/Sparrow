@@ -652,17 +652,25 @@ async fn async_main() -> anyhow::Result<()> {
             match action {
                 sparrow::cli::RouteAction::Show => {
                     println!("Routing configuration:");
+                    println!("  mode            : {}", config.routing.routing_mode);
                     println!(
-                        "  auto_discover : {}",
+                        "  auto_discover   : {}",
                         if config.routing.auto_discover {
                             "on"
                         } else {
                             "off"
                         }
                     );
-                    match &config.routing.preferred_provider {
-                        Some(p) => println!("  preferred_provider : {} (all tiers pinned)", p),
-                        None => println!("  preferred_provider : (none — per-tier policy active)"),
+                    match &config.routing.preferred_model {
+                        Some(m) => println!("  preferred_model : {} (single model pinned)", m),
+                        None => match &config.routing.preferred_provider {
+                            Some(p) => {
+                                println!("  preferred_provider : {} (all models pinned)", p)
+                            }
+                            None => {
+                                println!("  preferred_provider : (none — per-tier policy active)")
+                            }
+                        },
                     }
                     println!("  Per-tier policy:");
                     let mut tiers: Vec<_> = config.routing.policy.iter().collect();
@@ -672,28 +680,72 @@ async fn async_main() -> anyhow::Result<()> {
                     }
                 }
                 sparrow::cli::RouteAction::Set { provider } => {
-                    // Validate the provider is known
-                    let known = sparrow::config::providers::find_provider(&provider).is_some()
-                        || !memory.get_discovered_models(&provider).is_empty();
+                    // Support provider/model syntax: "deepseek/deepseek-v4-pro"
+                    let (provider_id, model) = if let Some((p, m)) = provider.split_once('/') {
+                        (p.to_string(), Some(m.to_string()))
+                    } else {
+                        (provider.clone(), None)
+                    };
+                    let known = sparrow::config::providers::find_provider(&provider_id).is_some()
+                        || !memory.get_discovered_models(&provider_id).is_empty();
                     if !known {
                         eprintln!(
                             "Unknown provider '{}'. Run 'sparrow model --list' to see options.",
-                            provider
+                            provider_id
                         );
                     } else {
                         let mut updated = config.clone();
-                        updated.routing.preferred_provider = Some(provider.clone());
+                        updated.routing.routing_mode = "manual".into();
+                        updated.routing.preferred_provider = Some(provider_id);
+                        updated.routing.preferred_model = model;
                         config_store.save(&updated)?;
-                        println!("Auto-routing pinned to provider: {}", provider);
-                        println!("All task tiers will prefer this provider.");
-                        println!("Run 'sparrow route clear' to restore per-tier policy.");
+                        if let Some(ref m) = updated.routing.preferred_model {
+                            println!(
+                                "🔒 Manual mode: pinned to model {} at {}",
+                                m,
+                                updated.routing.preferred_provider.as_ref().unwrap()
+                            );
+                        } else {
+                            println!(
+                                "🔒 Manual mode: pinned to provider {}",
+                                updated.routing.preferred_provider.as_ref().unwrap()
+                            );
+                        }
+                        println!("  All tiers will use this. Zero fallback.");
+                        println!("  Run 'sparrow route auto' to restore automatic routing.");
                     }
                 }
                 sparrow::cli::RouteAction::Clear => {
                     let mut updated = config.clone();
                     updated.routing.preferred_provider = None;
+                    updated.routing.preferred_model = None;
                     config_store.save(&updated)?;
-                    println!("Preferred provider cleared. Per-tier routing policy is now active.");
+                    println!(
+                        "Preferred provider/model cleared. Per-tier routing policy is now active."
+                    );
+                }
+                sparrow::cli::RouteAction::Manual => {
+                    let mut updated = config.clone();
+                    updated.routing.routing_mode = "manual".into();
+                    config_store.save(&updated)?;
+                    if updated.routing.preferred_provider.is_none() {
+                        println!("🔒 Manual mode active. Choose a provider/model with:");
+                        println!("  sparrow route set <provider>");
+                        println!("  sparrow route set <provider>/<model>");
+                    } else {
+                        println!(
+                            "🔒 Manual mode active. Current pin: {}",
+                            updated.routing.preferred_provider.as_ref().unwrap()
+                        );
+                    }
+                }
+                sparrow::cli::RouteAction::Auto => {
+                    let mut updated = config.clone();
+                    updated.routing.routing_mode = "auto".into();
+                    config_store.save(&updated)?;
+                    println!(
+                        " Auto mode restored. Tier-based routing + free_first fallback active."
+                    );
                 }
             }
         }
