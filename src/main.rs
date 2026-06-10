@@ -33,8 +33,19 @@ use sparrow::tui::Tui;
 use std::io::Write;
 use std::sync::Arc;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
+    // The async entry point below is one giant state machine (every branch of
+    // the CLI inlines its locals into the future's size). Built on the stack
+    // by #[tokio::main], it overflows Windows' 1 MB main-thread stack in
+    // debug builds — so build the runtime by hand and Box::pin the root
+    // future onto the heap.
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    runtime.block_on(Box::pin(async_main()))
+}
+
+async fn async_main() -> anyhow::Result<()> {
     // Quiet by default so structured logs (e.g. "Transcript saved") never
     // interleave with the user-facing answer on stdout. Logs go to stderr;
     // set RUST_LOG=sparrow=info (or debug) for verbose diagnostics.
@@ -343,6 +354,16 @@ async fn main() -> anyhow::Result<()> {
                 )
                 .await?;
             } else {
+                let flags = RunFlags {
+                    session_mode: if cli.fresh {
+                        SessionMode::Fresh
+                    } else if cli.continue_last {
+                        SessionMode::ContinueLast
+                    } else {
+                        SessionMode::Auto
+                    },
+                    assume_yes: cli.yes,
+                };
                 run_task(
                     task,
                     &config,
@@ -350,6 +371,7 @@ async fn main() -> anyhow::Result<()> {
                     skill_library.clone(),
                     recorder.clone(),
                     None,
+                    flags,
                 )
                 .await?;
             }
@@ -1071,7 +1093,12 @@ async fn handle_agent(
         sparrow::cli::AgentAction::Run { name, task } => {
             if let Some(soul) = store.get(&name) {
                 println!("Running as agent '{}': {}", soul.name, task);
-                run_task(&task, config, memory, skills, recorder, Some(soul)).await?;
+                // Agent runs keep their existing no-prompt behaviour.
+                let flags = RunFlags {
+                    assume_yes: true,
+                    ..Default::default()
+                };
+                run_task(&task, config, memory, skills, recorder, Some(soul), flags).await?;
             } else {
                 anyhow::bail!("Agent '{}' not found.", name);
             }
@@ -1080,7 +1107,11 @@ async fn handle_agent(
             if let Some(soul) = store.get(&name) {
                 let task = format!("@{} {}", soul.name, message);
                 println!("Mentioning agent '{}': {}", soul.name, message);
-                run_task(&task, config, memory, skills, recorder, Some(soul)).await?;
+                let flags = RunFlags {
+                    assume_yes: true,
+                    ..Default::default()
+                };
+                run_task(&task, config, memory, skills, recorder, Some(soul), flags).await?;
             } else {
                 anyhow::bail!("Agent '{}' not found.", name);
             }
@@ -1815,6 +1846,26 @@ async fn handle_auth_login(
     Ok(())
 }
 
+/// How `run_task` resolves the conversation context for this run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum SessionMode {
+    /// Continue this directory's session (existing behaviour).
+    #[default]
+    Auto,
+    /// Ignore any saved session — start clean.
+    Fresh,
+    /// Continue the most recently updated session from ANY surface.
+    ContinueLast,
+}
+
+/// Per-invocation run options threaded from the CLI flags.
+#[derive(Debug, Clone, Copy, Default)]
+struct RunFlags {
+    session_mode: SessionMode,
+    /// Skip the pre-run quote confirmation (--yes, or non-interactive).
+    assume_yes: bool,
+}
+
 async fn run_task(
     task: &str,
     config: &sparrow::config::Config,
@@ -1822,6 +1873,7 @@ async fn run_task(
     skills: Arc<dyn SkillLibrary>,
     recorder: Arc<FsRecorder>,
     soul: Option<Soul>,
+    flags: RunFlags,
 ) -> anyhow::Result<()> {
     use sparrow::engine::Engine;
     use sparrow::router::BasicRouter;
@@ -1850,25 +1902,83 @@ async fn run_task(
         sparrow::runtime::session::SessionStore::open(&run_config.state_dir.join("sessions.db"))
             .ok()
             .map(Arc::new);
-    let session_key = std::env::var("SPARROW_SESSION").unwrap_or_else(|_| {
-        format!(
-            "cli:{}",
-            std::env::current_dir()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|_| "default".into())
-        )
-    });
-    let prior_msgs: Vec<sparrow::provider::Msg> = sessions
-        .as_ref()
-        .and_then(|s| s.load(&session_key))
-        .and_then(|sess| match serde_json::from_str(&sess.messages_json) {
-            Ok(v) => Some(v),
-            Err(e) => {
-                tracing::warn!("session '{}' deserialize failed: {}", session_key, e);
-                None
-            }
-        })
-        .unwrap_or_default();
+    let session_key = match flags.session_mode {
+        SessionMode::ContinueLast => {
+            // `sparrow --continue`: pick up the most recently updated session
+            // from ANY surface (CLI, console, gateway threads).
+            sessions
+                .as_ref()
+                .and_then(|s| s.list().into_iter().next())
+                .map(|s| s.id)
+                .unwrap_or_else(|| {
+                    std::env::var("SPARROW_SESSION").unwrap_or_else(|_| {
+                        format!(
+                            "cli:{}",
+                            std::env::current_dir()
+                                .map(|p| p.display().to_string())
+                                .unwrap_or_else(|_| "default".into())
+                        )
+                    })
+                })
+        }
+        _ => std::env::var("SPARROW_SESSION").unwrap_or_else(|_| {
+            format!(
+                "cli:{}",
+                std::env::current_dir()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|_| "default".into())
+            )
+        }),
+    };
+    let prior_msgs: Vec<sparrow::provider::Msg> = if flags.session_mode == SessionMode::Fresh {
+        Vec::new()
+    } else {
+        sessions
+            .as_ref()
+            .and_then(|s| s.load(&session_key))
+            .and_then(|sess| match serde_json::from_str(&sess.messages_json) {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    tracing::warn!("session '{}' deserialize failed: {}", session_key, e);
+                    None
+                }
+            })
+            .unwrap_or_default()
+    };
+    // Make continuity VISIBLE — silently carrying context surprises users.
+    if !prior_msgs.is_empty() {
+        eprintln!(
+            "\x1b[2m↩ continuing session ({} prior messages) — use --fresh to start clean\x1b[0m",
+            prior_msgs.len()
+        );
+    }
+
+    // ── Pre-run quote (estimate, then confirm) ─────────────────────────────
+    // Nobody else quotes BEFORE executing. Skipped with --yes or when stdin
+    // is not a TTY (CI, pipes) so automation never blocks.
+    let interactive = std::io::IsTerminal::is_terminal(&std::io::stdin());
+    if !flags.assume_yes && interactive {
+        let pf = engine.preflight(task);
+        let chain_disp = sparrow::engine::summarize_model_chain(&pf.chain, 3);
+        eprintln!(
+            "  plan: tier {} · est. {}–{}k tok · est. ${:.2}–${:.2} · route: {}",
+            pf.tier.as_str(),
+            (pf.est_input_range.0 + pf.est_output_range.0) / 1_000,
+            (pf.est_input_range.1 + pf.est_output_range.1) / 1_000,
+            pf.est_cost_range.0,
+            pf.est_cost_range.1,
+            chain_disp
+        );
+        let proceed = dialoguer::Confirm::new()
+            .with_prompt("  proceed?")
+            .default(true)
+            .interact()
+            .unwrap_or(true);
+        if !proceed {
+            eprintln!("  aborted — nothing was run, nothing was spent.");
+            return Ok(());
+        }
+    }
 
     let task_obj = sparrow::engine::Task {
         description: task.to_string(),
@@ -2420,11 +2530,32 @@ fn handle_skills(
 
 fn load_skill_from_source(source: &str) -> anyhow::Result<sparrow::capabilities::Skill> {
     let source = source.trim();
+
+    // `gh:user/repo[/sub/path]` shorthand — expands to a GitHub clone URL and
+    // an optional directory inside the repo holding the SKILL.md.
+    let (clone_source, subpath): (String, Option<String>) =
+        if let Some(rest) = source.strip_prefix("gh:") {
+            let mut parts = rest.splitn(3, '/');
+            let user = parts.next().filter(|s| !s.is_empty());
+            let repo = parts.next().filter(|s| !s.is_empty());
+            let sub = parts.next().map(String::from);
+            match (user, repo) {
+                (Some(u), Some(r)) => (format!("https://github.com/{}/{}", u, r), sub),
+                _ => anyhow::bail!(
+                    "invalid gh: source `{}` — expected gh:user/repo[/path/to/skill]",
+                    source
+                ),
+            }
+        } else {
+            (source.to_string(), None)
+        };
+    let clone_source = clone_source.as_str();
+
     let temp_dir;
-    let path = if source.starts_with("http://")
-        || source.starts_with("https://")
-        || source.ends_with(".git")
-        || source.contains("github.com")
+    let path = if clone_source.starts_with("http://")
+        || clone_source.starts_with("https://")
+        || clone_source.ends_with(".git")
+        || clone_source.contains("github.com")
     {
         temp_dir = std::env::temp_dir().join(format!("sparrow-skill-{}", uuid::Uuid::new_v4()));
         let status = std::process::Command::new("git")
@@ -2432,17 +2563,20 @@ fn load_skill_from_source(source: &str) -> anyhow::Result<sparrow::capabilities:
                 "clone",
                 "--depth",
                 "1",
-                source,
+                clone_source,
                 temp_dir.to_string_lossy().as_ref(),
             ])
             .status()?;
         if !status.success() {
-            anyhow::bail!("git clone failed for skill source {}", source);
+            anyhow::bail!("git clone failed for skill source {}", clone_source);
         }
-        temp_dir.clone()
+        match &subpath {
+            Some(sub) => temp_dir.join(sub),
+            None => temp_dir.clone(),
+        }
     } else {
         temp_dir = std::path::PathBuf::new();
-        std::path::PathBuf::from(source)
+        std::path::PathBuf::from(clone_source)
     };
 
     let skill_file = if path.is_dir() {

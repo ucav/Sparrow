@@ -68,6 +68,19 @@ pub struct Cli {
     /// Run as a named agent
     #[arg(long)]
     pub agent: Option<String>,
+
+    /// Continue the most recent session (any surface) instead of this
+    /// directory's session
+    #[arg(long = "continue", global = true)]
+    pub continue_last: bool,
+
+    /// Start with a fresh context (ignore this directory's saved session)
+    #[arg(long, global = true)]
+    pub fresh: bool,
+
+    /// Skip the pre-run quote confirmation
+    #[arg(long, global = true)]
+    pub yes: bool,
 }
 
 #[derive(Subcommand)]
@@ -367,6 +380,8 @@ pub enum SkillsAction {
     Create {
         name: String,
     },
+    /// Install a skill from GitHub (gh:user/repo[/path]), a git URL, or a
+    /// local path to a SKILL.md
     Install {
         source: String,
     },
