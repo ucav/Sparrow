@@ -420,7 +420,7 @@ async fn async_main() -> anyhow::Result<()> {
             run_swarm(&task, &config, memory.clone()).await?;
         }
         Some(Commands::Skills { action }) => {
-            handle_skills(action, &skill_library)?;
+            sparrow::cmd_handlers::handle_skills_cmd::handle_skills(action, &skill_library)?;
         }
         Some(Commands::Plugins { action }) => {
             sparrow::cmd_handlers::handle_plugins_cmd::handle_plugins(action, &config_dir)?;
@@ -438,7 +438,7 @@ async fn async_main() -> anyhow::Result<()> {
             sparrow::cmd_handlers::handle_compact_cmd::handle_compact(task, out, json)?;
         }
         Some(Commands::Mcp { action }) => {
-            handle_mcp(action, &config_dir).await?;
+            sparrow::cmd_handlers::handle_mcp_cmd::handle_mcp(action, &config_dir).await?;
         }
         Some(Commands::Schedule {
             task,
@@ -446,7 +446,10 @@ async fn async_main() -> anyhow::Result<()> {
             autonomy,
             report,
         }) => {
-            handle_schedule(&task, &cron, autonomy, &report, &scheduler).await?;
+            sparrow::cmd_handlers::handle_schedule_cmd::handle_schedule(
+                &task, &cron, autonomy, &report, &scheduler,
+            )
+            .await?;
         }
         Some(Commands::Replay { run_id, scrub }) => {
             if scrub {
@@ -458,7 +461,13 @@ async fn async_main() -> anyhow::Result<()> {
                     None => eprintln!("Transcript not found: {}", run_id),
                 }
             } else {
-                handle_replay(&run_id, &recorder, &config, memory.clone()).await?;
+                sparrow::cmd_handlers::handle_replay_cmd::handle_replay(
+                    &run_id,
+                    &recorder,
+                    &config,
+                    memory.clone(),
+                )
+                .await?;
             }
         }
         Some(Commands::Gateway { action }) => {
@@ -740,7 +749,10 @@ async fn async_main() -> anyhow::Result<()> {
                     provider,
                     client_id,
                 } => {
-                    handle_auth_login(&provider, client_id, &auth).await?;
+                    sparrow::cmd_handlers::handle_auth_login_cmd::handle_auth_login(
+                        &provider, client_id, &auth,
+                    )
+                    .await?;
                 }
             }
         }
@@ -2338,108 +2350,6 @@ async fn run_swarm(
 
 // ─── Skills commands ────────────────────────────────────────────────────────────
 
-fn handle_skills(
-    action: sparrow::cli::SkillsAction,
-    library: &Arc<dyn SkillLibrary>,
-) -> anyhow::Result<()> {
-    match action {
-        sparrow::cli::SkillsAction::List => {
-            let skills = library.all();
-            if skills.is_empty() {
-                println!("No skills in library.");
-                println!("Skills are automatically learned from successful runs.");
-                println!("Create one manually: sparrow skills create <name>");
-            } else {
-                println!("Skill library ({} skills):", skills.len());
-                for s in &skills {
-                    let tag = if s.auto_generated { "[auto]" } else { "[user]" };
-                    println!(
-                        "  {} {} | triggers: {} | score: {:.2} | used: {}",
-                        tag,
-                        s.name,
-                        s.trigger.join(", "),
-                        s.score,
-                        s.usage_count
-                    );
-                }
-            }
-        }
-        sparrow::cli::SkillsAction::View { name } => match library.invoke(&name)? {
-            Some(invocation) => {
-                println!("# {}", invocation.skill.name);
-                println!("{}", invocation.skill.description);
-                println!("Triggers: {}", invocation.skill.trigger.join(", "));
-                println!();
-                println!("{}", invocation.skill.body);
-                if !invocation.loaded_references.is_empty() {
-                    println!("\nLoaded references:");
-                    for (path, content) in invocation.loaded_references {
-                        println!("## {}", path);
-                        println!("{}", content);
-                    }
-                }
-            }
-            None => println!("No skill named '{}'.", name),
-        },
-        sparrow::cli::SkillsAction::Create { name } => {
-            let skill = sparrow::capabilities::Skill {
-                name: name.clone(),
-                description: format!("User-created skill: {}", name),
-                trigger: vec![name.to_lowercase()],
-                body: format!("# {}\n\nAdd skill content here.", name),
-                source_file: format!("{}.skill.md", name),
-                usage_count: 0,
-                created_at: chrono::Utc::now().format("%Y-%m-%d").to_string(),
-                score: 0.5,
-                auto_generated: false,
-                references: Vec::new(),
-                templates: Vec::new(),
-                scripts: Vec::new(),
-                assets: Vec::new(),
-            };
-            library.add(skill)?;
-            println!(
-                "Skill '{}' created. Edit: ~/.config/sparrow/skills/{}/SKILL.md",
-                name, name
-            );
-        }
-        sparrow::cli::SkillsAction::Install { source } => {
-            let skill = load_skill_from_source(&source)?;
-            let name = skill.name.clone();
-            library.add(skill)?;
-            println!("Installed skill '{}'.", name);
-        }
-        sparrow::cli::SkillsAction::Update { name } => {
-            let Some(skill) = library.get(&name) else {
-                println!("No skill named '{}'.", name);
-                return Ok(());
-            };
-            library.add(skill)?;
-            println!("Skill '{}' refreshed.", name);
-        }
-        sparrow::cli::SkillsAction::Prune => {
-            let removed = library.prune(0.2)?;
-            println!(
-                "Curator pruned {} low-score auto-generated skill(s).",
-                removed
-            );
-            let skills = library.all();
-            println!("Library now has {} skills.", skills.len());
-        }
-        sparrow::cli::SkillsAction::Rm { name } => {
-            if library.remove(&name)? {
-                println!("Removed skill '{}'.", name);
-            } else {
-                println!(
-                    "No skill named '{}'. Run 'sparrow skills list' to see names.",
-                    name
-                );
-            }
-        }
-    }
-    Ok(())
-}
-
 fn load_skill_from_source(source: &str) -> anyhow::Result<sparrow::capabilities::Skill> {
     let source = source.trim();
 
@@ -3366,100 +3276,8 @@ fn handle_memory(
                 println!("Session '{}' not found.", session);
             }
         }
-        sparrow::cli::MemoryAction::Graph { action } => handle_memory_graph(action, memory)?,
-    }
-    Ok(())
-}
-
-fn handle_memory_graph(
-    action: sparrow::cli::GraphAction,
-    memory: &Arc<dyn Memory>,
-) -> anyhow::Result<()> {
-    use sparrow::memory::{GraphDirection, GraphEdge, GraphNode};
-    let now = chrono::Utc::now().to_rfc3339();
-    match action {
-        sparrow::cli::GraphAction::UpsertNode {
-            id,
-            label,
-            kind,
-            properties,
-        } => {
-            let properties = parse_json_properties(&properties)?;
-            memory.upsert_graph_node(GraphNode {
-                id: id.clone(),
-                label,
-                kind,
-                properties,
-                created_at: now.clone(),
-                updated_at: now,
-            })?;
-            println!("Graph node stored: {}", id);
-        }
-        sparrow::cli::GraphAction::UpsertEdge {
-            from_id,
-            relation,
-            to_id,
-            id,
-            weight,
-            properties,
-        } => {
-            let edge_id = id.unwrap_or_else(|| format!("{}:{}:{}", from_id, relation, to_id));
-            let properties = parse_json_properties(&properties)?;
-            memory.upsert_graph_edge(GraphEdge {
-                id: edge_id.clone(),
-                from_id,
-                to_id,
-                relation,
-                weight,
-                properties,
-                created_at: now.clone(),
-                updated_at: now,
-            })?;
-            println!("Graph edge stored: {}", edge_id);
-        }
-        sparrow::cli::GraphAction::Get { id } => {
-            if let Some(node) = memory.graph_node(&id) {
-                println!("{}", serde_json::to_string_pretty(&node)?);
-            } else {
-                println!("Graph node '{}' not found.", id);
-            }
-        }
-        sparrow::cli::GraphAction::Neighbors {
-            id,
-            direction,
-            limit,
-        } => {
-            let rows = memory.graph_neighbors(&id, GraphDirection::parse(&direction), limit);
-            println!("{}", serde_json::to_string_pretty(&rows)?);
-        }
-        sparrow::cli::GraphAction::Search { query, limit } => {
-            let nodes = memory.search_graph(&query, limit);
-            println!("{}", serde_json::to_string_pretty(&nodes)?);
-        }
-        sparrow::cli::GraphAction::Export => {
-            println!("{}", serde_json::to_string_pretty(&memory.graph_export())?);
-        }
-        sparrow::cli::GraphAction::DeleteNode { id } => {
-            memory.delete_graph_node(&id)?;
-            println!("Graph node deleted: {}", id);
-        }
-        sparrow::cli::GraphAction::DeleteEdge { id } => {
-            memory.delete_graph_edge(&id)?;
-            println!("Graph edge deleted: {}", id);
-        }
-        sparrow::cli::GraphAction::SyncNeo4j => {
-            let graph = memory.graph_export();
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()?;
-            let statements =
-                runtime.block_on(sparrow::tools::knowledge_graph::sync_graph_to_neo4j(&graph))?;
-            println!(
-                "Synced graph to Neo4j: {} nodes, {} edges, {} statements",
-                graph.nodes.len(),
-                graph.edges.len(),
-                statements
-            );
+        sparrow::cli::MemoryAction::Graph { action } => {
+            sparrow::cmd_handlers::handle_memory_graph_cmd::handle_memory_graph(action, memory)?
         }
     }
     Ok(())
