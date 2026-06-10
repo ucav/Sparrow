@@ -2058,6 +2058,8 @@ async fn get_routing(
         return axum::extract::Json(RoutingResponse {
             ok: false,
             preferred_provider: None,
+            preferred_model: None,
+            routing_mode: "auto".into(),
             auto_discover: true,
             all_providers,
         });

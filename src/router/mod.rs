@@ -130,6 +130,7 @@ impl BasicRouter {
             free_first: config.routing.free_first,
             preferred_provider: config.routing.preferred_provider.clone(),
             preferred_model: config.routing.preferred_model.clone(),
+            routing_mode: config.routing.routing_mode.clone(),
         }
     }
 

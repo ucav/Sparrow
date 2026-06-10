@@ -1545,7 +1545,7 @@ impl Engine {
         let mut estimated_cost_unconfirmed: f64 = 0.0;
         let mut cost_usd: f64 = 0.0;
         let mut total_tools_called: usize = 0;
-        let mut diffs: Vec<crate::event::FileDiff> = Vec::new();
+        let diffs: Vec<crate::event::FileDiff> = Vec::new();
         let mut current_chain_idx = 0usize;
         let mut tool_results_pending: Vec<(
             String,
