@@ -1,5 +1,6 @@
 // src/cmd_handlers/handle_memory_cmd.rs
-
+use super::prelude::*;
+use super::prelude::*;
 pub fn handle_memory(
     action: sparrow::cli::MemoryAction,
     memory: &Arc<dyn Memory>,
@@ -124,7 +125,9 @@ pub fn handle_memory(
                 println!("Session '{}' not found.", session);
             }
         }
-        sparrow::cli::MemoryAction::Graph { action } => handle_memory_graph(action, memory)?,
+        sparrow::cli::MemoryAction::Graph { action } => {
+            super::handle_memory_graph_cmd::handle_memory_graph(action, memory)?
+        }
     }
     Ok(())
 }

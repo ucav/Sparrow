@@ -1,5 +1,6 @@
 // src/cmd_handlers/handle_chat_cmd.rs
-
+use super::prelude::*;
+use super::prelude::*;
 pub async fn handle_chat(
     config: &sparrow::config::Config,
     memory: Arc<dyn Memory>,

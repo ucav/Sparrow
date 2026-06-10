@@ -1,4 +1,8 @@
 // src/cmd_handlers/handle_plan_cmd.rs
+use super::prelude::*;
+use sparrow::capabilities::SkillLibrary;
+use std::sync::Arc;
+
 pub fn handle_plan(
     task: &str,
     config: &sparrow::config::Config,

@@ -1,4 +1,5 @@
 // src/cmd_handlers/handle_agent_cmd.rs
+use super::prelude::*;
 pub async fn handle_agent(
     action: sparrow::cli::AgentAction,
     store: &Arc<dyn AgentStore>,
@@ -102,7 +103,7 @@ pub async fn handle_agent(
     Ok(())
 }
 
-fn looks_like_inline_secret(value: &str) -> bool {
+pub fn looks_like_inline_secret(value: &str) -> bool {
     let trimmed = value.trim();
     trimmed.starts_with("sk-")
         || trimmed.starts_with("nvapi-")
@@ -110,7 +111,7 @@ fn looks_like_inline_secret(value: &str) -> bool {
         || trimmed.starts_with("sk-or-")
 }
 
-fn apply_cli_overrides(config: &mut sparrow::config::Config, cli: &Cli) {
+pub fn apply_cli_overrides(config: &mut sparrow::config::Config, cli: &Cli) {
     if let Some(level) = cli.autonomy.as_deref() {
         let trimmed = level.trim().to_lowercase();
         // Accept named levels OR a float in [0.0, 1.0] — e.g. --autonomy 0.7
@@ -221,7 +222,7 @@ fn apply_cli_overrides(config: &mut sparrow::config::Config, cli: &Cli) {
     }
 }
 
-fn migrate_inline_provider_keys(config: &mut sparrow::config::Config, store: &FsConfigStore) {
+pub fn migrate_inline_provider_keys(config: &mut sparrow::config::Config, store: &FsConfigStore) {
     let auth = sparrow::auth::store::ChainedAuthStore::new(config.config_dir.clone());
     let mut changed = false;
 
@@ -358,7 +359,7 @@ pub async fn discover_and_cache_provider(
     }
 }
 
-fn build_provider_brains(
+pub fn build_provider_brains(
     config: &sparrow::config::Config,
     memory: &Arc<dyn Memory>,
     warn: bool,
@@ -664,4 +665,122 @@ pub async fn run_tui(
         let _ = store.save(&session_key, &conv, None);
     }
     Ok(())
+}
+pub fn config_for_soul(config: &sparrow::config::Config, soul: &Soul) -> sparrow::config::Config {
+    let mut run_config = config.clone();
+    if let Some(model_ref) = soul.default_model.as_deref() {
+        if let Some((provider, model)) = parse_agent_model_ref(model_ref) {
+            run_config.forced_model = Some((provider.clone(), model.clone()));
+            for tier in ["trivial", "small", "medium", "hard", "vision"] {
+                run_config
+                    .routing
+                    .policy
+                    .insert(tier.to_string(), provider.clone());
+            }
+            run_config
+                .providers
+                .entry(provider)
+                .or_insert_with(|| ProviderConfig {
+                    adapter: "openai-compatible".into(),
+                    base_url: None,
+                    models: vec![],
+                    api_key_env: None,
+                })
+                .models = vec![model];
+        }
+    }
+    if let Some(mode) = soul
+        .permission_mode
+        .as_deref()
+        .or(soul.default_autonomy.as_deref())
+        .and_then(sparrow::permissions::PermissionMode::parse)
+    {
+        run_config.defaults.autonomy = mode.autonomy_level();
+        run_config.permissions.mode = mode;
+    }
+    for tool in &soul.disallowed_tools {
+        if !run_config.permissions.tools.deny.contains(tool) {
+            run_config.permissions.tools.deny.push(tool.clone());
+        }
+    }
+    if !soul.tools.is_empty() {
+        for tool in &soul.tools {
+            if !run_config.permissions.tools.allow.contains(tool) {
+                run_config.permissions.tools.allow.push(tool.clone());
+            }
+        }
+    }
+    run_config
+}
+pub fn parse_agent_model_ref(model_ref: &str) -> Option<(String, String)> {
+    let model_ref = model_ref.trim();
+    if model_ref.is_empty() {
+        return None;
+    }
+    if let Some((provider, model)) = model_ref.split_once(':') {
+        let provider = provider.trim();
+        let model = model.trim();
+        if !provider.is_empty() && !model.is_empty() {
+            return Some((provider.to_string(), model.to_string()));
+        }
+    }
+    if let Some((provider, rest)) = model_ref.split_once('/') {
+        let provider = provider.trim();
+        if !provider.is_empty() {
+            return Some((provider.to_string(), model_ref.to_string()));
+        }
+        if !rest.trim().is_empty() {
+            return Some(("custom".into(), model_ref.to_string()));
+        }
+    }
+    Some(("custom".into(), model_ref.to_string()))
+}
+
+pub fn push_unique_path(values: &mut Vec<std::path::PathBuf>, value: std::path::PathBuf) {
+    if !values.iter().any(|existing| existing == &value) {
+        values.push(value);
+    }
+}
+
+pub fn print_permission_policy(config: &sparrow::config::Config) {
+    let policy = &config.permissions;
+    println!("Permission policy");
+    println!("=================");
+    println!("Mode     : {}", policy.mode.as_str());
+    println!("Autonomy : {:?}", config.defaults.autonomy);
+    println!("Tools");
+    println!("  allow : {}", list_or_empty(&policy.tools.allow));
+    println!("  ask   : {}", list_or_empty(&policy.tools.ask));
+    println!("  deny  : {}", list_or_empty(&policy.tools.deny));
+    println!("Paths");
+    println!("  allow : {}", path_list_or_empty(&policy.paths.allow));
+    println!("  deny  : {}", path_list_or_empty(&policy.paths.deny));
+    println!("Providers");
+    println!("  allow : {}", list_or_empty(&policy.providers.allow));
+    println!("  ask   : {}", list_or_empty(&policy.providers.ask));
+    println!("  deny  : {}", list_or_empty(&policy.providers.deny));
+    println!("Surfaces");
+    println!("  allow : {}", list_or_empty(&policy.surfaces.allow));
+    println!("  ask   : {}", list_or_empty(&policy.surfaces.ask));
+    println!("  deny  : {}", list_or_empty(&policy.surfaces.deny));
+}
+
+pub fn list_or_empty(values: &[String]) -> String {
+    if values.is_empty() {
+        "(empty)".into()
+    } else {
+        values.join(", ")
+    }
+}
+
+pub fn path_list_or_empty(values: &[std::path::PathBuf]) -> String {
+    if values.is_empty() {
+        "(empty)".into()
+    } else {
+        values
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
 }

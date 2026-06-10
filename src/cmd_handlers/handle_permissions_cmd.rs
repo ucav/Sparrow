@@ -1,4 +1,5 @@
 // src/cmd_handlers/handle_permissions_cmd.rs
+use super::prelude::*;
 pub fn handle_permissions(
     action: sparrow::cli::PermissionAction,
     config: &sparrow::config::Config,

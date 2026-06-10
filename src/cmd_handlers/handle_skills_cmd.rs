@@ -1,4 +1,5 @@
 // src/cmd_handlers/handle_skills_cmd.rs
+use super::prelude::*;
 pub fn handle_skills(
     action: sparrow::cli::SkillsAction,
     library: &Arc<dyn SkillLibrary>,

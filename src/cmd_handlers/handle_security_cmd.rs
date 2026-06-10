@@ -1,5 +1,6 @@
 // src/cmd_handlers/handle_security_cmd.rs
-
+use super::prelude::*;
+use super::prelude::*;
 pub fn handle_security(
     action: sparrow::cli::SecurityAction,
     config: &sparrow::config::Config,

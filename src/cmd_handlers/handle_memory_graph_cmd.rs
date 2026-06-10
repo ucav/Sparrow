@@ -1,4 +1,5 @@
 // src/cmd_handlers/handle_memory_graph_cmd.rs
+use super::prelude::*;
 pub fn handle_memory_graph(
     action: sparrow::cli::GraphAction,
     memory: &Arc<dyn Memory>,

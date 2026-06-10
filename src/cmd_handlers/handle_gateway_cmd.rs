@@ -1,5 +1,6 @@
 // src/cmd_handlers/handle_gateway_cmd.rs
-
+use super::prelude::*;
+use super::prelude::*;
 pub async fn handle_gateway(
     action: sparrow::cli::GatewayAction,
     state_dir: &std::path::PathBuf,

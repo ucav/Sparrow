@@ -1,5 +1,6 @@
 // src/cmd_handlers/handle_profile_cmd.rs
-
+use super::prelude::*;
+use super::prelude::*;
 pub fn handle_profile(
     action: sparrow::cli::ProfileAction,
     config_dir: &std::path::PathBuf,

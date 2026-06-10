@@ -375,7 +375,7 @@ async fn async_main() -> anyhow::Result<()> {
                     },
                     assume_yes: cli.yes,
                 };
-                run_task(
+                sparrow::cmd_handlers::handle_run_task_cmd::run_task(
                     task,
                     &config,
                     memory.clone(),
@@ -1050,6 +1050,110 @@ async fn async_main() -> anyhow::Result<()> {
 
     Ok(())
 }
+
+// ─── WebView helpers ────────────────────────────────────────────────────────
+
+fn redacted_config_snapshot(config: &sparrow::config::Config) -> serde_json::Value {
+    /// Returns true if `value` matches a vendor-specific secret pattern.
+    /// Each pattern is anchored on a recognisable prefix and a plausible
+    /// minimum length so we never accidentally redact short user-typed words.
+    fn looks_like_inline_secret(value: &str) -> bool {
+        crate::cmd_handlers::handle_agent_cmd::looks_like_inline_secret(value)
+    }
+
+    serde_json::json!({
+        "theme": config.theme,
+        "autonomy": config.defaults.autonomy,
+        "sandbox": config.defaults.sandbox,
+        "budget": {
+            "daily": config.budget.daily_usd,
+            "session": config.budget.session_usd
+        },
+        "routing": {
+            "free_first": config.routing.free_first,
+            "policy": config.routing.policy,
+            "preferred_provider": config.routing.preferred_provider
+        },
+        "providers": config.providers.iter().map(|(k, v)| {
+            (k.clone(), serde_json::json!({
+                "adapter": v.adapter,
+                "models": v.models,
+                "has_key": v.api_key_env.as_ref()
+                    .map(|env| std::env::var(env).map(|v| !v.trim().is_empty()).unwrap_or(false))
+                    .unwrap_or(false)
+            }))
+        }).collect::<serde_json::Map<_, _>>()
+    })
+}
+
+async fn run_task_json(
+    task: &str,
+    config: &sparrow::config::Config,
+    memory: Arc<dyn Memory>,
+    skills: Arc<dyn SkillLibrary>,
+    provider_brains: Vec<Box<dyn sparrow::provider::traits::Provider>>,
+    recorder: Arc<FsRecorder>,
+    events_for_runs: tokio::sync::broadcast::Sender<sparrow::event::Event>,
+    cli: &Cli,
+) -> anyhow::Result<()> {
+    let run_config = sparrow::cmd_handlers::handle_agent_cmd::config_for_soul(config, &cli.soul);
+    let config_snapshot = redacted_config_snapshot(config);
+    let model = cli.model.as_deref().unwrap_or("auto");
+    let provider_id = cli.provider.as_deref();
+
+    let brain =
+        sparrow::router::resolve_brain(&run_config, provider_brains, model, provider_id, task)?;
+
+    let engine = sparrow::engine::Engine::new(brain)
+        .with_skills(skills)
+        .with_memory(memory)
+        .with_config(config.clone())
+        .with_recorder(recorder);
+
+    let (tx, mut rx) = tokio::sync::mpsc::channel::<sparrow::event::Event>(256);
+    let events_clone = events_for_runs.clone();
+
+    tokio::spawn(async move {
+        while let Some(event) = rx.recv().await {
+            let _ = events_clone.send(event);
+        }
+    });
+
+    let outcome = engine.drive(task, tx).await?;
+    let result = serde_json::json!({
+        "status": outcome.status,
+        "cost_usd": outcome.cost_usd,
+        "tokens": { "input": outcome.tokens.input, "output": outcome.tokens.output },
+        "diffs": outcome.diffs,
+        "cost_comparison": outcome.cost_comparison
+    });
+
+    println!("{}", serde_json::to_string_pretty(&result)?);
+    Ok(())
+}
+
+fn extract_webview_protocol_prefixes(input: &str) -> (String, Option<String>, Option<String>) {
+    let re = regex::Regex::new(r"__model:([^_]+)__\s*").unwrap();
+    if let Some(caps) = re.captures(input) {
+        let model_ref = caps.get(1).unwrap().as_str();
+        let (provider_id, model) =
+            sparrow::cmd_handlers::handle_agent_cmd::parse_agent_model_ref(model_ref)
+                .unwrap_or_else(|| ("custom".into(), model_ref.into()));
+        let clean = re.replace(input, "").to_string();
+        return (clean, Some(provider_id), Some(model));
+    }
+
+    let provider_re = regex::Regex::new(r"__provider:([^_]+)__\s*").unwrap();
+    if let Some(caps) = provider_re.captures(input) {
+        let provider_id = caps.get(1).unwrap().as_str().to_string();
+        let clean = provider_re.replace(input, "").to_string();
+        return (clean, Some(provider_id), None);
+    }
+
+    (input.to_string(), None, None)
+}
+
+// ─── WebView command ─────────────────────────────────────────────────────────
 
 async fn handle_webview(
     config: &sparrow::config::Config,

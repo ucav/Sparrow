@@ -1,3 +1,5 @@
+pub mod prelude;
+
 pub mod handle_agent_cmd;
 pub mod handle_auth_login_cmd;
 pub mod handle_chat_cmd;
@@ -14,6 +16,7 @@ pub mod handle_plan_cmd;
 pub mod handle_plugins_cmd;
 pub mod handle_profile_cmd;
 pub mod handle_replay_cmd;
+pub mod handle_run_task_cmd;
 pub mod handle_schedule_cmd;
 pub mod handle_security_cmd;
 pub mod handle_sessions_cmd;
