@@ -27,8 +27,8 @@ use sparrow::cmd_handlers::handle_agent_cmd::{
     migrate_inline_provider_keys, refresh_discovery_cache, run_tui,
 };
 use sparrow::cmd_handlers::handle_memory_graph_cmd::current_repo_head;
-use sparrow::cmd_handlers::handle_run_task_cmd::redacted_config_snapshot;
 use sparrow::cmd_handlers::handle_permissions_cmd::run_swarm;
+use sparrow::cmd_handlers::handle_run_task_cmd::redacted_config_snapshot;
 use sparrow::cmd_handlers::prelude::{RunFlags, SessionMode};
 use std::io::Write;
 use std::sync::Arc;
