@@ -19,7 +19,8 @@ use crate::instructions::InstructionDoc;
 use crate::memory::{Fact, Memory, MemoryDoc, MemoryDocKind};
 use crate::permissions::PermissionContext;
 use crate::provider::{
-    Brain, BrainEvent, BrainRequest, ContentBlock, ImageSource, Msg, PromptCacheConfig, ToolSpec,
+    Brain, BrainError, BrainEvent, BrainRequest, ContentBlock, ImageSource, Msg, PromptCacheConfig,
+    ToolSpec,
 };
 use crate::reasoning::ReasoningEngine;
 use crate::redaction::RedactionFilter;
@@ -1287,6 +1288,17 @@ impl Engine {
         // a model returns an empty completion and nothing has been produced yet,
         // we fall back to the next model in the chain (rescues a dead provider).
         let mut produced_any_output = false;
+        // Transient-failure retry state: a rate limit or timeout on the primary
+        // model must NOT permanently downgrade a long run to a weaker fallback.
+        // We retry the same brain (bounded, with backoff) before advancing.
+        let mut transient_retries: u32 = 0;
+        const MAX_TRANSIENT_RETRIES: u32 = 2;
+        // Stuck-loop detection: a turn that issues the exact same tool calls as
+        // the previous turn is the classic long-task death spiral (re-reading
+        // the same file, retrying a failing edit verbatim). Nudge at 3 repeats,
+        // stop honestly at 5 — long before the MAX_TURNS budget burns out.
+        let mut last_tool_sig: Option<u64> = None;
+        let mut repeated_tool_turns: u32 = 0;
 
         // Helper to send redacted events
         let send = |event: Event| {
@@ -1572,6 +1584,8 @@ impl Engine {
 
             match brain.complete(req).await {
                 Ok(mut stream) => {
+                    // The provider answered — clear the transient-failure budget.
+                    transient_retries = 0;
                     let mut current_tool_name = String::new();
                     let mut current_tool_json = String::new();
                     let mut output_chars_seen: u64 = 0;
@@ -2450,6 +2464,18 @@ impl Engine {
                                                 text: reasoning_buf.clone(),
                                             });
                                         }
+                                        // Signature of this turn's tool calls for the
+                                        // stuck-loop guard (name + args, order-sensitive).
+                                        let turn_sig = {
+                                            use std::collections::hash_map::DefaultHasher;
+                                            use std::hash::{Hash, Hasher};
+                                            let mut h = DefaultHasher::new();
+                                            for (_, name, args, _, _) in &drained {
+                                                name.hash(&mut h);
+                                                args.to_string().hash(&mut h);
+                                            }
+                                            h.finish()
+                                        };
                                         for (tool_id, tool_name, args, _content, _is_error) in
                                             &drained
                                         {
@@ -2464,6 +2490,7 @@ impl Engine {
                                             content: assistant_blocks,
                                         });
 
+                                        let turn_had_tools = !drained.is_empty();
                                         for (tool_id, _tool_name, _args, content, is_error) in
                                             drained
                                         {
@@ -2479,6 +2506,57 @@ impl Engine {
                                         if tool_output_seen_this_completion {
                                             produced_any_output = true;
                                         }
+
+                                        // Stuck-loop guard: identical tool-call turns.
+                                        if turn_had_tools {
+                                            if last_tool_sig == Some(turn_sig) {
+                                                repeated_tool_turns += 1;
+                                            } else {
+                                                repeated_tool_turns = 0;
+                                                last_tool_sig = Some(turn_sig);
+                                            }
+                                        }
+                                        if repeated_tool_turns == 2 {
+                                            // 3rd identical turn — nudge the model.
+                                            messages.push(Msg {
+                                                role: "user".into(),
+                                                content: vec![ContentBlock::Text {
+                                                    text: "guard: you have issued the exact same \
+                                                           tool call(s) three turns in a row with \
+                                                           identical arguments. The result will \
+                                                           not change. State what you learned and \
+                                                           take a DIFFERENT action — or finish \
+                                                           with your best answer now."
+                                                        .into(),
+                                                }],
+                                            });
+                                            send(Event::Message {
+                                                run: run_id.clone(),
+                                                role: "guard".into(),
+                                                text: "repeated identical tool calls — nudging \
+                                                       the model to change approach"
+                                                    .into(),
+                                            });
+                                        } else if repeated_tool_turns >= 4 {
+                                            // 5th identical turn — stop honestly instead of
+                                            // burning the remaining turn/budget allowance.
+                                            send(Event::Message {
+                                                run: run_id.clone(),
+                                                role: "guard".into(),
+                                                text: "stuck loop: 5 identical tool-call turns \
+                                                       — stopping the run"
+                                                    .into(),
+                                            });
+                                            had_error = true;
+                                            last_error = Some(
+                                                "stopped by stuck-loop guard (5 identical \
+                                                 tool-call turns)"
+                                                    .into(),
+                                            );
+                                            continue_agent_loop = false;
+                                            break;
+                                        }
+
                                         continue_agent_loop =
                                             !waiting_for_approval && !stop_after_tool_result;
                                         break;
@@ -2554,6 +2632,54 @@ impl Engine {
                         run: run_id.clone(),
                         message: err_msg.clone(),
                     });
+
+                    // Transient failures (rate limit, timeout, 5xx, connection
+                    // blips) get a bounded retry on the SAME brain first —
+                    // otherwise one 429 on the primary silently downgrades the
+                    // whole run to a weaker fallback model.
+                    let retry_after_hint = match e.downcast_ref::<BrainError>() {
+                        Some(BrainError::RateLimit { retry_after }) => Some(*retry_after),
+                        Some(BrainError::Timeout) => Some(None),
+                        Some(BrainError::ServerError { status, .. }) if *status >= 500 => {
+                            Some(None)
+                        }
+                        Some(_) => None,
+                        None => {
+                            let s = err_msg.to_lowercase();
+                            let transient = s.contains("rate limit")
+                                || s.contains("429")
+                                || s.contains("timeout")
+                                || s.contains("timed out")
+                                || s.contains("connection")
+                                || s.contains("overloaded")
+                                || s.contains("502")
+                                || s.contains("503");
+                            if transient { Some(None) } else { None }
+                        }
+                    };
+                    if let Some(hint) = retry_after_hint {
+                        if transient_retries < MAX_TRANSIENT_RETRIES {
+                            transient_retries += 1;
+                            // Honour the provider's Retry-After when given,
+                            // capped so a run never stalls for minutes.
+                            let secs = hint.unwrap_or(2u64.pow(transient_retries)).min(20);
+                            send(Event::Message {
+                                run: run_id.clone(),
+                                role: "guard".into(),
+                                text: format!(
+                                    "provider hiccup ({}) — retrying {} in {}s (attempt {}/{})",
+                                    err_msg,
+                                    brain.id(),
+                                    secs,
+                                    transient_retries,
+                                    MAX_TRANSIENT_RETRIES
+                                ),
+                            });
+                            tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
+                            continue;
+                        }
+                    }
+                    transient_retries = 0;
 
                     // Try next in chain
                     let next_idx = current_chain_idx + 1;
