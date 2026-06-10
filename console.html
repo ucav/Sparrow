@@ -929,6 +929,18 @@
       </select>
     </div>
     <div class="row">
+      <label>preferred model</label>
+      <input id="preferredModelSelect" type="text" placeholder="e.g. deepseek-v4-pro" style="max-width:220px">
+      <span class="muted" style="font-size:10px">leave empty for all models from provider</span>
+    </div>
+    <div class="row">
+      <label>routing mode</label>
+      <select id="routingModeSelect">
+        <option value="auto">auto: tier-based + free fallback</option>
+        <option value="manual">manual: exact provider/model, zero fallback</option>
+      </select>
+    </div>
+    <div class="row">
       <label>auto-discover models</label>
       <input type="checkbox" id="autoDiscoverToggle" checked>
       <span class="muted" style="font-size:10px">scan provider APIs for available models on startup</span>
@@ -4493,6 +4505,16 @@ async function loadRouting(){
       sel.innerHTML='<option value="">-- auto (smart routing per tier) --</option>'+
         (j.all_providers||[]).map(function(id){return '<option value="'+id+'"'+(id===cur?' selected':'')+'>'+id+'</option>';}).join('');
     }
+    // Model selector
+    const modelSel=document.getElementById('preferredModelSelect');
+    if(modelSel){
+      modelSel.value=j.preferred_model||'';
+    }
+    // Routing mode toggle
+    const modeSel=document.getElementById('routingModeSelect');
+    if(modeSel){
+      modeSel.value=j.routing_mode||'auto';
+    }
     const tog=document.getElementById('autoDiscoverToggle');
     if(tog)tog.checked=j.auto_discover!==false;
   }catch(e){console.warn('loadRouting failed',e);}
@@ -4500,8 +4522,15 @@ async function loadRouting(){
 
 async function saveRouting(){
   const sel=document.getElementById('preferredProviderSelect');
+  const modelSel=document.getElementById('preferredModelSelect');
+  const modeSel=document.getElementById('routingModeSelect');
   const tog=document.getElementById('autoDiscoverToggle');
-  const body={preferred_provider:sel?sel.value:'',auto_discover:tog?tog.checked:true};
+  const body={
+    preferred_provider:sel&&sel.value?sel.value:null,
+    preferred_model:modelSel&&modelSel.value?modelSel.value:null,
+    routing_mode:modeSel?modeSel.value:'auto',
+    auto_discover:tog?tog.checked:true
+  };
   try{
     const r=await fetch('/routing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const j=await r.json();

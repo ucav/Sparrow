@@ -2033,14 +2033,17 @@ async fn scan_provider_models(
 struct RoutingResponse {
     ok: bool,
     preferred_provider: Option<String>,
+    preferred_model: Option<String>,
+    routing_mode: String,
     auto_discover: bool,
     all_providers: Vec<String>,
 }
 
 #[derive(serde::Deserialize)]
 struct RoutingRequest {
-    /// Set to "" or null to clear the preference.
     preferred_provider: Option<String>,
+    preferred_model: Option<String>,
+    routing_mode: Option<String>,
     auto_discover: Option<bool>,
 }
 
@@ -2064,6 +2067,8 @@ async fn get_routing(
     axum::extract::Json(RoutingResponse {
         ok: true,
         preferred_provider: cfg.routing.preferred_provider.clone(),
+        preferred_model: cfg.routing.preferred_model.clone(),
+        routing_mode: cfg.routing.routing_mode.clone(),
         auto_discover: cfg.routing.auto_discover,
         all_providers,
     })
@@ -2088,6 +2093,15 @@ async fn save_routing(
             .preferred_provider
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty());
+
+        cfg.routing.preferred_model = req
+            .preferred_model
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty());
+
+        if let Some(ref mode) = req.routing_mode {
+            cfg.routing.routing_mode = mode.trim().to_string();
+        }
 
         if let Some(ad) = req.auto_discover {
             cfg.routing.auto_discover = ad;
