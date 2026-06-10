@@ -98,6 +98,41 @@ impl WebViewServer {
         };
 
         let event_tx = self.event_tx.clone();
+
+        // Replay-on-connect buffer: a client that opens (or refreshes) the
+        // cockpit mid-run must see the run so far, not a blank feed. Keep the
+        // current run's public events in a bounded ring (cleared on each
+        // RunStarted) and send it to every new WebSocket before going live.
+        let recent: Arc<parking_lot::Mutex<std::collections::VecDeque<Event>>> =
+            Arc::new(parking_lot::Mutex::new(std::collections::VecDeque::new()));
+        {
+            let recent = recent.clone();
+            let mut brx = event_tx.subscribe();
+            tokio::spawn(async move {
+                const RING_CAP: usize = 800;
+                loop {
+                    match brx.recv().await {
+                        Ok(ev) => {
+                            if !ev.is_public() {
+                                continue;
+                            }
+                            let mut ring = recent.lock();
+                            if matches!(ev, Event::RunStarted { .. }) {
+                                ring.clear();
+                            }
+                            if ring.len() >= RING_CAP {
+                                ring.pop_front();
+                            }
+                            ring.push_back(ev);
+                        }
+                        // Lagged: skip dropped events; Closed: stop.
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                    }
+                }
+            });
+        }
+
         let state = Arc::new(AppState {
             event_tx: event_tx.clone(),
             command_tx: self.command_tx.clone(),
@@ -149,9 +184,16 @@ impl WebViewServer {
             .route(
                 "/ws",
                 get(
-                    move |ws: WebSocketUpgrade, State(state): State<Arc<AppState>>| async move {
-                        let rx = state.event_tx.subscribe();
-                        ws.on_upgrade(move |socket| handle_ws(socket, rx))
+                    move |ws: WebSocketUpgrade, State(state): State<Arc<AppState>>| {
+                        let recent = recent.clone();
+                        async move {
+                            // Subscribe BEFORE snapshotting so no event falls in
+                            // the gap (a microsecond overlap may duplicate one
+                            // trailing event — harmless for a log feed).
+                            let rx = state.event_tx.subscribe();
+                            let snapshot: Vec<Event> = recent.lock().iter().cloned().collect();
+                            ws.on_upgrade(move |socket| handle_ws(socket, rx, snapshot))
+                        }
                     },
                 ),
             )
@@ -1951,7 +1993,18 @@ async fn save_routing(
 async fn handle_ws(
     mut socket: axum::extract::ws::WebSocket,
     mut event_rx: tokio::sync::broadcast::Receiver<Event>,
+    snapshot: Vec<Event>,
 ) {
+    // Replay the current run so far, so a refresh mid-run never shows a
+    // blank feed. The snapshot only holds public events.
+    for event in &snapshot {
+        if let Ok(json) = serde_json::to_string(event) {
+            use axum::extract::ws::Message;
+            if socket.send(Message::Text(json.into())).await.is_err() {
+                return;
+            }
+        }
+    }
     loop {
         tokio::select! {
             result = event_rx.recv() => {

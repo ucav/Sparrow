@@ -5,6 +5,16 @@ All notable changes to Sparrow will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Engine: bounded transient-failure retry — a rate limit, timeout, or 5xx on
+  the primary model retries the same model (with backoff, honouring
+  Retry-After) before falling back, so one 429 no longer silently downgrades a
+  long run to a weaker model.
+- Engine: stuck-loop guard — a turn that repeats the exact same tool calls is
+  nudged to change approach on the 3rd repeat and the run is stopped honestly
+  on the 5th, instead of burning the remaining turn/budget allowance.
+- Console: replay-on-connect — opening or refreshing the cockpit mid-run now
+  replays the current run's events (bounded ring, cleared per run) instead of
+  showing a blank feed.
 - `sparrow import <claude-code|codex|opencode|openclaw|auto>` — one-command
   migration of agents, slash commands, settings, and MCP servers from other
   tools. `auto` detects every installed tool and imports each one.
