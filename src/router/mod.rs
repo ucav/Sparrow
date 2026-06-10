@@ -107,6 +107,7 @@ pub struct BasicRouter {
     /// Global preferred provider override — when Some, every tier resolves to
     /// this provider first (capability constraints still apply).
     preferred_provider: Option<String>,
+    preferred_model: Option<String>,
 }
 
 impl BasicRouter {
@@ -128,6 +129,7 @@ impl BasicRouter {
             policy,
             free_first: config.routing.free_first,
             preferred_provider: config.routing.preferred_provider.clone(),
+            preferred_model: config.routing.preferred_model.clone(),
         }
     }
 
@@ -251,6 +253,21 @@ impl BasicRouter {
 
 impl Router for BasicRouter {
     fn select(&self, need: &RoutingNeed, budget: &BudgetState) -> Vec<Arc<dyn Brain>> {
+        // Manual mode with a specific model: use EXACTLY that model, nothing else.
+        if self.routing_mode == "manual" {
+            if let Some(ref model) = self.preferred_model {
+                for (_, brains) in &self.providers {
+                    for brain in brains {
+                        if brain.id() == *model {
+                            return vec![brain.clone()];
+                        }
+                    }
+                }
+                // Model not found — return empty, let engine report the error
+                return vec![];
+            }
+        }
+
         if budget.is_exhausted() && !need.prefer_local {
             // Only free/local models remain
             if let Some(local) = self.providers.get("local") {

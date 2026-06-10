@@ -102,6 +102,11 @@ pub struct Routing {
     /// in config.yaml under `routing.preferred_provider`.
     #[serde(default)]
     pub preferred_provider: Option<String>,
+    /// Pin ALL routing tiers to a single MODEL. When set with routing_mode=manual,
+    /// Sparrow uses exactly this model (e.g. \"deepseek-v4-pro\") and never falls
+    /// back. Set via `sparrow route model <model>`.
+    #[serde(default)]
+    pub preferred_model: Option<String>,
     /// Routing mode: \"auto\" (tier-based policy + free_first) or \"manual\"
     /// (always use preferred_provider or the model the user picked, never
     /// auto-fallback). Set via `sparrow route manual`.
@@ -117,6 +122,7 @@ impl Default for Routing {
             on_budget: default_on_budget(),
             auto_discover: true,
             preferred_provider: None,
+            preferred_model: None,
             routing_mode: default_routing_mode(),
         }
     }
