@@ -1,6 +1,6 @@
-// src/cmd_handlers/handle_tools_cmd.rs — extracted from main.rs
+// src/cmd_handlers/handle_tools_cmd.rs
 
-fn handle_tools(
+pub fn handle_tools(
     action: sparrow::cli::ToolsAction,
     config_store: &FsConfigStore,
 ) -> anyhow::Result<()> {

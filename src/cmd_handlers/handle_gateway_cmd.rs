@@ -1,6 +1,6 @@
-// src/cmd_handlers/handle_gateway_cmd.rs — extracted from main.rs
+// src/cmd_handlers/handle_gateway_cmd.rs
 
-async fn handle_gateway(
+pub async fn handle_gateway(
     action: sparrow::cli::GatewayAction,
     state_dir: &std::path::PathBuf,
     config: &sparrow::config::Config,
@@ -318,23 +318,23 @@ async fn handle_gateway(
     }
 }
 
-fn gateway_pid_path(state_dir: &std::path::Path) -> std::path::PathBuf {
+pub fn gateway_pid_path(state_dir: &std::path::Path) -> std::path::PathBuf {
     state_dir.join("gateway.pid")
 }
 
-fn write_gateway_pid(state_dir: &std::path::Path) -> anyhow::Result<()> {
+pub fn write_gateway_pid(state_dir: &std::path::Path) -> anyhow::Result<()> {
     std::fs::create_dir_all(state_dir)?;
     std::fs::write(gateway_pid_path(state_dir), std::process::id().to_string())?;
     Ok(())
 }
 
-fn read_gateway_pid(state_dir: &std::path::Path) -> Option<u32> {
+pub fn read_gateway_pid(state_dir: &std::path::Path) -> Option<u32> {
     std::fs::read_to_string(gateway_pid_path(state_dir))
         .ok()
         .and_then(|s| s.trim().parse::<u32>().ok())
 }
 
-fn remove_gateway_pid(state_dir: &std::path::Path) -> std::io::Result<()> {
+pub fn remove_gateway_pid(state_dir: &std::path::Path) -> std::io::Result<()> {
     let path = gateway_pid_path(state_dir);
     if path.exists() {
         std::fs::remove_file(path)?;
@@ -342,7 +342,7 @@ fn remove_gateway_pid(state_dir: &std::path::Path) -> std::io::Result<()> {
     Ok(())
 }
 
-fn sanitize_file_component(value: &str) -> String {
+pub fn sanitize_file_component(value: &str) -> String {
     let cleaned = value
         .chars()
         .map(|ch| {
@@ -362,7 +362,7 @@ fn sanitize_file_component(value: &str) -> String {
     }
 }
 
-fn gateway_ws_port_open() -> bool {
+pub fn gateway_ws_port_open() -> bool {
     std::net::TcpStream::connect_timeout(
         &"127.0.0.1:9338".parse().expect("valid socket address"),
         std::time::Duration::from_millis(250),
@@ -370,7 +370,7 @@ fn gateway_ws_port_open() -> bool {
     .is_ok()
 }
 
-fn process_is_running(pid: u32) -> bool {
+pub fn process_is_running(pid: u32) -> bool {
     #[cfg(windows)]
     {
         std::process::Command::new("tasklist")
@@ -392,7 +392,7 @@ fn process_is_running(pid: u32) -> bool {
     }
 }
 
-fn stop_gateway_process(pid: u32) -> anyhow::Result<()> {
+pub fn stop_gateway_process(pid: u32) -> anyhow::Result<()> {
     #[cfg(windows)]
     {
         let status = std::process::Command::new("taskkill")
@@ -413,6 +413,3 @@ fn stop_gateway_process(pid: u32) -> anyhow::Result<()> {
     }
     Ok(())
 }
-
-// ─── Profile commands ───────────────────────────────────────────────────────────
-

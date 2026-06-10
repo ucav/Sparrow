@@ -1,6 +1,6 @@
-// src/cmd_handlers/handle_profile_cmd.rs — extracted from main.rs
+// src/cmd_handlers/handle_profile_cmd.rs
 
-fn handle_profile(
+pub fn handle_profile(
     action: sparrow::cli::ProfileAction,
     config_dir: &std::path::PathBuf,
     state_dir: &std::path::PathBuf,
@@ -59,4 +59,3 @@ fn handle_profile(
 }
 
 // ─── Import command ─────────────────────────────────────────────────────────────
-

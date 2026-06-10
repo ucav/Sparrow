@@ -1,6 +1,6 @@
-// src/cmd_handlers/handle_plugins_cmd.rs — extracted from main.rs
+// src/cmd_handlers/handle_plugins_cmd.rs
 
-fn handle_plugins(
+pub fn handle_plugins(
     action: sparrow::cli::PluginsAction,
     config_dir: &std::path::Path,
 ) -> anyhow::Result<()> {

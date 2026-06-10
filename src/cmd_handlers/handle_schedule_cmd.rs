@@ -1,6 +1,6 @@
 // src/cmd_handlers/handle_schedule_cmd.rs
 
-async fn handle_schedule(
+pub async fn handle_schedule(
     task: &str,
     cron: &str,
     autonomy: Option<String>,
@@ -61,5 +61,3 @@ async fn handle_schedule(
 
     Ok(())
 }
-
-// ─── Replay command ─────────────────────────────────────────────────────────────

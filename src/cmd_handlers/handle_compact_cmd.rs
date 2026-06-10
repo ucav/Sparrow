@@ -1,6 +1,6 @@
-// src/cmd_handlers/handle_compact_cmd.rs — extracted from main.rs
+// src/cmd_handlers/handle_compact_cmd.rs
 
-fn handle_compact(
+pub fn handle_compact(
     task: Option<String>,
     out: Option<std::path::PathBuf>,
     json: bool,
@@ -37,5 +37,3 @@ fn handle_compact(
     }
     Ok(())
 }
-
-// ─── GitHub Action / remote PR ──────────────────────────────────────────────────

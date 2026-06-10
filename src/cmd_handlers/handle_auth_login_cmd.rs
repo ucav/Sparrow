@@ -1,6 +1,6 @@
-// src/cmd_handlers/handle_auth_login_cmd.rs — extracted from main.rs
+// src/cmd_handlers/handle_auth_login_cmd.rs
 
-async fn handle_auth_login(
+pub async fn handle_auth_login(
     provider: &str,
     client_id: Option<String>,
     auth: &sparrow::auth::store::ChainedAuthStore,
@@ -63,4 +63,24 @@ async fn handle_auth_login(
     auth.set(provider, sparrow::auth::Credential::api_key(token))?;
     println!("Authenticated. Credential stored for {}.", provider);
     Ok(())
+}
+
+/// How `run_task` resolves the conversation context for this run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum SessionMode {
+    /// Continue this directory's session (existing behaviour).
+    #[default]
+    Auto,
+    /// Ignore any saved session — start clean.
+    Fresh,
+    /// Continue the most recently updated session from ANY surface.
+    ContinueLast,
+}
+
+/// Per-invocation run options threaded from the CLI flags.
+#[derive(Debug, Clone, Copy, Default)]
+struct RunFlags {
+    session_mode: SessionMode,
+    /// Skip the pre-run quote confirmation (--yes, or non-interactive).
+    assume_yes: bool,
 }

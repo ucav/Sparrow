@@ -260,7 +260,7 @@ async fn async_main() -> anyhow::Result<()> {
                 )
                 .await?;
             } else if cli.web {
-                sparrow::cmd_handlers::handle_webview_cmd::handle_webview(
+                handle_webview(
                     &config,
                     memory.clone(),
                     scheduler.clone(),
@@ -319,7 +319,7 @@ async fn async_main() -> anyhow::Result<()> {
                 )
                 .await?;
             } else {
-                sparrow::cmd_handlers::handle_webview_cmd::handle_webview(
+                handle_webview(
                     &config,
                     memory.clone(),
                     scheduler.clone(),
@@ -332,7 +332,7 @@ async fn async_main() -> anyhow::Result<()> {
             }
         }
         Some(Commands::Console { port }) => {
-            sparrow::cmd_handlers::handle_webview_cmd::handle_webview(
+            handle_webview(
                 &config,
                 memory.clone(),
                 scheduler.clone(),
@@ -938,7 +938,11 @@ async fn async_main() -> anyhow::Result<()> {
             }
         }
         Some(Commands::Profile { action }) => {
-            sparrow::cmd_handlers::handle_profile_cmd::handle_profile(action, &config_dir, &state_dir)?;
+            sparrow::cmd_handlers::handle_profile_cmd::handle_profile(
+                action,
+                &config_dir,
+                &state_dir,
+            )?;
         }
         Some(Commands::Import { source }) => {
             sparrow::cmd_handlers::import_cmd::handle_full_import(source)?;
@@ -1047,1651 +1051,355 @@ async fn async_main() -> anyhow::Result<()> {
     Ok(())
 }
 
-// ─── Agent commands ─────────────────────────────────────────────────────────────
-
-
-fn looks_like_inline_secret(value: &str) -> bool {
-    let trimmed = value.trim();
-    trimmed.starts_with("sk-")
-        || trimmed.starts_with("nvapi-")
-        || trimmed.starts_with("gsk_")
-        || trimmed.starts_with("sk-or-")
-}
-
-fn apply_cli_overrides(config: &mut sparrow::config::Config, cli: &Cli) {
-    if let Some(level) = cli.autonomy.as_deref() {
-        let trimmed = level.trim().to_lowercase();
-        // Accept named levels OR a float in [0.0, 1.0] — e.g. --autonomy 0.7
-        config.defaults.autonomy = match trimmed.as_str() {
-            "supervised" => sparrow::event::AutonomyLevel::Supervised,
-            "trusted" => sparrow::event::AutonomyLevel::Trusted,
-            "autonomous" => sparrow::event::AutonomyLevel::Autonomous,
-            other => {
-                if let Ok(f) = other.parse::<f64>() {
-                    sparrow::event::AutonomyLevel::from_float(f.clamp(0.0, 1.0))
-                } else {
-                    config.defaults.autonomy.clone()
-                }
-            }
-        };
-        config.permissions.mode = match config.defaults.autonomy {
-            sparrow::event::AutonomyLevel::Supervised => {
-                sparrow::permissions::PermissionMode::Supervised
-            }
-            sparrow::event::AutonomyLevel::Trusted => sparrow::permissions::PermissionMode::Trusted,
-            sparrow::event::AutonomyLevel::Autonomous => {
-                sparrow::permissions::PermissionMode::Autonomous
-            }
-        };
-    }
-    if let Some(budget) = cli.budget {
-        if budget > 0.0 {
-            config.budget.session_usd = budget;
-        }
-    }
-    if let Some(sandbox) = cli
-        .sandbox
-        .as_ref()
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-    {
-        config.defaults.sandbox = sandbox.to_string();
-    }
-    if cli.local {
-        config.routing.free_first = true;
-        config
-            .routing
-            .policy
-            .insert("trivial".into(), "ollama".into());
-        config
-            .routing
-            .policy
-            .insert("small".into(), "ollama".into());
-        config
-            .routing
-            .policy
-            .insert("medium".into(), "ollama".into());
-        config.routing.policy.insert("hard".into(), "ollama".into());
-        config
-            .routing
-            .policy
-            .insert("vision".into(), "ollama".into());
-    }
-    if let Some(model_ref) = cli
-        .model
-        .as_ref()
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-    {
-        let (provider, model) = model_ref
-            .split_once(':')
-            .map(|(p, m)| (p.trim().to_lowercase(), m.trim().to_string()))
-            .unwrap_or_else(|| ("custom".into(), model_ref.to_string()));
-        if !model.is_empty() {
-            config.forced_model = Some((provider.clone(), model.clone()));
-            config
-                .routing
-                .policy
-                .insert("trivial".into(), provider.clone());
-            config
-                .routing
-                .policy
-                .insert("small".into(), provider.clone());
-            config
-                .routing
-                .policy
-                .insert("medium".into(), provider.clone());
-            config
-                .routing
-                .policy
-                .insert("hard".into(), provider.clone());
-            config
-                .routing
-                .policy
-                .insert("vision".into(), provider.clone());
-            config
-                .providers
-                .entry(provider.clone())
-                .or_insert_with(|| {
-                    let def = sparrow::config::providers::find_provider(&provider);
-                    ProviderConfig {
-                        adapter: def
-                            .as_ref()
-                            .map(|d| d.adapter.clone())
-                            .unwrap_or_else(|| "openai-compatible".into()),
-                        base_url: def.as_ref().map(|d| d.base_url.clone()),
-                        models: vec![],
-                        api_key_env: def.and_then(|d| d.api_key_env),
-                    }
-                })
-                .models = vec![model];
-        }
-    }
-}
-
-fn migrate_inline_provider_keys(config: &mut sparrow::config::Config, store: &FsConfigStore) {
-    let auth = sparrow::auth::store::ChainedAuthStore::new(config.config_dir.clone());
-    let mut changed = false;
-
-    for (name, provider) in config.providers.iter_mut() {
-        let Some(inline_key) = provider
-            .api_key_env
-            .as_ref()
-            .map(|value| value.trim().to_string())
-            .filter(|value| looks_like_inline_secret(value))
-        else {
-            continue;
-        };
-
-        if let Err(err) = auth.set(name, Credential::api_key(inline_key)) {
-            // Hard failure: do NOT keep the inline key in the config (it would
-            // sit there in plaintext) but DO leave the field intact so the
-            // operator can retry. Log loudly so the failure isn't silent.
-            eprintln!(
-                "warning: failed to migrate inline API key for provider '{}' into the credential \
-                 store: {}. The inline key remains in config.toml — fix the store and re-run \
-                 `sparrow setup` to migrate, or remove the key from config.toml manually.",
-                name, err
-            );
-            tracing::warn!(
-                provider = %name,
-                error = %err,
-                "inline api-key migration failed; key left in config"
-            );
-            continue;
-        }
-
-        provider.api_key_env =
-            sparrow::config::providers::find_provider(name).and_then(|def| def.api_key_env);
-        changed = true;
-    }
-
-    if changed {
-        if let Err(err) = store.save(config) {
-            eprintln!(
-                "warning: migrated inline API keys into the credential store but FAILED to \
-                 update config.toml: {}. Re-run `sparrow setup` to retry, or the inline keys \
-                 may reappear on next start.",
-                err
-            );
-            tracing::warn!(error = %err, "config save after key migration failed");
-        }
-    }
-}
-
-async fn refresh_discovery_cache(
-    memory: Arc<dyn Memory>,
-    config: &sparrow::config::Config,
-    force: bool,
-    announce: bool,
-) {
-    let auth = sparrow::auth::store::ChainedAuthStore::new(config.config_dir.clone());
-
-    if force || memory.get_discovered_models("ollama").is_empty() {
-        let ollama_base_url =
-            std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434/v1".into());
-        discover_and_cache_provider(
-            memory.clone(),
-            "ollama".to_string(),
-            "ollama".to_string(),
-            ollama_base_url,
-            String::new(),
-            announce,
-        )
-        .await;
-    }
-
-    for def in sparrow::config::providers::provider_registry() {
-        if def.adapter == "ollama" {
-            continue;
-        }
-        if !force && !memory.get_discovered_models(&def.id).is_empty() {
-            continue;
-        }
-
-        let api_key = def
-            .api_key_env
-            .as_ref()
-            .and_then(|env_var| std::env::var(env_var).ok())
-            .or_else(|| {
-                auth.get(&def.id)
-                    .and_then(|credential| credential.expose_key().map(str::to_string))
-            })
-            .map(|key| key.trim().to_string())
-            .filter(|key| !key.is_empty());
-        let Some(api_key) = api_key else {
-            continue;
-        };
-
-        discover_and_cache_provider(
-            memory.clone(),
-            def.id,
-            def.adapter,
-            def.base_url,
-            api_key,
-            announce,
-        )
-        .await;
-    }
-}
-
-async fn discover_and_cache_provider(
-    memory: Arc<dyn Memory>,
-    provider_id: String,
-    adapter: String,
-    base_url: String,
-    api_key: String,
-    announce: bool,
-) {
-    match sparrow::provider::discovery::discover_models(&adapter, &base_url, &api_key).await {
-        Ok(models) if !models.is_empty() => {
-            let count = models.len();
-            if let Err(err) = memory.cache_discovered_models(&provider_id, &models) {
-                if announce {
-                    eprintln!(
-                        "  Model discovery cache failed for {}: {}",
-                        provider_id, err
-                    );
-                }
-            } else if announce {
-                println!("  {} models discovered for {}.", count, provider_id);
-            }
-        }
-        Ok(_) => {}
-        Err(err) => {
-            if announce {
-                eprintln!("  Model discovery skipped for {}: {}", provider_id, err);
-            }
-        }
-    }
-}
-
-fn build_provider_brains(
-    config: &sparrow::config::Config,
-    memory: &Arc<dyn Memory>,
-    warn: bool,
-) -> std::collections::HashMap<String, Vec<Arc<dyn sparrow::provider::Brain>>> {
-    let auth = sparrow::auth::store::ChainedAuthStore::new(config.config_dir.clone());
-    let mut providers: std::collections::HashMap<String, Vec<Arc<dyn sparrow::provider::Brain>>> =
-        std::collections::HashMap::new();
-
-    for (name, pconfig) in sparrow::config::effective_provider_configs(config) {
-        // A forced model (--model provider:model) is exclusive: build only that
-        // provider so the router can't fall back to a cheaper/free other provider.
-        if let Some((forced_provider, _)) = &config.forced_model {
-            if &name != forced_provider {
-                continue;
-            }
-        }
-
-        let api_key = pconfig
-            .api_key_env
-            .as_ref()
-            .and_then(|env| {
-                let trimmed = env.trim();
-                if looks_like_inline_secret(trimmed) {
-                    Some(trimmed.to_string())
-                } else {
-                    std::env::var(trimmed).ok()
-                }
-            })
-            .filter(|key| !key.is_empty())
-            .or_else(|| {
-                auth.get(&name)
-                    .and_then(|c| c.expose_key().map(String::from))
-            })
-            .unwrap_or_default();
-
-        if api_key.is_empty() && pconfig.adapter != "ollama" {
-            if warn {
-                eprintln!("Warning: no credentials for provider '{}', skipping", name);
-            }
-            continue;
-        }
-
-        let forced_model = config
-            .forced_model
-            .as_ref()
-            .filter(|(provider, _)| provider == &name)
-            .map(|(_, model)| model.clone());
-        let mut model_names = forced_model
-            .as_ref()
-            .map(|model| vec![model.clone()])
-            .unwrap_or_else(|| pconfig.models.clone());
-        if forced_model.is_none() {
-            for discovered in memory
-                .get_discovered_models(&name)
-                .into_iter()
-                .filter(|model| sparrow::provider::discovery::is_chat_model_id(model))
-            {
-                if !model_names.iter().any(|model| model == &discovered) {
-                    model_names.push(discovered);
-                }
-            }
-        }
-
-        let mut brains: Vec<Arc<dyn sparrow::provider::Brain>> = Vec::new();
-        match pconfig.adapter.as_str() {
-            "anthropic-messages" => {
-                for model in &model_names {
-                    brains.push(Arc::new(
-                        sparrow::provider::anthropic::AnthropicAdapter::new(
-                            model,
-                            api_key.clone(),
-                            pconfig.base_url.as_deref(),
-                        )
-                        .with_caps(sparrow::config::providers::model_caps(&name, model)),
-                    ));
-                }
-            }
-            "openai-responses" => {
-                let base_url = pconfig
-                    .base_url
-                    .clone()
-                    .unwrap_or_else(|| "https://api.openai.com/v1".into());
-                for model in &model_names {
-                    brains.push(Arc::new(
-                        sparrow::provider::responses::OpenAIResponsesAdapter::new(
-                            model,
-                            api_key.clone(),
-                            Some(&base_url),
-                        )
-                        .with_caps(sparrow::config::providers::model_caps(&name, model)),
-                    ));
-                }
-            }
-            "openai-compatible" | "ollama" | "openai-chat" => {
-                let base_url = pconfig
-                    .base_url
-                    .clone()
-                    .unwrap_or_else(|| "https://api.openai.com/v1".into());
-                for model in &model_names {
-                    let adapter: Arc<dyn sparrow::provider::Brain> = if pconfig.adapter == "ollama"
-                    {
-                        Arc::new(
-                            sparrow::provider::ollama::OllamaAdapter::new(model, &base_url)
-                                .with_caps(sparrow::config::providers::model_caps(&name, model)),
-                        )
-                    } else {
-                        Arc::new(
-                            sparrow::provider::openai_compat::OpenAICompatAdapter::new(
-                                model,
-                                api_key.clone(),
-                                &base_url,
-                            )
-                            .with_caps(sparrow::config::providers::model_caps(&name, model)),
-                        )
-                    };
-                    brains.push(adapter);
-                }
-            }
-            _ if warn => eprintln!("Unknown adapter: {}", pconfig.adapter),
-            _ => {}
-        }
-
-        if !brains.is_empty() {
-            providers.insert(name.clone(), brains);
-        }
-    }
-
-    if providers.is_empty() {
-        let ollama_url =
-            std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434/v1".into());
-        if warn {
-            println!(
-                "No configured providers found. Trying Ollama at {}...",
-                ollama_url
-            );
-        }
-        let adapter = sparrow::provider::ollama::OllamaAdapter::new("qwen3.5:32b", &ollama_url);
-        providers.insert(
-            "ollama".into(),
-            vec![Arc::new(adapter) as Arc<dyn sparrow::provider::Brain>],
-        );
-    }
-
-    providers
-}
-
-async fn run_tui(
+async fn handle_webview(
     config: &sparrow::config::Config,
     memory: Arc<dyn Memory>,
+    _scheduler: Arc<MemoryScheduler>,
+    recorder: Arc<FsRecorder>,
     skills: Arc<dyn SkillLibrary>,
-    state_dir: &std::path::Path,
+    agent_store: Option<Arc<dyn AgentStore>>,
+    port: u16,
 ) -> anyhow::Result<()> {
-    use sparrow::engine::{Engine, Task};
-    use sparrow::provider::{ContentBlock, Msg};
+    use sparrow::engine::Engine;
     use sparrow::router::BasicRouter;
+    use std::net::SocketAddr;
+    use std::sync::RwLock;
 
-    let providers = build_provider_brains(config, &memory, true);
-    let router = Arc::new(BasicRouter::new(config, providers));
-    let engine = Arc::new(
-        Engine::new(router, config.clone())
-            .with_memory(memory)
-            .with_skills(skills),
-    );
+    let (event_tx, _) = tokio::sync::broadcast::channel::<sparrow::event::Event>(1024);
+    let (command_tx, mut command_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    let shared_config = Arc::new(RwLock::new(config.clone()));
+    let approvals = Arc::new(sparrow::console::WebApprovalBroker::new());
 
-    let (task_tx, mut task_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-    let (event_tx, event_rx) = tokio::sync::mpsc::unbounded_channel();
-
-    // ── Multi-turn session for the TUI ────────────────────────────────
-    // Every message the user types in the TUI is added to a growing
-    // conversation that carries context across turns, just like `sparrow
-    // chat`. The session is also persisted to sessions.db so quitting
-    // and relaunching resumes the conversation.
-    let session_key = format!(
-        "tui:{}",
-        std::env::current_dir()
-            .map(|p| p.display().to_string())
-            .unwrap_or_else(|_| "default".into())
-    );
-    let sessions = sparrow::runtime::session::SessionStore::open(&state_dir.join("sessions.db"))
-        .ok()
-        .map(Arc::new);
-    let prior: Vec<Msg> = sessions
+    // Persistent conversational context shared across runs — fixes the bug where
+    // every model switch dropped prior turns. Capped to last 40 messages.
+    // Backed by the SQLite SessionStore under a stable id so context AND the
+    // session list survive a restart.
+    let session_db_path = dirs::state_dir()
+        .or_else(dirs::data_local_dir)
+        .or_else(dirs::data_dir)
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("sparrow")
+        .join("sessions.db");
+    const WEBVIEW_SESSION_ID: &str = "webview";
+    let session_store = sparrow::runtime::session::SessionStore::open(&session_db_path).ok();
+    // Hydrate prior context from the persisted webview session.
+    let initial_history: Vec<sparrow::provider::Msg> = session_store
         .as_ref()
-        .and_then(|s| s.load(&session_key))
+        .and_then(|s| s.load(WEBVIEW_SESSION_ID))
         .and_then(|sess| serde_json::from_str(&sess.messages_json).ok())
         .unwrap_or_default();
-    let conversation: Arc<tokio::sync::Mutex<Vec<Msg>>> = Arc::new(tokio::sync::Mutex::new(prior));
+    let conv_history: Arc<std::sync::Mutex<Vec<sparrow::provider::Msg>>> =
+        Arc::new(std::sync::Mutex::new(initial_history));
+    let conv_for_runs = conv_history.clone();
+    let conv_for_capture = conv_history.clone();
+    let session_store = session_store.map(Arc::new);
+    let session_for_capture = session_store.clone();
+    let session_for_loop = session_store.clone();
 
-    let inject_holder: Arc<tokio::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<String>>>> =
-        Arc::new(tokio::sync::Mutex::new(None));
-    let inject_holder_task = inject_holder.clone();
-    let conversation_task = conversation.clone();
-    let sessions_task = sessions.clone();
-    let session_key_task = session_key.clone();
-
+    let config_for_runs = shared_config.clone();
+    let memory_for_runs = memory.clone();
+    let skills_for_runs = skills.clone();
+    let events_for_runs = event_tx.clone();
+    let approvals_for_runs = approvals.clone();
+    let recorder_for_runs = recorder.clone();
     tokio::spawn(async move {
-        while let Some(description) = task_rx.recv().await {
-            // Intercept inject prefix
-            if let Some(payload) = description.strip_prefix("__inject__:") {
-                if let Some(tx) = inject_holder_task.lock().await.as_ref() {
-                    let _ = tx.send(payload.to_string());
-                } else {
-                    let _ = event_tx.send(sparrow::event::Event::Error {
-                        run: sparrow::event::RunId("tui".into()),
-                        message: "no active run to inject into".into(),
+        // Tracks the currently running task so we can inject mid-run messages
+        // and abort on stop. `inject_tx` forwards user text into the live run;
+        // `handle` lets us cancel it.
+        let mut active: Option<(
+            tokio::task::JoinHandle<()>,
+            tokio::sync::mpsc::UnboundedSender<String>,
+        )> = None;
+
+        while let Some(mut task) = command_rx.recv().await {
+            // FIRST thing in the loop: strip the WebView protocol prefixes
+            // (`__agent:NAME__ROLE__BASE64__ `, `__model:M__ `) from `task`.
+            //
+            // If we don't, the raw protocol payload leaks to three places
+            // downstream:
+            //   1. the mid-run inject channel (the model sees the base64
+            //      personality on every subsequent turn — PII to the provider)
+            //   2. the UI `Message` event emitted for the user turn
+            //      (the user sees the base64 blob in their own transcript)
+            //   3. the persistent `conv_for_runs` history (every future run
+            //      replays the same blob to the model)
+            // All three are visible bugs we previously observed.
+            let pending_identity: Option<sparrow::engine::Identity>;
+            let pending_model_override: Option<String>;
+            {
+                let (clean, identity, model) = extract_webview_protocol_prefixes(&task);
+                task = clean;
+                pending_identity = identity;
+                pending_model_override = model;
+            }
+
+            // Sentinel: clear conversation history without driving the engine.
+            if task == "__reset_conversation__" {
+                let mut guard = conv_for_runs.lock().expect("conv lock poisoned");
+                guard.clear();
+                drop(guard);
+                if let Some(store) = &session_for_loop {
+                    let _ = store.save("webview", &[], Some("WebView console"));
+                }
+                continue;
+            }
+            // Sentinel: switch the conversation context to a stored session.
+            // Format: `__load_session__:<session_id>`.
+            if let Some(target_id) = task.strip_prefix("__load_session__:") {
+                if let Some(store) = &session_for_loop {
+                    if let Some(session) = store.load(target_id) {
+                        let parsed: Vec<sparrow::provider::Msg> =
+                            serde_json::from_str(&session.messages_json).unwrap_or_default();
+                        let turn_count = parsed.len();
+                        {
+                            let mut guard = conv_for_runs.lock().expect("conv lock poisoned");
+                            *guard = parsed;
+                        }
+                        let _ = events_for_runs.send(sparrow::event::Event::Message {
+                            run: sparrow::event::RunId("webview".into()),
+                            role: "system".into(),
+                            text: format!(
+                                "loaded session {} ({} turns)",
+                                session.name.as_deref().unwrap_or(&session.id),
+                                turn_count
+                            ),
+                        });
+                    } else {
+                        let _ = events_for_runs.send(sparrow::event::Event::Error {
+                            run: sparrow::event::RunId("webview".into()),
+                            message: format!("session not found: {}", target_id),
+                        });
+                    }
+                }
+                continue;
+            }
+            // Sentinel: abort the active run.
+            if task == "__stop__" {
+                if let Some((handle, _)) = active.take() {
+                    handle.abort();
+                    let _ = events_for_runs.send(sparrow::event::Event::Message {
+                        run: sparrow::event::RunId("webview".into()),
+                        role: "system".into(),
+                        text: "run aborted by user".into(),
+                    });
+                    let _ = events_for_runs.send(sparrow::event::Event::RunFinished {
+                        run: sparrow::event::RunId("webview".into()),
+                        outcome: sparrow::event::OutcomeSummary {
+                            status: "aborted".into(),
+                            diffs: vec![],
+                            cost_usd: 0.0,
+                            tokens: sparrow::event::TokenUsage {
+                                input: 0,
+                                output: 0,
+                            },
+                            cost_comparison: String::new(),
+                        },
                     });
                 }
                 continue;
             }
-            if let Some(id) = description.strip_prefix("__rewind__:") {
-                let checkpoints = GitCheckpoints::new(std::env::current_dir().unwrap_or_default());
-                match checkpoints.rewind(sparrow::event::CheckpointId(id.to_string())) {
-                    Ok(()) => {
-                        let _ = event_tx.send(sparrow::event::Event::ToolOutput {
-                            run: sparrow::event::RunId("tui".into()),
-                            id: "rewind".into(),
-                            blocks: vec![sparrow::event::Block::Text(format!(
-                                "rewound to checkpoint {}",
-                                id
-                            ))],
-                        });
-                    }
-                    Err(err) => {
-                        let _ = event_tx.send(sparrow::event::Event::Error {
-                            run: sparrow::event::RunId("tui".into()),
-                            message: format!("checkpoint rewind failed: {}", err),
-                        });
-                    }
+            // If a run is still active, treat this message as a mid-run injection
+            // instead of starting a new run.
+            if let Some((handle, inject_tx)) = active.as_ref() {
+                if !handle.is_finished() {
+                    let _ = inject_tx.send(task.clone());
+                    let _ = events_for_runs.send(sparrow::event::Event::Message {
+                        run: sparrow::event::RunId("webview".into()),
+                        role: "user".into(),
+                        text: format!("(injected) {task}"),
+                    });
+                    // Also append to persistent history so future runs see it.
+                    let mut guard = conv_for_runs.lock().expect("conv lock poisoned");
+                    guard.push(sparrow::provider::Msg {
+                        role: "user".into(),
+                        content: vec![sparrow::provider::ContentBlock::Text { text: task.clone() }],
+                    });
+                    continue;
                 }
-                continue;
             }
-
-            // ── Multi-turn: build task with conversation context ──────
-            let mut conv = conversation_task.lock().await;
-            conv.push(Msg {
-                role: "user".into(),
-                content: vec![ContentBlock::Text {
-                    text: description.clone(),
-                }],
-            });
-            let task = Task {
-                description: description.clone(),
-                context: conv.clone(),
+            // Previous run finished (or was never started) — drop the old handle.
+            drop(active.take());
+            let current_config = config_for_runs
+                .read()
+                .expect("config lock poisoned")
+                .clone();
+            let task_for_recording = task.clone();
+            let config_snapshot = redacted_config_snapshot(&current_config);
+            let repo_head = current_repo_head();
+            let providers = build_provider_brains(&current_config, &memory_for_runs, false);
+            let router = Arc::new(BasicRouter::new(&current_config, providers));
+            let mut engine = Engine::new(router, current_config)
+                .with_memory(memory_for_runs.clone())
+                .with_skills(skills_for_runs.clone())
+                .with_approval_handler(approvals_for_runs.clone());
+            // Apply the identity extracted at the top of the loop. The
+            // model_override is consumed inside the engine by the existing
+            // `__model:` parser when present in the task description, so we
+            // leave that prefix off the clean task — the engine never sees
+            // it. If the WebView selected a model, we re-encode the
+            // `__model:M__ ` prefix HERE so the engine can pick it up via
+            // its existing strip logic without changing engine internals.
+            if let Some(identity) = pending_identity.clone() {
+                engine = engine.with_identity(identity);
+            }
+            if let Some(ref model) = pending_model_override {
+                task = format!("__model:{}__ {}", model, task);
+            }
+            // Pull the persisted conversation history so a model switch never
+            // drops prior turns. The Vec is cloned so the engine owns it for
+            // the duration of the run; new turns get captured by the forwarder.
+            let prior_context: Vec<sparrow::provider::Msg> = {
+                let guard = conv_for_runs.lock().expect("conv lock poisoned");
+                guard.clone()
             };
-
+            // Push the user turn we are about to drive into the persisted log.
+            {
+                let mut guard = conv_for_runs.lock().expect("conv lock poisoned");
+                guard.push(sparrow::provider::Msg {
+                    role: "user".into(),
+                    content: vec![sparrow::provider::ContentBlock::Text { text: task.clone() }],
+                });
+                // Cap at last 40 turns (~ generous; engine compaction handles tokens).
+                if guard.len() > 40 {
+                    let drop = guard.len() - 40;
+                    guard.drain(..drop);
+                }
+            }
+            let task_obj = sparrow::engine::Task {
+                description: task,
+                context: prior_context,
+            };
+            // Channel for injecting user messages mid-run.
             let (inject_tx, inject_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
-            *inject_holder_task.lock().await = Some(inject_tx);
-
-            let run_id = sparrow::event::RunId::new();
-            // Collect assistant reply for conversation history.
-            let (run_event_tx, mut run_event_rx) = tokio::sync::mpsc::unbounded_channel();
-            let fwd_tx = event_tx.clone();
-            let fwd_handle = tokio::spawn(async move {
-                let mut buf = String::new();
-                while let Some(ev) = run_event_rx.recv().await {
-                    if let sparrow::event::Event::ThinkingDelta { text, .. } = &ev {
-                        buf.push_str(text);
-                    }
-                    let _ = fwd_tx.send(ev);
-                }
-                buf
-            });
-
-            if let Err(err) = engine
-                .drive_with_inject(task, run_event_tx, run_id, Some(inject_rx))
-                .await
-            {
-                let _ = event_tx.send(sparrow::event::Event::Error {
-                    run: sparrow::event::RunId("tui".into()),
-                    message: err.to_string(),
-                });
-            }
-            *inject_holder_task.lock().await = None;
-
-            // Append assistant reply to conversation
-            if let Ok(reply) = fwd_handle.await {
-                if !reply.trim().is_empty() {
-                    conv.push(Msg {
-                        role: "assistant".into(),
-                        content: vec![ContentBlock::Text { text: reply }],
-                    });
-                }
-            }
-
-            // Cap conversation + persist
-            let len = conv.len();
-            if len > 60 {
-                conv.drain(..len - 60);
-            }
-            if let Some(store) = &sessions_task {
-                let _ = store.save(&session_key_task, &conv, None);
-            }
-        }
-    });
-
-    let mut tui = Tui::new().with_channels(task_tx, event_rx);
-    drop(inject_holder);
-    tokio::task::spawn_blocking(move || tui.run()).await??;
-
-    // Save conversation on TUI exit (belt-and-suspenders)
-    if let Some(store) = &sessions {
-        let conv = conversation.lock().await;
-        let _ = store.save(&session_key, &conv, None);
-    }
-    Ok(())
-}
-
-
-// ─── OAuth device-flow login — registry-driven ───────────────────────────────
-//
-// Any provider in the registry with `auth_flow: DeviceOAuth { .. }` is
-// automatically supported.  The `client_id` can be passed on the CLI or
-// read from the env var declared in the registry entry (`client_id_env`).
-
-/// How `run_task` resolves the conversation context for this run.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-enum SessionMode {
-    /// Continue this directory's session (existing behaviour).
-    #[default]
-    Auto,
-    /// Ignore any saved session — start clean.
-    Fresh,
-    /// Continue the most recently updated session from ANY surface.
-    ContinueLast,
-}
-
-/// Per-invocation run options threaded from the CLI flags.
-#[derive(Debug, Clone, Copy, Default)]
-struct RunFlags {
-    session_mode: SessionMode,
-    /// Skip the pre-run quote confirmation (--yes, or non-interactive).
-    assume_yes: bool,
-}
-
-async fn run_task(
-    task: &str,
-    config: &sparrow::config::Config,
-    memory: Arc<dyn Memory>,
-    skills: Arc<dyn SkillLibrary>,
-    recorder: Arc<FsRecorder>,
-    soul: Option<Soul>,
-    flags: RunFlags,
-) -> anyhow::Result<()> {
-    use sparrow::engine::Engine;
-    use sparrow::router::BasicRouter;
-    use std::sync::Arc;
-
-    let run_config = soul
-        .as_ref()
-        .map(|soul| config_for_soul(config, soul))
-        .unwrap_or_else(|| config.clone());
-
-    let providers = build_provider_brains(&run_config, &memory, true);
-
-    let router = Arc::new(BasicRouter::new(&run_config, providers));
-    let mut engine = Engine::new(router, run_config.clone())
-        .with_memory(memory.clone())
-        .with_skills(skills);
-    if let Some(soul) = &soul {
-        engine = engine.with_identity(soul.to_identity());
-    }
-
-    // ── Session continuity (§8) ───────────────────────────────────────────
-    // Load prior conversation so context follows the user across runs and
-    // surfaces. Key: $SPARROW_SESSION (set it to "user:<id>" to continue a
-    // Telegram/Slack thread) else a per-workspace CLI session.
-    let sessions =
-        sparrow::runtime::session::SessionStore::open(&run_config.state_dir.join("sessions.db"))
-            .ok()
-            .map(Arc::new);
-    let session_key = match flags.session_mode {
-        SessionMode::ContinueLast => {
-            // `sparrow --continue`: pick up the most recently updated session
-            // from ANY surface (CLI, console, gateway threads).
-            sessions
-                .as_ref()
-                .and_then(|s| s.list().into_iter().next())
-                .map(|s| s.id)
-                .unwrap_or_else(|| {
-                    std::env::var("SPARROW_SESSION").unwrap_or_else(|_| {
-                        format!(
-                            "cli:{}",
-                            std::env::current_dir()
-                                .map(|p| p.display().to_string())
-                                .unwrap_or_else(|_| "default".into())
-                        )
-                    })
-                })
-        }
-        _ => std::env::var("SPARROW_SESSION").unwrap_or_else(|_| {
-            format!(
-                "cli:{}",
-                std::env::current_dir()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_else(|_| "default".into())
-            )
-        }),
-    };
-    let prior_msgs: Vec<sparrow::provider::Msg> = if flags.session_mode == SessionMode::Fresh {
-        Vec::new()
-    } else {
-        sessions
-            .as_ref()
-            .and_then(|s| s.load(&session_key))
-            .and_then(|sess| match serde_json::from_str(&sess.messages_json) {
-                Ok(v) => Some(v),
-                Err(e) => {
-                    tracing::warn!("session '{}' deserialize failed: {}", session_key, e);
-                    None
-                }
-            })
-            .unwrap_or_default()
-    };
-    // Make continuity VISIBLE — silently carrying context surprises users.
-    if !prior_msgs.is_empty() {
-        eprintln!(
-            "\x1b[2m↩ continuing session ({} prior messages) — use --fresh to start clean\x1b[0m",
-            prior_msgs.len()
-        );
-    }
-
-    // ── Pre-run quote (estimate, then confirm) ─────────────────────────────
-    // Nobody else quotes BEFORE executing. Skipped with --yes or when stdin
-    // is not a TTY (CI, pipes) so automation never blocks.
-    let interactive = std::io::IsTerminal::is_terminal(&std::io::stdin());
-    if !flags.assume_yes && interactive {
-        let pf = engine.preflight(task);
-        let chain_disp = sparrow::engine::summarize_model_chain(&pf.chain, 3);
-        eprintln!(
-            "  plan: tier {} · est. {}–{}k tok · est. ${:.2}–${:.2} · route: {}",
-            pf.tier.as_str(),
-            (pf.est_input_range.0 + pf.est_output_range.0) / 1_000,
-            (pf.est_input_range.1 + pf.est_output_range.1) / 1_000,
-            pf.est_cost_range.0,
-            pf.est_cost_range.1,
-            chain_disp
-        );
-        let proceed = dialoguer::Confirm::new()
-            .with_prompt("  proceed?")
-            .default(true)
-            .interact()
-            .unwrap_or(true);
-        if !proceed {
-            eprintln!("  aborted — nothing was run, nothing was spent.");
-            return Ok(());
-        }
-    }
-
-    let task_obj = sparrow::engine::Task {
-        description: task.to_string(),
-        context: prior_msgs.clone(),
-    };
-
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-
-    let task_for_recording = task.to_string();
-    let config_snapshot = redacted_config_snapshot(&run_config);
-    let repo_head = current_repo_head();
-    let start_time = std::time::Instant::now();
-    eprintln!("\x1b[36m⚡ Sparrow running: {}\x1b[0m", task);
-    let print_handle = tokio::spawn(async move {
-        let mut full_reply = String::new();
-        let mut reasoning_reply = String::new();
-        let mut think = sparrow::event::ThinkStripper::new();
-        use std::io::Write as _;
-        while let Some(event) = rx.recv().await {
-            if let sparrow::event::Event::ThinkingDelta { text, .. } = &event {
-                full_reply.push_str(text);
-            }
-            if let sparrow::event::Event::ReasoningDelta { text, .. } = &event {
-                reasoning_reply.push_str(text);
-            }
-            if let sparrow::event::Event::RunStarted { run, agent, .. } = &event {
-                recorder.start_run(
-                    run.0.clone(),
-                    RunInputs {
-                        task: task_for_recording.clone(),
-                        config_snapshot: config_snapshot.clone(),
-                        model_id: "router-selected".into(),
-                        repo_head: repo_head.clone(),
-                        timestamp: chrono::Utc::now().to_rfc3339(),
-                        agent: agent.clone(),
-                    },
-                );
-            }
-            recorder.record(&event);
-            if let sparrow::event::Event::RunFinished { run, .. } = &event {
-                let _ = recorder.finalize(&run.0);
-            }
-            match &event {
-                sparrow::event::Event::ThinkingDelta { text, .. } => {
-                    // Strip <think> reasoning blocks; stream the rest.
-                    let visible = think.feed(text);
-                    if !visible.is_empty() {
-                        print!("{}", visible);
-                        let _ = std::io::stdout().flush();
-                    }
-                }
-                sparrow::event::Event::ToolUseProposed { name, .. } => {
-                    println!("\n[Tool: {}]", name);
-                }
-                sparrow::event::Event::ApprovalRequested { summary, .. } => {
-                    println!("\n[APPROVAL NEEDED: {}]", summary);
-                }
-                sparrow::event::Event::CheckpointCreated { id, label, .. } => {
-                    println!("\n[Checkpoint: {} — {}]", id.0, label);
-                }
-                sparrow::event::Event::ModelSwitched {
-                    from, to, reason, ..
-                } => {
-                    let clean = sparrow::event::friendly_model_switch_reason(reason);
-                    if sparrow::event::is_local_model_unavailable(reason) {
-                        println!(
-                            "\n[Routing] modèle local indisponible → routage modèle cloud ({})",
-                            to
-                        );
-                    } else {
-                        println!("\n[Routing] {} → {} ({})", from, to, clean);
-                    }
-                }
-                // Cost is shown once at the end (no noisy inline $0.0000 prints).
-                sparrow::event::Event::RunFinished { outcome, .. } => {
-                    // Flush any text held back by the think-stripper (recovers an
-                    // unclosed <think> so the answer is never silently swallowed).
-                    let tail = think.flush();
-                    if !tail.trim().is_empty() {
-                        print!("{}", tail);
-                        let _ = std::io::stdout().flush();
-                    }
-                    println!(
-                        "\nDone. Cost: ${:.4}, Tokens: {} in / {} out",
-                        outcome.cost_usd, outcome.tokens.input, outcome.tokens.output,
-                    );
-                    // Full cost comparison — Sparrow's competitive moat
-                    if outcome.tokens.input > 0 || outcome.tokens.output > 0 {
-                        println!(
-                            "{}",
-                            sparrow::cost::format_comparison(outcome.cost_usd, &outcome.tokens)
+            let (run_tx, mut run_rx) = tokio::sync::mpsc::unbounded_channel();
+            let forward_tx = events_for_runs.clone();
+            let recorder = recorder_for_runs.clone();
+            let conv_capture = conv_for_capture.clone();
+            let session_capture = session_for_capture.clone();
+            let forward = tokio::spawn(async move {
+                // Accumulate the assistant's streamed text for this run. The engine
+                // emits the final response as ThinkingDelta events (not a Message),
+                // so we concatenate the deltas and flush one assistant Msg into the
+                // persistent conversation history when the run finishes. THIS is what
+                // makes context survive across model switches and separate prompts.
+                let mut assistant_buf = String::new();
+                let mut reasoning_buf = String::new();
+                while let Some(event) = run_rx.recv().await {
+                    if let sparrow::event::Event::RunStarted { run, agent, .. } = &event {
+                        recorder.start_run(
+                            run.0.clone(),
+                            RunInputs {
+                                task: task_for_recording.clone(),
+                                config_snapshot: config_snapshot.clone(),
+                                model_id: "router-selected".into(),
+                                repo_head: repo_head.clone(),
+                                timestamp: chrono::Utc::now().to_rfc3339(),
+                                agent: agent.clone(),
+                            },
                         );
                     }
-                }
-                sparrow::event::Event::Error { message, .. }
-                    if !sparrow::event::is_local_model_unavailable(message) =>
-                {
-                    eprintln!("\nError: {}", message);
-                }
-                _ => {}
-            }
-        }
-        (full_reply, reasoning_reply)
-    });
-
-    println!("Running: {}", task);
-    let drive_result = engine.drive(task_obj, tx).await;
-    let (full_reply, reasoning_reply) = print_handle.await.unwrap_or_default();
-
-    // Persist the turn to the session BEFORE propagating any error, so a
-    // transient failure never erases the user's message from the conversation.
-    if let Some(store) = &sessions {
-        let mut updated = prior_msgs;
-        updated.push(sparrow::provider::Msg {
-            role: "user".into(),
-            content: vec![sparrow::provider::ContentBlock::Text {
-                text: task.to_string(),
-            }],
-        });
-        if !full_reply.trim().is_empty() {
-            let mut content = Vec::new();
-            if !reasoning_reply.trim().is_empty() {
-                content.push(sparrow::provider::ContentBlock::Reasoning {
-                    text: reasoning_reply,
-                });
-            }
-            content.push(sparrow::provider::ContentBlock::Text { text: full_reply });
-            updated.push(sparrow::provider::Msg {
-                role: "assistant".into(),
-                content,
-            });
-        }
-        let len = updated.len();
-        if len > 40 {
-            updated.drain(..len - 40);
-        }
-        let _ = store.save(&session_key, &updated, None);
-    }
-
-    let outcome = drive_result?;
-    let elapsed = start_time.elapsed();
-    println!(
-        "Status: {}  ⏱ {:.1}s",
-        outcome.status,
-        elapsed.as_secs_f64()
-    );
-    Ok(())
-}
-
-fn config_for_soul(config: &sparrow::config::Config, soul: &Soul) -> sparrow::config::Config {
-    let mut run_config = config.clone();
-    if let Some(model_ref) = soul.default_model.as_deref() {
-        if let Some((provider, model)) = parse_agent_model_ref(model_ref) {
-            run_config.forced_model = Some((provider.clone(), model.clone()));
-            for tier in ["trivial", "small", "medium", "hard", "vision"] {
-                run_config
-                    .routing
-                    .policy
-                    .insert(tier.to_string(), provider.clone());
-            }
-            run_config
-                .providers
-                .entry(provider)
-                .or_insert_with(|| ProviderConfig {
-                    adapter: "openai-compatible".into(),
-                    base_url: None,
-                    models: vec![],
-                    api_key_env: None,
-                })
-                .models = vec![model];
-        }
-    }
-    if let Some(mode) = soul
-        .permission_mode
-        .as_deref()
-        .or(soul.default_autonomy.as_deref())
-        .and_then(sparrow::permissions::PermissionMode::parse)
-    {
-        run_config.defaults.autonomy = mode.autonomy_level();
-        run_config.permissions.mode = mode;
-    }
-    for tool in &soul.disallowed_tools {
-        if !run_config.permissions.tools.deny.contains(tool) {
-            run_config.permissions.tools.deny.push(tool.clone());
-        }
-    }
-    if !soul.tools.is_empty() {
-        for tool in &soul.tools {
-            if !run_config.permissions.tools.allow.contains(tool) {
-                run_config.permissions.tools.allow.push(tool.clone());
-            }
-        }
-    }
-    run_config
-}
-
-fn parse_agent_model_ref(model_ref: &str) -> Option<(String, String)> {
-    let model_ref = model_ref.trim();
-    if model_ref.is_empty() {
-        return None;
-    }
-    if let Some((provider, model)) = model_ref.split_once(':') {
-        let provider = provider.trim();
-        let model = model.trim();
-        if !provider.is_empty() && !model.is_empty() {
-            return Some((provider.to_string(), model.to_string()));
-        }
-    }
-    if let Some((provider, rest)) = model_ref.split_once('/') {
-        let provider = provider.trim();
-        if !provider.is_empty() {
-            return Some((provider.to_string(), model_ref.to_string()));
-        }
-        if !rest.trim().is_empty() {
-            return Some(("custom".into(), model_ref.to_string()));
-        }
-    }
-    Some(("custom".into(), model_ref.to_string()))
-}
-
-fn push_unique(values: &mut Vec<String>, value: String) {
-    if !values.iter().any(|existing| existing == &value) {
-        values.push(value);
-    }
-}
-
-fn push_unique_path(values: &mut Vec<std::path::PathBuf>, value: std::path::PathBuf) {
-    if !values.iter().any(|existing| existing == &value) {
-        values.push(value);
-    }
-}
-
-fn print_permission_policy(config: &sparrow::config::Config) {
-    let policy = &config.permissions;
-    println!("Permission policy");
-    println!("=================");
-    println!("Mode     : {}", policy.mode.as_str());
-    println!("Autonomy : {:?}", config.defaults.autonomy);
-    println!("Tools");
-    println!("  allow : {}", list_or_empty(&policy.tools.allow));
-    println!("  ask   : {}", list_or_empty(&policy.tools.ask));
-    println!("  deny  : {}", list_or_empty(&policy.tools.deny));
-    println!("Paths");
-    println!("  allow : {}", path_list_or_empty(&policy.paths.allow));
-    println!("  deny  : {}", path_list_or_empty(&policy.paths.deny));
-    println!("Providers");
-    println!("  allow : {}", list_or_empty(&policy.providers.allow));
-    println!("  ask   : {}", list_or_empty(&policy.providers.ask));
-    println!("  deny  : {}", list_or_empty(&policy.providers.deny));
-    println!("Surfaces");
-    println!("  allow : {}", list_or_empty(&policy.surfaces.allow));
-    println!("  ask   : {}", list_or_empty(&policy.surfaces.ask));
-    println!("  deny  : {}", list_or_empty(&policy.surfaces.deny));
-}
-
-fn list_or_empty(values: &[String]) -> String {
-    if values.is_empty() {
-        "(empty)".into()
-    } else {
-        values.join(", ")
-    }
-}
-
-fn path_list_or_empty(values: &[std::path::PathBuf]) -> String {
-    if values.is_empty() {
-        "(empty)".into()
-    } else {
-        values
-            .iter()
-            .map(|path| path.display().to_string())
-            .collect::<Vec<_>>()
-            .join(", ")
-    }
-}
-
-// ─── Swarm command ──────────────────────────────────────────────────────────────
-
-async fn run_swarm(
-    task: &str,
-    config: &sparrow::config::Config,
-    memory: Arc<dyn Memory>,
-) -> anyhow::Result<()> {
-    use sparrow::orchestrator::{DefaultOrchestrator, Orchestrator, SwarmPlan};
-    use sparrow::router::BasicRouter;
-    use std::sync::Arc;
-
-    let providers = build_provider_brains(config, &memory, true);
-
-    if providers.is_empty() {
-        anyhow::bail!("No providers configured. Set up at least one provider with an API key.");
-    }
-
-    let router = Arc::new(BasicRouter::new(config, providers));
-    let orchestrator = DefaultOrchestrator::new(router, config.clone(), memory.clone());
-
-    let cwd = std::env::current_dir().unwrap_or_default();
-    let plan = SwarmPlan {
-        task: task.to_string(),
-        workspace: cwd,
-        max_reworks: 3,
-    };
-
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-
-    let print_handle = tokio::spawn(async move {
-        while let Some(event) = rx.recv().await {
-            match &event {
-                sparrow::event::Event::AgentSpawned { role, model, .. } => {
-                    println!("\n┌─ {} spawned ({})", role.to_uppercase(), model);
-                }
-                sparrow::event::Event::AgentStatus {
-                    role, status, note, ..
-                } => {
-                    let icon = match status {
-                        sparrow::event::AgentStatus::Done => "✓",
-                        sparrow::event::AgentStatus::Working => "●",
-                        sparrow::event::AgentStatus::Thinking => "○",
-                        sparrow::event::AgentStatus::Error => "✗",
-                        _ => "◌",
-                    };
-                    println!("│ {} {} — {}", icon, role, note);
-                }
-                sparrow::event::Event::TestResult {
-                    passed: _,
-                    failed,
-                    detail,
-                    ..
-                } => {
-                    if *failed > 0 {
-                        println!("├─ ✗ VERIFY FAILED ({} issues)", failed);
-                        for line in detail.lines() {
-                            println!("│    {}", line);
-                        }
-                    } else {
-                        println!("└─ ✓ VERIFY PASSED");
+                    // Accumulate streamed assistant text.
+                    if let sparrow::event::Event::ThinkingDelta { text, .. } = &event {
+                        assistant_buf.push_str(text);
                     }
-                }
-                sparrow::event::Event::RunFinished { outcome, .. } => {
-                    println!("\n═══ Swarm complete ═══");
-                    println!("Status : {}", outcome.status);
-                    println!("Diffs  : {} files", outcome.diffs.len());
-                    for d in &outcome.diffs {
-                        println!("  {}  +{}/-{}", d.file, d.plus, d.minus);
+                    if let sparrow::event::Event::ReasoningDelta { text, .. } = &event {
+                        reasoning_buf.push_str(text);
                     }
-                }
-                sparrow::event::Event::Error { message, .. }
-                    if !sparrow::event::is_local_model_unavailable(message) =>
-                {
-                    eprintln!("Error: {}", message);
-                }
-                _ => {}
-            }
-        }
-    });
-
-    println!("═══ Swarm: {task} ═══\n");
-
-    let outcome = orchestrator.run_swarm(plan, tx).await?;
-    print_handle.await?;
-
-    println!(
-        "\nPlan  : {} chars",
-        outcome.plan.as_ref().map(|p| p.len()).unwrap_or(0)
-    );
-    println!("Passes: {}", outcome.passes);
-    println!("Reworks: {}", outcome.reworks);
-    if let Some(plan) = &outcome.plan {
-        if plan.len() < 500 {
-            println!("\n{}", plan);
-        }
-    }
-
-    Ok(())
-}
-
-// ─── Skills commands ────────────────────────────────────────────────────────────
-
-fn load_skill_from_source(source: &str) -> anyhow::Result<sparrow::capabilities::Skill> {
-    let source = source.trim();
-
-    // `gh:user/repo[/sub/path]` shorthand — expands to a GitHub clone URL and
-    // an optional directory inside the repo holding the SKILL.md.
-    let (clone_source, subpath): (String, Option<String>) =
-        if let Some(rest) = source.strip_prefix("gh:") {
-            let mut parts = rest.splitn(3, '/');
-            let user = parts.next().filter(|s| !s.is_empty());
-            let repo = parts.next().filter(|s| !s.is_empty());
-            let sub = parts.next().map(String::from);
-            match (user, repo) {
-                (Some(u), Some(r)) => (format!("https://github.com/{}/{}", u, r), sub),
-                _ => anyhow::bail!(
-                    "invalid gh: source `{}` — expected gh:user/repo[/path/to/skill]",
-                    source
-                ),
-            }
-        } else {
-            (source.to_string(), None)
-        };
-    let clone_source = clone_source.as_str();
-
-    let temp_dir;
-    let path = if clone_source.starts_with("http://")
-        || clone_source.starts_with("https://")
-        || clone_source.ends_with(".git")
-        || clone_source.contains("github.com")
-    {
-        temp_dir = std::env::temp_dir().join(format!("sparrow-skill-{}", uuid::Uuid::new_v4()));
-        let status = std::process::Command::new("git")
-            .args([
-                "clone",
-                "--depth",
-                "1",
-                clone_source,
-                temp_dir.to_string_lossy().as_ref(),
-            ])
-            .status()?;
-        if !status.success() {
-            anyhow::bail!("git clone failed for skill source {}", clone_source);
-        }
-        match &subpath {
-            Some(sub) => temp_dir.join(sub),
-            None => temp_dir.clone(),
-        }
-    } else {
-        temp_dir = std::path::PathBuf::new();
-        std::path::PathBuf::from(clone_source)
-    };
-
-    let skill_file = if path.is_dir() {
-        path.join("SKILL.md")
-    } else {
-        path.clone()
-    };
-    let content = std::fs::read_to_string(&skill_file)?;
-    let source_file = skill_file
-        .file_name()
-        .map(|name| name.to_string_lossy().to_string())
-        .unwrap_or_else(|| "SKILL.md".into());
-    let skill = sparrow::capabilities::Skill::from_markdown(&content, &source_file)
-        .ok_or_else(|| anyhow::anyhow!("could not parse skill from {}", skill_file.display()))?;
-    if !temp_dir.as_os_str().is_empty() {
-        let _ = std::fs::remove_dir_all(temp_dir);
-    }
-    Ok(skill)
-}
-
-// ─── Security audit ─────────────────────────────────────────────────────────────
-
-// ─── Context compaction / handoff ───────────────────────────────────────────────
-
-// ─── GitHub Action / remote PR ──────────────────────────────────────────────────
-
-// ─── MCP commands ───────────────────────────────────────────────────────────────
-
-// ─── Schedule command ───────────────────────────────────────────────────────────
-
-// ─── Replay command ─────────────────────────────────────────────────────────────
-
-// ─── Chat command ───────────────────────────────────────────────────────────────
-
-
-// ─── Gateway command ────────────────────────────────────────────────────────────
-
-
-fn gateway_pid_path(state_dir: &std::path::Path) -> std::path::PathBuf {
-    state_dir.join("gateway.pid")
-}
-
-fn write_gateway_pid(state_dir: &std::path::Path) -> anyhow::Result<()> {
-    std::fs::create_dir_all(state_dir)?;
-    std::fs::write(gateway_pid_path(state_dir), std::process::id().to_string())?;
-    Ok(())
-}
-
-fn read_gateway_pid(state_dir: &std::path::Path) -> Option<u32> {
-    std::fs::read_to_string(gateway_pid_path(state_dir))
-        .ok()
-        .and_then(|s| s.trim().parse::<u32>().ok())
-}
-
-fn remove_gateway_pid(state_dir: &std::path::Path) -> std::io::Result<()> {
-    let path = gateway_pid_path(state_dir);
-    if path.exists() {
-        std::fs::remove_file(path)?;
-    }
-    Ok(())
-}
-
-fn sanitize_file_component(value: &str) -> String {
-    let cleaned = value
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.') {
-                ch
-            } else {
-                '_'
-            }
-        })
-        .collect::<String>()
-        .trim_matches('_')
-        .to_string();
-    if cleaned.is_empty() {
-        "run".into()
-    } else {
-        cleaned
-    }
-}
-
-fn gateway_ws_port_open() -> bool {
-    std::net::TcpStream::connect_timeout(
-        &"127.0.0.1:9338".parse().expect("valid socket address"),
-        std::time::Duration::from_millis(250),
-    )
-    .is_ok()
-}
-
-fn process_is_running(pid: u32) -> bool {
-    #[cfg(windows)]
-    {
-        std::process::Command::new("tasklist")
-            .args(["/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"])
-            .output()
-            .map(|out| {
-                let stdout = String::from_utf8_lossy(&out.stdout);
-                out.status.success() && stdout.contains(&pid.to_string())
-            })
-            .unwrap_or(false)
-    }
-    #[cfg(not(windows))]
-    {
-        std::process::Command::new("kill")
-            .args(["-0", &pid.to_string()])
-            .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
-    }
-}
-
-fn stop_gateway_process(pid: u32) -> anyhow::Result<()> {
-    #[cfg(windows)]
-    {
-        let status = std::process::Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
-            .status()?;
-        if !status.success() {
-            anyhow::bail!("taskkill failed for PID {}", pid);
-        }
-    }
-    #[cfg(not(windows))]
-    {
-        let status = std::process::Command::new("kill")
-            .arg(pid.to_string())
-            .status()?;
-        if !status.success() {
-            anyhow::bail!("kill failed for PID {}", pid);
-        }
-    }
-    Ok(())
-}
-
-// ─── Profile commands ───────────────────────────────────────────────────────────
-
-
-// ─── Import command ─────────────────────────────────────────────────────────────
-
-
-fn parse_json_properties(raw: &str) -> anyhow::Result<serde_json::Value> {
-    let value: serde_json::Value = serde_json::from_str(raw)
-        .map_err(|e| anyhow::anyhow!("properties must be valid JSON object: {}", e))?;
-    if !value.is_object() {
-        anyhow::bail!("properties must be a JSON object");
-    }
-    Ok(value)
-}
-
-// ─── JSON NDJSON run ────────────────────────────────────────────────────────────
-
-fn current_repo_head() -> Option<String> {
-    let output = std::process::Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let head = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if head.is_empty() { None } else { Some(head) }
-}
-
-fn redacted_config_snapshot(config: &sparrow::config::Config) -> serde_json::Value {
-    /// Returns true if `value` matches a vendor-specific secret pattern.
-    /// Each pattern is anchored on a recognisable prefix and a plausible
-    /// length so we don't false-positive UUIDs, hex hashes, or commit SHAs.
-    fn looks_like_known_secret(value: &str) -> bool {
-        let v = value.trim();
-        // OpenAI / OpenRouter / fine-tuned-org keys: sk-..., sk-or-..., sk-proj-...
-        if v.starts_with("sk-") && v.len() >= 20 {
-            return true;
-        }
-        // Anthropic: sk-ant-api03-..., sk-ant-...
-        if v.starts_with("sk-ant-") && v.len() >= 20 {
-            return true;
-        }
-        // Groq, NVIDIA NIM, OpenRouter, DeepSeek, Mistral, xAI variants
-        if (v.starts_with("gsk_")
-            || v.starts_with("nvapi-")
-            || v.starts_with("xai-")
-            || v.starts_with("mr-"))
-            && v.len() >= 20
-        {
-            return true;
-        }
-        // GitHub personal / fine-grained / app tokens
-        if (v.starts_with("ghp_")
-            || v.starts_with("gho_")
-            || v.starts_with("ghu_")
-            || v.starts_with("ghs_")
-            || v.starts_with("ghr_")
-            || v.starts_with("github_pat_"))
-            && v.len() >= 30
-        {
-            return true;
-        }
-        // GitLab personal access tokens
-        if v.starts_with("glpat-") && v.len() >= 20 {
-            return true;
-        }
-        // Slack: xoxb-/xoxa-/xoxp-/xoxs-, plus webhook URLs
-        if (v.starts_with("xoxb-")
-            || v.starts_with("xoxa-")
-            || v.starts_with("xoxp-")
-            || v.starts_with("xoxs-"))
-            && v.len() >= 20
-        {
-            return true;
-        }
-        if v.starts_with("https://hooks.slack.com/") {
-            return true;
-        }
-        // AWS access key id (AKIA/ASIA + 16 base32 chars = 20 total)
-        if (v.starts_with("AKIA") || v.starts_with("ASIA"))
-            && v.len() == 20
-            && v.chars().all(|c| c.is_ascii_alphanumeric())
-        {
-            return true;
-        }
-        // Stripe live/test secret keys
-        if (v.starts_with("sk_live_") || v.starts_with("sk_test_") || v.starts_with("rk_live_"))
-            && v.len() >= 24
-        {
-            return true;
-        }
-        // Google API keys
-        if v.starts_with("AIza") && v.len() >= 35 && v.len() <= 45 {
-            return true;
-        }
-        // JWT (header.payload.signature, all base64url)
-        if v.matches('.').count() == 2 && v.len() >= 30 {
-            let parts: Vec<&str> = v.split('.').collect();
-            if parts.len() == 3
-                && parts.iter().all(|p| {
-                    p.chars()
-                        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-                })
-                && v.starts_with("eyJ")
-            // JWT header always decodes to {"...
-            {
-                return true;
-            }
-        }
-        false
-    }
-
-    /// Heuristic for *any* high-entropy-looking string in a secret-named field.
-    /// We require length >= 32 AND mixed case OR digits, so a label like
-    /// "API_KEY_NAME" stays visible while a real opaque key gets masked.
-    fn looks_like_opaque_secret(value: &str) -> bool {
-        let v = value.trim();
-        if v.len() < 32 {
-            return false;
-        }
-        let has_lower = v.chars().any(|c| c.is_ascii_lowercase());
-        let has_upper = v.chars().any(|c| c.is_ascii_uppercase());
-        let has_digit = v.chars().any(|c| c.is_ascii_digit());
-        // Reject pure-uppercase identifiers and pure-hex hashes that look like
-        // commit SHAs / UUIDs.
-        if !has_lower && !has_digit {
-            return false; // looks like an UPPER_SNAKE identifier
-        }
-        let entropy_chars = has_lower as u8 + has_upper as u8 + has_digit as u8;
-        entropy_chars >= 2
-    }
-
-    fn redact(value: &mut serde_json::Value) {
-        match value {
-            serde_json::Value::Object(map) => {
-                for (key, val) in map.iter_mut() {
-                    let key_lc = key.to_lowercase();
-                    let key_is_secret = key_lc.contains("key")
-                        || key_lc.contains("token")
-                        || key_lc.contains("secret")
-                        || key_lc.contains("password")
-                        || key_lc.contains("passwd")
-                        || key_lc.contains("auth")
-                        || key_lc.contains("credential")
-                        || key_lc.contains("apikey");
-                    if key_is_secret {
-                        match val {
-                            serde_json::Value::String(s) => {
-                                if looks_like_known_secret(s) || looks_like_opaque_secret(s) {
-                                    *val = serde_json::Value::String("<redacted>".into());
+                    recorder.record(&event);
+                    if let sparrow::event::Event::RunFinished { run, .. } = &event {
+                        // Flush the accumulated assistant turn into the shared history.
+                        let trimmed = assistant_buf.trim();
+                        let snapshot = {
+                            let mut guard = conv_capture.lock().expect("conv lock poisoned");
+                            if !trimmed.is_empty() {
+                                let mut content = Vec::new();
+                                if !reasoning_buf.trim().is_empty() {
+                                    content.push(sparrow::provider::ContentBlock::Reasoning {
+                                        text: reasoning_buf.clone(),
+                                    });
                                 }
-                                // else: probably a placeholder label, leave visible.
-                                continue;
+                                content.push(sparrow::provider::ContentBlock::Text {
+                                    text: trimmed.to_string(),
+                                });
+                                guard.push(sparrow::provider::Msg {
+                                    role: "assistant".into(),
+                                    content,
+                                });
+                                if guard.len() > 40 {
+                                    let drop = guard.len() - 40;
+                                    guard.drain(..drop);
+                                }
                             }
-                            serde_json::Value::Null => continue,
-                            // Nested object/array under a "secret" key: redact aggressively.
-                            _ => {
-                                *val = serde_json::Value::String("<redacted>".into());
-                                continue;
-                            }
+                            guard.clone()
+                        };
+                        // Persist the full conversation so it survives a restart and
+                        // shows up in the /sessions panel.
+                        if let Some(store) = &session_capture {
+                            let _ = store.save("webview", &snapshot, Some("WebView console"));
                         }
+                        let _ = recorder.finalize(&run.0);
                     }
-                    redact(val);
+                    let _ = forward_tx.send(event);
                 }
-            }
-            serde_json::Value::Array(items) => {
-                for item in items {
-                    redact(item);
+            });
+
+            // Spawn the run as a task so the command loop keeps receiving messages
+            // (for mid-run injection and stop) while the engine works.
+            let events_for_err = events_for_runs.clone();
+            let run_handle = tokio::spawn(async move {
+                if let Err(err) = engine
+                    .drive_with_inject(
+                        task_obj,
+                        run_tx,
+                        sparrow::event::RunId::new(),
+                        Some(inject_rx),
+                    )
+                    .await
+                {
+                    let _ = events_for_err.send(sparrow::event::Event::Error {
+                        run: sparrow::event::RunId("webview".into()),
+                        message: format!("run failed: {}", err),
+                    });
                 }
-            }
-            serde_json::Value::String(s) if looks_like_known_secret(s) => {
-                *value = serde_json::Value::String("<redacted>".into());
-            }
-            _ => {}
-        }
-    }
-
-    let mut snapshot = serde_json::to_value(config).unwrap_or_else(|_| serde_json::json!({}));
-    redact(&mut snapshot);
-    snapshot
-}
-
-async fn run_task_json(
-    task: &str,
-    config: &sparrow::config::Config,
-    memory: Arc<dyn Memory>,
-    recorder: Arc<FsRecorder>,
-    skills: Arc<dyn SkillLibrary>,
-) -> anyhow::Result<()> {
-    use sparrow::engine::Engine;
-    use sparrow::router::BasicRouter;
-
-    let providers = build_provider_brains(config, &memory, false);
-
-    let router = Arc::new(BasicRouter::new(config, providers));
-    let engine = Engine::new(router, config.clone())
-        .with_memory(memory)
-        .with_skills(skills);
-
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-
-    let task_for_recording = task.to_string();
-    let config_snapshot = redacted_config_snapshot(config);
-    let repo_head = current_repo_head();
-    let print_handle = tokio::spawn(async move {
-        let mut stdout = tokio::io::stdout();
-        use tokio::io::AsyncWriteExt;
-        while let Some(event) = rx.recv().await {
-            if let sparrow::event::Event::RunStarted { run, agent, .. } = &event {
-                recorder.start_run(
-                    run.0.clone(),
-                    RunInputs {
-                        task: task_for_recording.clone(),
-                        config_snapshot: config_snapshot.clone(),
-                        model_id: "router-selected".into(),
-                        repo_head: repo_head.clone(),
-                        timestamp: chrono::Utc::now().to_rfc3339(),
-                        agent: agent.clone(),
-                    },
-                );
-            }
-            recorder.record(&event);
-            if let sparrow::event::Event::RunFinished { run, .. } = &event {
-                let _ = recorder.finalize(&run.0);
-            }
-            let line = sparrow::tools::extras::ndjson_output(&event);
-            let _ = stdout.write_all(line.as_bytes()).await;
+                let _ = forward.await;
+            });
+            active = Some((run_handle, inject_tx));
         }
     });
 
-    let task_obj = sparrow::engine::Task {
-        description: task.to_string(),
-        context: vec![],
-    };
-    let outcome = engine.drive(task_obj, tx).await?;
-    print_handle.await?;
+    let addr: SocketAddr = format!("0.0.0.0:{}", port).parse()?;
+    let url = format!("http://{}", addr);
+    println!("WebView console: {}", url);
+    println!("Press Ctrl+C to stop.\n");
 
-    // Structured exit codes for CI/hook/script consumption:
-    //   0  = completed successfully
-    //   1  = generic error
-    //   62 = budget cap exceeded
-    //   63 = denied by autonomy / approval
-    //   64 = timeout / interrupt
-    let exit_code = match outcome.status.as_str() {
-        "completed" => 0,
-        "denied" => 63,
-        "waiting_for_approval" => 63,
-        s if s.contains("budget") => 62,
-        s if s.contains("timeout") || s.contains("interrupt") => 64,
-        s if s.starts_with("error") || s.contains("error") => 1,
-        _ => 0,
-    };
-
-    if exit_code != 0 {
-        std::process::exit(exit_code);
+    // Auto-open the browser for the local WebView cockpit.
+    // Fire-and-forget — the server keeps running regardless.
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("cmd")
+            .args(["/c", "start", &url])
+            .spawn();
     }
+    #[cfg(target_os = "linux")]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open").arg(&url).spawn();
+    }
+
+    let server = WebViewServer::new(
+        addr,
+        event_tx,
+        Some(command_tx),
+        Some(shared_config),
+        Some(approvals),
+        Some(skills),
+        Some(memory.clone()),
+        agent_store,
+    );
+    server.serve().await?;
 
     Ok(())
 }
-
-// ─── WebView console ───────────────────────────────────────────────────────────
-
-/// Pull the WebView-internal protocol prefixes off the start of a task string.
-///
-/// The WebView wraps user input with metadata it cannot pass as a separate
-/// channel:
-///   `__agent:NAME__ROLE__BASE64_PERSONALITY__ __model:MODEL__ <user text>`
-///
-/// Either, both, or neither prefix may be present. Whatever survives at the
-/// end is the actual prompt the user typed and must be the only string we:
-///   - send to the LLM,
-///   - echo to the UI,
-///   - persist in conversation history.
-///
-/// Returns (clean_task, optional identity, optional model override).
-fn extract_webview_protocol_prefixes(
-    raw: &str,
-) -> (String, Option<sparrow::engine::Identity>, Option<String>) {
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
-
-    let mut remaining = raw.to_string();
-    let mut identity: Option<sparrow::engine::Identity> = None;
-    let mut model_override: Option<String> = None;
-
-    // __agent:NAME__ROLE__BASE64__ <rest>
-    if let Some(rest) = remaining.strip_prefix("__agent:") {
-        if let Some((name, after_name)) = rest.split_once("__") {
-            if let Some((role, after_role)) = after_name.split_once("__") {
-                if let Some((b64, after_b64)) = after_role.split_once("__ ") {
-                    let personality =
-                        String::from_utf8(STANDARD.decode(b64.as_bytes()).unwrap_or_default())
-                            .unwrap_or_default();
-                    identity = Some(sparrow::engine::Identity {
-                        name: name.to_string(),
-                        role: role.to_string(),
-                        personality,
-                    });
-                    remaining = after_b64.to_string();
-                }
-            }
-        }
-    }
-
-    // __model:M__ <rest>
-    if let Some(rest) = remaining.strip_prefix("__model:") {
-        if let Some((model, after_model)) = rest.split_once("__ ") {
-            model_override = Some(model.to_string());
-            remaining = after_model.to_string();
-        }
-    }
-
-    (remaining, identity, model_override)
-}
-
-#[cfg(test)]
-#[allow(clippy::items_after_test_module)]
-mod webview_protocol_tests {
-    use super::extract_webview_protocol_prefixes;
-    use base64::{Engine as _, engine::general_purpose::STANDARD};
-
-    #[test]
-    fn plain_task_is_unchanged() {
-        let (clean, id, model) = extract_webview_protocol_prefixes("hello world");
-        assert_eq!(clean, "hello world");
-        assert!(id.is_none());
-        assert!(model.is_none());
-    }
-
-    #[test]
-    fn agent_prefix_is_stripped_and_decoded() {
-        let b64 = STANDARD.encode(b"sarcastic helper");
-        let raw = format!("__agent:nova__assistant__{}__ tu es en quel version?", b64);
-        let (clean, id, model) = extract_webview_protocol_prefixes(&raw);
-        assert_eq!(clean, "tu es en quel version?");
-        let id = id.expect("identity extracted");
-        assert_eq!(id.name, "nova");
-        assert_eq!(id.role, "assistant");
-        assert_eq!(id.personality, "sarcastic helper");
-        assert!(model.is_none());
-    }
-
-    #[test]
-    fn model_only_prefix_is_stripped() {
-        let (clean, id, model) =
-            extract_webview_protocol_prefixes("__model:deepseek-v4-pro__ run tests");
-        assert_eq!(clean, "run tests");
-        assert!(id.is_none());
-        assert_eq!(model.as_deref(), Some("deepseek-v4-pro"));
-    }
-
-    #[test]
-    fn agent_and_model_together_are_both_stripped() {
-        // This is the exact shape the WebView sends today and the one that
-        // was leaking the base64 personality + model id into the chat.
-        let b64 = STANDARD.encode(b"P");
-        let raw = format!(
-            "__agent:nova__personal assistant__{}__ __model:deepseek-v4-pro__ ?",
-            b64
-        );
-        let (clean, id, model) = extract_webview_protocol_prefixes(&raw);
-        assert_eq!(clean, "?");
-        assert_eq!(id.as_ref().unwrap().name, "nova");
-        assert_eq!(model.as_deref(), Some("deepseek-v4-pro"));
-    }
-
-    #[test]
-    fn malformed_agent_prefix_is_left_alone() {
-        // Defensive: a half-formed prefix must NOT silently drop the user's
-        // text. Better to send the raw to the LLM than to swallow it.
-        let raw = "__agent:nova__broken-without-base64";
-        let (clean, id, _) = extract_webview_protocol_prefixes(raw);
-        assert_eq!(clean, raw);
-        assert!(id.is_none());
-    }
-}
-
-
-// ─── Init command ──────────────────────────────────────────────────────────────
-
-// ─── Status command ────────────────────────────────────────────────────────────

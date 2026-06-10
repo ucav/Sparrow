@@ -1,6 +1,6 @@
-// src/cmd_handlers/handle_chat_cmd.rs — extracted from main.rs
+// src/cmd_handlers/handle_chat_cmd.rs
 
-async fn handle_chat(
+pub async fn handle_chat(
     config: &sparrow::config::Config,
     memory: Arc<dyn Memory>,
 ) -> anyhow::Result<()> {
@@ -14,6 +14,3 @@ async fn handle_chat(
     let mut session = ChatSession::new(engine);
     session.run_interactive().await
 }
-
-// ─── Gateway command ────────────────────────────────────────────────────────────
-

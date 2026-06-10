@@ -1,6 +1,6 @@
-// src/cmd_handlers/handle_daemon_cmd.rs — extracted from main.rs
+// src/cmd_handlers/handle_daemon_cmd.rs
 
-async fn handle_daemon(
+pub async fn handle_daemon(
     config: &sparrow::config::Config,
     memory: Arc<dyn Memory>,
     scheduler: Arc<MemoryScheduler>,
@@ -52,12 +52,3 @@ async fn handle_daemon(
     runtime.stop().await?;
     Ok(())
 }
-
-// ─── OAuth device-flow login — registry-driven ───────────────────────────────
-//
-// Any provider in the registry with `auth_flow: DeviceOAuth { .. }` is
-// automatically supported.  The `client_id` can be passed on the CLI or
-// read from the env var declared in the registry entry (`client_id_env`).
-
-/// How `run_task` resolves the conversation context for this run.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

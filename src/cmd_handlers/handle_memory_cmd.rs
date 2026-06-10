@@ -1,6 +1,6 @@
-// src/cmd_handlers/handle_memory_cmd.rs — extracted from main.rs
+// src/cmd_handlers/handle_memory_cmd.rs
 
-fn handle_memory(
+pub fn handle_memory(
     action: sparrow::cli::MemoryAction,
     memory: &Arc<dyn Memory>,
     state_dir: &std::path::Path,
@@ -124,33 +124,7 @@ fn handle_memory(
                 println!("Session '{}' not found.", session);
             }
         }
-        sparrow::cli::MemoryAction::Graph { action } => {
-            sparrow::cmd_handlers::handle_memory_graph_cmd::handle_memory_graph(action, memory)?
-        }
+        sparrow::cli::MemoryAction::Graph { action } => handle_memory_graph(action, memory)?,
     }
     Ok(())
 }
-
-fn parse_json_properties(raw: &str) -> anyhow::Result<serde_json::Value> {
-    let value: serde_json::Value = serde_json::from_str(raw)
-        .map_err(|e| anyhow::anyhow!("properties must be valid JSON object: {}", e))?;
-    if !value.is_object() {
-        anyhow::bail!("properties must be a JSON object");
-    }
-    Ok(value)
-}
-
-// ─── JSON NDJSON run ────────────────────────────────────────────────────────────
-
-fn current_repo_head() -> Option<String> {
-    let output = std::process::Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let head = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if head.is_empty() { None } else { Some(head) }
-}
-

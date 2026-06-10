@@ -1,6 +1,6 @@
 // src/cmd_handlers/handle_replay_cmd.rs
 
-async fn handle_replay(
+pub async fn handle_replay(
     run_id: &str,
     recorder: &Arc<FsRecorder>,
     config: &sparrow::config::Config,

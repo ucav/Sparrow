@@ -1,6 +1,6 @@
-// src/cmd_handlers/handle_github_cmd.rs — extracted from main.rs
+// src/cmd_handlers/handle_github_cmd.rs
 
-fn handle_github(action: sparrow::cli::GithubAction) -> anyhow::Result<()> {
+pub fn handle_github(action: sparrow::cli::GithubAction) -> anyhow::Result<()> {
     use sparrow::cli::GithubAction;
     use sparrow::github;
 

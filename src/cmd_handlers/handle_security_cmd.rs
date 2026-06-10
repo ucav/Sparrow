@@ -1,6 +1,6 @@
-// src/cmd_handlers/handle_security_cmd.rs — extracted from main.rs
+// src/cmd_handlers/handle_security_cmd.rs
 
-fn handle_security(
+pub fn handle_security(
     action: sparrow::cli::SecurityAction,
     config: &sparrow::config::Config,
 ) -> anyhow::Result<()> {

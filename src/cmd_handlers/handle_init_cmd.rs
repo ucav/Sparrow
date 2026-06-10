@@ -1,6 +1,6 @@
-// src/cmd_handlers/handle_init_cmd.rs — extracted from main.rs
+// src/cmd_handlers/handle_init_cmd.rs
 
-fn handle_init() -> anyhow::Result<()> {
+pub fn handle_init() -> anyhow::Result<()> {
     let cwd = std::env::current_dir()?;
     let sparrow_dir = cwd.join(".sparrow");
     if sparrow_dir.exists() {
@@ -38,5 +38,3 @@ blocked_paths = [".env", "*.pem", "secrets/"]
     println!("\nCommit .sparrow/ to your repo to share with the team.");
     Ok(())
 }
-
-// ─── Status command ────────────────────────────────────────────────────────────

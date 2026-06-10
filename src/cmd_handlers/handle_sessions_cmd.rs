@@ -1,6 +1,6 @@
-// src/cmd_handlers/handle_sessions_cmd.rs — extracted from main.rs
+// src/cmd_handlers/handle_sessions_cmd.rs
 
-fn handle_sessions(
+pub fn handle_sessions(
     action: sparrow::cli::SessionAction,
     state_dir: &std::path::Path,
 ) -> anyhow::Result<()> {

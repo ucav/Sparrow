@@ -1,6 +1,5 @@
-// src/cmd_handlers/handle_permissions_cmd.rs — extracted from main.rs
-
-fn handle_permissions(
+// src/cmd_handlers/handle_permissions_cmd.rs
+pub fn handle_permissions(
     action: sparrow::cli::PermissionAction,
     config: &sparrow::config::Config,
     store: &FsConfigStore,
@@ -52,19 +51,19 @@ fn handle_permissions(
     Ok(())
 }
 
-fn push_unique(values: &mut Vec<String>, value: String) {
+pub fn push_unique(values: &mut Vec<String>, value: String) {
     if !values.iter().any(|existing| existing == &value) {
         values.push(value);
     }
 }
 
-fn push_unique_path(values: &mut Vec<std::path::PathBuf>, value: std::path::PathBuf) {
+pub fn push_unique_path(values: &mut Vec<std::path::PathBuf>, value: std::path::PathBuf) {
     if !values.iter().any(|existing| existing == &value) {
         values.push(value);
     }
 }
 
-fn print_permission_policy(config: &sparrow::config::Config) {
+pub fn print_permission_policy(config: &sparrow::config::Config) {
     let policy = &config.permissions;
     println!("Permission policy");
     println!("=================");
@@ -87,7 +86,7 @@ fn print_permission_policy(config: &sparrow::config::Config) {
     println!("  deny  : {}", list_or_empty(&policy.surfaces.deny));
 }
 
-fn list_or_empty(values: &[String]) -> String {
+pub fn list_or_empty(values: &[String]) -> String {
     if values.is_empty() {
         "(empty)".into()
     } else {
@@ -95,7 +94,7 @@ fn list_or_empty(values: &[String]) -> String {
     }
 }
 
-fn path_list_or_empty(values: &[std::path::PathBuf]) -> String {
+pub fn path_list_or_empty(values: &[std::path::PathBuf]) -> String {
     if values.is_empty() {
         "(empty)".into()
     } else {
@@ -206,5 +205,3 @@ async fn run_swarm(
 
     Ok(())
 }
-
-// ─── Skills commands ────────────────────────────────────────────────────────────

@@ -1,6 +1,5 @@
-// src/cmd_handlers/handle_plan_cmd.rs — extracted from main.rs
-
-fn handle_plan(
+// src/cmd_handlers/handle_plan_cmd.rs
+pub fn handle_plan(
     task: &str,
     config: &sparrow::config::Config,
     skills: Arc<dyn SkillLibrary>,

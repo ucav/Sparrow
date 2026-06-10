@@ -1,6 +1,5 @@
-// src/cmd_handlers/handle_agent_cmd.rs — extracted from main.rs
-
-async fn handle_agent(
+// src/cmd_handlers/handle_agent_cmd.rs
+pub async fn handle_agent(
     action: sparrow::cli::AgentAction,
     store: &Arc<dyn AgentStore>,
     config: &sparrow::config::Config,
@@ -272,7 +271,7 @@ fn migrate_inline_provider_keys(config: &mut sparrow::config::Config, store: &Fs
     }
 }
 
-async fn refresh_discovery_cache(
+pub async fn refresh_discovery_cache(
     memory: Arc<dyn Memory>,
     config: &sparrow::config::Config,
     force: bool,
@@ -328,7 +327,7 @@ async fn refresh_discovery_cache(
     }
 }
 
-async fn discover_and_cache_provider(
+pub async fn discover_and_cache_provider(
     memory: Arc<dyn Memory>,
     provider_id: String,
     adapter: String,
@@ -506,7 +505,7 @@ fn build_provider_brains(
     providers
 }
 
-async fn run_tui(
+pub async fn run_tui(
     config: &sparrow::config::Config,
     memory: Arc<dyn Memory>,
     skills: Arc<dyn SkillLibrary>,
@@ -666,4 +665,3 @@ async fn run_tui(
     }
     Ok(())
 }
-

@@ -1,5 +1,6 @@
-// src/cmd_handlers/handle_status_cmd.rs — extracted from main.rs
-fn handle_status(
+// src/cmd_handlers/handle_status_cmd.rs
+
+pub fn handle_status(
     memory: &Arc<dyn Memory>,
     config: &sparrow::config::Config,
     scheduler: &Arc<sparrow::runtime::scheduler::MemoryScheduler>,

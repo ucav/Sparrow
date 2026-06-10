@@ -1,6 +1,6 @@
 // src/cmd_handlers/handle_mcp_cmd.rs
 
-async fn handle_mcp(
+pub async fn handle_mcp(
     action: sparrow::cli::McpAction,
     config_dir: &std::path::PathBuf,
 ) -> anyhow::Result<()> {
