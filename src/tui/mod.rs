@@ -1592,6 +1592,7 @@ impl Tui {
                 Constraint::Min(0),
                 Constraint::Length(diff_height),
                 Constraint::Length(checkpoint_height),
+                Constraint::Length(1), // keyboard hints
                 Constraint::Length(input_height),
             ])
             .split(area);
@@ -1606,7 +1607,8 @@ impl Tui {
         if checkpoint_height > 0 {
             self.render_checkpoint_timeline(f, chunks[4]);
         }
-        self.render_input(f, chunks[5]);
+        self.render_keyboard_hints(f, chunks[5]);
+        self.render_input(f, chunks[6]);
         self.render_toast(f, area);
     }
 
@@ -2092,6 +2094,16 @@ impl Tui {
             )))
             .block(Block::default().borders(Borders::ALL).border_style(border)),
             rect,
+        );
+    }
+
+    fn render_keyboard_hints(&self, f: &mut Frame, area: Rect) {
+        let hints =
+            format!("Esc:quit  Tab:agents  /:search  @:skills  Ctrl+R:run  Ctrl+C:stop  F1:help",);
+        let line = Line::from(Span::styled(hints, Style::default().fg(self.theme.dimmer)));
+        f.render_widget(
+            Paragraph::new(line).alignment(ratatui::layout::Alignment::Center),
+            area,
         );
     }
 
