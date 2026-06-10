@@ -441,6 +441,17 @@ pub struct Task {
     pub context: Vec<Msg>,
 }
 
+/// Pre-run estimate: what the router WOULD do and roughly what it would cost.
+/// All figures are estimates priced at the primary model's list price.
+#[derive(Debug, Clone)]
+pub struct Preflight {
+    pub tier: TaskTier,
+    pub chain: Vec<String>,
+    pub est_input_range: (u64, u64),
+    pub est_output_range: (u64, u64),
+    pub est_cost_range: (f64, f64),
+}
+
 // ─── THE ENGINE ─────────────────────────────────────────────────────────────────
 
 pub struct Engine {
@@ -790,6 +801,51 @@ impl Engine {
         if out.is_empty() { None } else { Some(out) }
     }
 
+    /// Estimate what a task will cost BEFORE running it: classified tier,
+    /// selected chain, and a token/cost range priced at the primary model.
+    /// Everything here is an estimate — surfaces must label it as such.
+    pub fn preflight(&self, task_desc: &str) -> Preflight {
+        let (tier, _ambiguous) = self.classify_with_confidence(task_desc);
+        let need = crate::router::RoutingNeed {
+            tier: tier.clone(),
+            required_tools: self.requires_tools(task_desc, &tier),
+            required_vision: self.requires_vision(task_desc, &tier),
+            prefer_local: false,
+        };
+        let budget = BudgetState {
+            daily_limit_usd: self.config.budget.daily_usd,
+            daily_spent_usd: 0.0,
+            session_limit_usd: self.config.budget.session_usd,
+            session_spent_usd: 0.0,
+        };
+        let chain = self.router.select(&need, &budget);
+        // Token envelopes per tier, from observed run shapes (rough by design).
+        let (in_lo, in_hi, out_lo, out_hi): (u64, u64, u64, u64) = match tier {
+            TaskTier::Trivial => (800, 4_000, 100, 1_000),
+            TaskTier::Small => (3_000, 12_000, 500, 3_000),
+            TaskTier::Medium => (8_000, 40_000, 2_000, 10_000),
+            TaskTier::Hard => (25_000, 120_000, 5_000, 25_000),
+            TaskTier::Vision => (8_000, 40_000, 2_000, 8_000),
+        };
+        let price = chain.first().map(|b| b.caps());
+        let cost = |tin: u64, tout: u64| -> f64 {
+            price
+                .as_ref()
+                .map(|c| {
+                    tin as f64 * c.cost_input_per_mtok / 1_000_000.0
+                        + tout as f64 * c.cost_output_per_mtok / 1_000_000.0
+                })
+                .unwrap_or(0.0)
+        };
+        Preflight {
+            tier,
+            chain: chain.iter().map(|b| b.id().to_string()).collect(),
+            est_input_range: (in_lo, in_hi),
+            est_output_range: (out_lo, out_hi),
+            est_cost_range: (cost(in_lo, out_lo), cost(in_hi, out_hi)),
+        }
+    }
+
     /// Drive one AgentRun to completion.
     pub async fn drive(
         &self,
@@ -962,6 +1018,38 @@ impl Engine {
                     apply_override(&mut chain);
                 }
             }
+        }
+
+        // ── Per-repo routing memory ────────────────────────────────────────
+        // Outcomes are recorded under the CLASSIFIED tier (pre-bump), so the
+        // system self-corrects: if bumping makes "small" tasks verify cleanly,
+        // small's stats recover and the bump switches itself off again.
+        let routing_memory_root =
+            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+        let mut repo_routing =
+            crate::router::learned::RepoRoutingMemory::load(&routing_memory_root);
+        let classified_tier = tier.clone();
+        if let Some(bumped) = repo_routing.suggest_bump(&tier) {
+            let _ = event_tx.send(Event::Message {
+                run: run_id.clone(),
+                role: "router".into(),
+                text: format!(
+                    "routing memory: {} tasks in this repo mostly needed escalation — starting at {}",
+                    tier.as_str(),
+                    bumped.as_str()
+                ),
+            });
+            tier = bumped;
+            required_tools = self.requires_tools(&task.description, &tier);
+            required_vision = self.requires_vision(&task.description, &tier);
+            need = crate::router::RoutingNeed {
+                tier: tier.clone(),
+                required_tools,
+                required_vision,
+                prefer_local: false,
+            };
+            chain = self.router.select(&need, &budget);
+            apply_override(&mut chain);
         }
 
         let task_summary = self.task_summary(&task.description, &tier);
@@ -1284,6 +1372,11 @@ impl Engine {
         let mut had_mutation = false;
         let mut verify_attempts: u32 = 0;
         const MAX_VERIFY_ATTEMPTS: u32 = 2;
+        // Verified escalation: when a model exhausts its fix budget, the run
+        // climbs to the next model in the chain (bounded) instead of ending
+        // silently unverified — cheap-first routing with a guaranteed floor.
+        let mut verify_escalations: u32 = 0;
+        const MAX_VERIFY_ESCALATIONS: u32 = 2;
         // Whether the run has produced ANY visible output (text or tool use). If
         // a model returns an empty completion and nothing has been produced yet,
         // we fall back to the next model in the chain (rescues a dead provider).
@@ -2347,8 +2440,12 @@ impl Engine {
                                         // The model thinks it's done. If it mutated
                                         // files and a verify command is configured,
                                         // run it; on failure, re-inject so the agent
-                                        // fixes it (bounded retries).
-                                        if had_mutation && verify_attempts < MAX_VERIFY_ATTEMPTS {
+                                        // fixes it (bounded). When this model's fix
+                                        // budget is exhausted, ESCALATE to the next
+                                        // (stronger) model in the chain rather than
+                                        // ending the run silently unverified — that
+                                        // is the whole point of routing cheap-first.
+                                        if had_mutation {
                                             if let Some(verify_cmd) =
                                                 self.config.defaults.verify_command.clone()
                                             {
@@ -2403,16 +2500,70 @@ impl Engine {
                                                                 .rev()
                                                                 .collect::<Vec<_>>()
                                                                 .join("\n");
-                                                            messages.push(Msg {
-                                                                role: "user".into(),
-                                                                content: vec![ContentBlock::Text {
-                                                                    text: format!(
-                                                                        "SYSTEM: verification command `{}` FAILED (exit {}). Fix the code, then it will be re-verified. Output:\n{}",
-                                                                        verify_cmd, res.exit_code, tail
-                                                                    ),
-                                                                }],
-                                                            });
-                                                            continue_agent_loop = true;
+                                                            if verify_attempts
+                                                                <= MAX_VERIFY_ATTEMPTS
+                                                            {
+                                                                // Same model gets a bounded
+                                                                // chance to fix its own work.
+                                                                messages.push(Msg {
+                                                                    role: "user".into(),
+                                                                    content: vec![ContentBlock::Text {
+                                                                        text: format!(
+                                                                            "SYSTEM: verification command `{}` FAILED (exit {}). Fix the code, then it will be re-verified. Output:\n{}",
+                                                                            verify_cmd, res.exit_code, tail
+                                                                        ),
+                                                                    }],
+                                                                });
+                                                                continue_agent_loop = true;
+                                                                break;
+                                                            }
+                                                            // Fix budget exhausted — escalate
+                                                            // to the next model in the chain.
+                                                            let next_idx = current_chain_idx + 1;
+                                                            if next_idx < brain_policy.chain.len()
+                                                                && verify_escalations
+                                                                    < MAX_VERIFY_ESCALATIONS
+                                                            {
+                                                                verify_escalations += 1;
+                                                                verify_attempts = 0;
+                                                                let from = brain.id().to_string();
+                                                                let to = brain_policy.chain
+                                                                    [next_idx]
+                                                                    .id()
+                                                                    .to_string();
+                                                                current_chain_idx = next_idx;
+                                                                let _ = event_tx.send(
+                                                                    Event::ModelSwitched {
+                                                                        run: run_id.clone(),
+                                                                        from,
+                                                                        to,
+                                                                        reason: format!(
+                                                                            "verification still failing after {} fixes — escalating",
+                                                                            MAX_VERIFY_ATTEMPTS
+                                                                        ),
+                                                                    },
+                                                                );
+                                                                messages.push(Msg {
+                                                                    role: "user".into(),
+                                                                    content: vec![ContentBlock::Text {
+                                                                        text: format!(
+                                                                            "SYSTEM: a previous model attempted this task but verification `{}` still FAILS (exit {}). You are a stronger model brought in to finish the job. Diagnose properly, fix the code, then it will be re-verified. Output:\n{}",
+                                                                            verify_cmd, res.exit_code, tail
+                                                                        ),
+                                                                    }],
+                                                                });
+                                                                continue_agent_loop = true;
+                                                                break;
+                                                            }
+                                                            // No stronger model left: end
+                                                            // HONESTLY as a failure instead of
+                                                            // pretending the run succeeded.
+                                                            had_error = true;
+                                                            last_error = Some(format!(
+                                                                "verification `{}` still failing after retries and escalation",
+                                                                verify_cmd
+                                                            ));
+                                                            continue_agent_loop = false;
                                                             break;
                                                         }
                                                         Ok(_) => {
@@ -2753,6 +2904,24 @@ impl Engine {
                 messages: messages.clone(),
                 created_at: chrono::Utc::now().format("%Y-%m-%d %H:%M:%S").to_string(),
             });
+        }
+
+        // Per-repo routing memory: record only verification-backed outcomes —
+        // a "completed" without a verify command proves nothing.
+        {
+            use crate::router::learned::RunRoutingOutcome;
+            let routing_outcome = if had_error {
+                Some(RunRoutingOutcome::Failed)
+            } else if verify_escalations > 0 {
+                Some(RunRoutingOutcome::Escalated)
+            } else if verify_attempts > 0 && outcome.status == "completed" {
+                Some(RunRoutingOutcome::VerifiedSuccess)
+            } else {
+                None
+            };
+            if let Some(o) = routing_outcome {
+                repo_routing.record(&classified_tier, o);
+            }
         }
 
         // Propose skill candidate from successful run
