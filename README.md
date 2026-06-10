@@ -47,7 +47,7 @@ The project focuses on a narrow product promise: a Rust-native local cockpit whe
 | Budget caps (`--max-cost-usd` / `--max-wall-secs`) | ❌ | ❌ | ❌ | ✅ |
 | WebView cockpit + TUI + JSON stream | ⚠️ TUI only | ⚠️ TUI only | ⚠️ TUI only | ✅ all three |
 | MCP server **host + client** | ✅ | ⚠️ | ❌ | ✅ |
-| Drop-in import of `~/.claude/` config | n/a | ❌ | ❌ | ✅ |
+| Drop-in import (`~/.claude/`, Codex, OpenCode) | n/a | ❌ | ❌ | ✅ |
 | Multi-agent swarm (Planner → Coder → Verifier) | ❌ | ❌ | ❌ | ✅ |
 | Telegram / Discord / Slack gateways | ❌ | ❌ | ❌ | ✅ |
 | Pre-commit secret scanner bundled | ❌ | ❌ | ❌ | ✅ |
@@ -293,6 +293,7 @@ Sparrow keeps a static provider registry and expands it with live model discover
 
 ```bash
 sparrow setup                      # first-run configuration
+sparrow import auto                # migrate from claude-code / codex / opencode
 sparrow plan "propose an approach" # read-only plan mode
 sparrow console                    # launch WebView cockpit
 sparrow run "fix the failing test"

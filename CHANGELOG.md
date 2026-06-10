@@ -2,6 +2,35 @@
 
 All notable changes to Sparrow will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- `sparrow import <claude-code|codex|opencode|openclaw|auto>` — one-command
+  migration of agents, slash commands, settings, and MCP servers from other
+  tools. `auto` detects every installed tool and imports each one.
+- Cost comparison on run completion: every surface shows what the same token
+  volume would have cost (estimated at list price) on Claude Code, Codex CLI,
+  and OpenCode.
+
+### Changed
+- Budget caps (`--max-cost-usd`, `--max-wall-secs`, `--max-tokens`, `--budget`)
+  and other per-run flags are now global: `sparrow run "task" --max-cost-usd
+  0.50` works as documented (previously the flags were only accepted before the
+  subcommand).
+- `sparrow checkpoint list` shows timestamps and short ids instead of raw
+  UUIDs, and points at `sparrow rewind`.
+- Cost comparison output marks figures as estimates and says "comparable on
+  this run" instead of "same cost" when Sparrow wasn't cheaper.
+- `sparrow doctor` closes with a support pointer instead of internal milestone
+  jargon.
+
+### Fixed
+- Build break: `sparrow import` settings merge used the wrong settings type.
+- Build break: run summary moved `total_tokens` before the cost comparison
+  could borrow it.
+- Test suite updated for the new `OutcomeSummary.cost_comparison` field and the
+  real `MigrationResult` shape.
+
 ## [0.6.2] — 2026-06-09
 
 Launch-polish pass — cockpit HUD hardening and the first headless render tests.

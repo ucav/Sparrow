@@ -126,29 +126,32 @@ pub fn format_comparison(sparrow_cost: f64, tokens: &TokenUsage) -> String {
     for line in &lines {
         if line.savings_percent > 0.0 {
             out.push_str(&format!(
-                "{} .......... ${:.4} (save {:.0}% — ${:.2} cheaper)\n",
+                "{} .......... ~${:.4} est. (save {:.0}% — ${:.2} cheaper)\n",
                 line.competitor.display_name(),
                 line.estimated_cost,
                 line.savings_percent,
                 -line.savings
             ));
         } else {
+            // Sparrow was not cheaper on this run (e.g. the task was routed to
+            // the same premium model). Say so honestly instead of "same cost".
             out.push_str(&format!(
-                "{} .......... ${:.4} (same cost)\n",
+                "{} .......... ~${:.4} est. (comparable on this run)\n",
                 line.competitor.display_name(),
                 line.estimated_cost
             ));
         }
     }
 
-    // Killer line — the marketing hook
+    // Killer line — the marketing hook. Estimates only: same token volume
+    // priced at the competitor's list price, so keep the tilde.
     if let Some(best) = lines
         .iter()
         .max_by(|a, b| a.savings_percent.partial_cmp(&b.savings_percent).unwrap())
     {
         if best.savings_percent > 50.0 {
             out.push_str(&format!(
-                "\n💡 Same task on {} would have cost ${:.2} more.",
+                "\n💡 Same tokens on {} would have cost ~${:.2} more (est. at list price).",
                 best.competitor.display_name(),
                 -best.savings
             ));
@@ -167,7 +170,7 @@ pub fn format_comparison_oneliner(sparrow_cost: f64, tokens: &TokenUsage) -> Str
 
     match best {
         Some(line) if line.savings_percent > 30.0 => format!(
-            "(vs {}: ${:.2} — save {:.0}%)",
+            "(vs {}: ~${:.2} est. — save {:.0}%)",
             line.competitor.display_name(),
             line.estimated_cost,
             line.savings_percent
