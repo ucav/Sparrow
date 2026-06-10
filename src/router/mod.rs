@@ -108,6 +108,8 @@ pub struct BasicRouter {
     /// this provider first (capability constraints still apply).
     preferred_provider: Option<String>,
     preferred_model: Option<String>,
+    /// \"auto\" or \"manual\" — see RoutingConfig.routing_mode.
+    routing_mode: String,
 }
 
 impl BasicRouter {
