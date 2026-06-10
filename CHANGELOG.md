@@ -2,12 +2,12 @@
 
 All notable changes to Sparrow will be documented in this file.
 
-## [Unreleased] — v0.8.1 « Honnêteté » (vérifié)
+## [0.8.1] — 2026-06-10 « Honesty »
 
-> Release de correction (aucune feature nouvelle) traçant l'audit v0.8.0.
-> Voir `AUDIT_v0.8.0.md` et `PLAN_v0.8.1.md`.
+> Patch release tracking the v0.8.0 audit. No new features.
+> See `AUDIT_v0.8.0.md` and `PLAN_v0.8.1.md`.
 
-### Sécurité
+### Security
 - **La console se lie à `127.0.0.1` par défaut** (D1). Avant, elle écoutait
   `0.0.0.0` sans condition alors que `--bind` était parsé mais jamais lu —
   exposant run/agents/écriture de fichiers à tout le réseau local. `--bind`
@@ -18,7 +18,7 @@ All notable changes to Sparrow will be documented in this file.
 - `--bind` est validé : une valeur contenant un port est rejetée explicitement
   au lieu d'être ignorée en silence (D3).
 
-### Corrigé — exécution des outils (le « bug DeepSeek »)
+### Fixed — Tool execution (the "DeepSeek bug")
 - **Un tour à plusieurs tool calls n'écrase plus le premier appel** (A1). Le
   moteur accumule chaque appel par `id` ; un test de régression
   (`tests/multi_tool_streaming.rs`) reproduit la séquence SSE réelle.
@@ -32,7 +32,7 @@ All notable changes to Sparrow will be documented in this file.
   déclare pas le support tools, Sparrow n'envoie pas de bloc `tools` à
   `/api/chat` (B5/I5).
 
-### Corrigé — récupération de markup
+### Fixed — Markup recovery
 - Le parser de secours respecte `string="true"` (plus de coercition de `"123"`
   en nombre) et ne `trim()` plus les valeurs (le `content` d'un fichier garde
   ses espaces/sauts de ligne) (B2).
@@ -46,7 +46,7 @@ All notable changes to Sparrow will be documented in this file.
   tamponnés jusqu'à décision : plus de fuite de tags fragmentés dans le
   transcript avant qu'un tool call soit reconnu (B1).
 
-### Corrigé — appel d'outils & apprentissage
+### Fixed — Tool calling and learning
 - Le garde anti-narration reconnaît le **français** (« je vais créer… »,
   « laisse-moi vérifier… ») : il était anglais-only et donc inerte pour les
   réponses françaises (I1).
@@ -60,7 +60,7 @@ All notable changes to Sparrow will be documented in this file.
   aucune ligne de statut UI (`completed ·`, tokens, consulting/parsing) ne peut
   être réinjectée dans `BrainRequest.messages` (G3).
 
-### Corrigé — approbations & chiffres
+### Fixed — Approvals and numbers
 - Les approbations sont honnêtes en mode non interactif : pas de blocage sur
   `stdin`, refus explicite si aucun handler d'approbation n'est disponible, et
   statut `WaitingForApproval` visible dans le cockpit (A3/F2).
@@ -83,7 +83,7 @@ All notable changes to Sparrow will be documented in this file.
   dans les caps inférées, ce qui réactive les coûts et comparaisons quand la
   route est payante (E4).
 
-### Corrigé — fin du théâtre & bruit (pass 2)
+### Fixed — End of theater and noise (pass 2)
 - Le message du routeur est une ligne française claire (« tâche classée :
   trivial · outils : non… ») au lieu du doublon franglais « requete: requete
   trivial · tier: … » (F7).
@@ -105,7 +105,7 @@ All notable changes to Sparrow will be documented in this file.
   sur la voie live (deepseek via opencode-go) — c'était un artefact d'avant le
   tampon de lignes SSE de v0.5.8 (G2).
 
-### Corrigé — densité du transcript
+### Fixed — Transcript density
 - Le transcript normal n'affiche plus les lignes internes `RunStarted`,
   `RouteSelected`, messages routeur, `ApprovalResolved`, checkpoints et
   apprentissages de skills ; ces détails restent disponibles en verbose ou dans
@@ -119,7 +119,7 @@ All notable changes to Sparrow will be documented in this file.
   contrôles accept/reject contradictoires ; il montre seulement le fichier
   appliqué et reste cliquable pour ouvrir le contenu (F3).
 
-### Vérification
+### Verification
 - `cargo fmt --check`, `cargo test --all-targets` et
   `cargo clippy --all-targets -- -D warnings` sont verts après la fermeture des
   lots 2 à 11.
