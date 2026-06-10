@@ -60,33 +60,38 @@ See [`docs/comparison/vs-competitors.md`](docs/comparison/vs-competitors.md) for
 
 ---
 
-## ✨ What's New — v0.6.2
+## ✨ What's New — v0.7.0 (Unreleased)
 
-> **Cockpit polish** — TUI status header no longer truncates cost/tokens/autonomy on 80-column terminals, and the render path now ships with headless test coverage. (v0.6.1: full skill catalog injected into system prompt so agents discover all 105 skills; agent creator modal centered; console layout fixes.)
+> **Cost routing, zero-friction migration, and a self-improving engine.** Sparrow routes every sub-task to the cheapest capable model (local free for reads, frontier for rewrites), then shows you exactly what you saved vs Claude Code. Import your existing setup in one command. The engine now learns per-repo, escalates on failure, and ships with a hardened reasoning protocol.
 
-**WebView cockpit**
-- **Compact swarm** — idle agents show icon + name + 1-line status; active triad expands. Sub-agents auto-appear as lanes.
-- **Tiered approvals** — inline card with 4 buttons: once / session / always / deny. "always" persists to permissions. Folds to a one-liner after decision.
-- **Agent creator** — "＋ new agent" button opens full form (name/role/model/color/tools/soul), writes `.soul.toml` + `.agent.md` instantly.
-- **Config panel v2** — 6 tabs: providers, routing, permissions, appearance, memory & telemetry, MCP & hooks.
-- **Skills tab** — left rail now exposes the local skill library (was missing).
+**💰 Cost routing — Sparrow's competitive moat**
+- Every run ends with a cost comparison: *"Sparrow $0.04 — Claude Code would have cost $0.61 (save 93%)"*
+- Shown on ALL surfaces: CLI run, TUI cockpit, chat, Telegram/Discord, WebView JSON
+- Competitor pricing: Claude Code ($3/$15), Codex CLI ($2.5/$10), OpenCode ($3/$15) per MTok
+- Sub-cent amounts displayed with precision ($0.0041 not "$0.00")
 
-**TUI**
-- **Rich splash screen on boot** — formatted demo with code blocks, colored diffs, and JSON preview so users see rendering quality immediately.
-- **Agent toggle** — `@nova` + Tab switches full pipeline identity; gold indicator in status bar.
-- **Auto-detected content formatting** — code, diffs, JSON, and markdown rendered with syntax colors in the scroll area.
+**📦 Zero-friction migration — `sparrow import`**
+- `sparrow import claude-code` — CLAUDE.md → instructions, commands → slash, agents → SOUL, MCP servers imported, API keys detected
+- `sparrow import codex` | `opencode` | `openclaw` | `auto` — one command, all your config
+- Auto-detect: `sparrow import auto` finds every installed tool and imports each
 
-**CLI**
-- **20 new tools** including web_search (DuckDuckGo/SearXNG, no API key), code_exec (sandboxed python/js/bash/ruby), browser/vision (Playwright).
-- **105 skills** with rich content — debug-systematically, write-tests, code-review, docker, k8s, terraform, postgres, redis, API design, security audit.
-- **FTS5 session search** — `sparrow sessions search "query"` with relevance-ranked snippets.
-- **5 cron job presets** — health check, auto-commit, security audit, session cleanup, knowledge distillation.
+**🧠 Self-improving engine**
+- **REFLEXION-MAX PROTOCOL V2** — default agent soul with tier triage, three-reviewer tribunal (skeptic/adversary/hurried user), verification by different method, absolute rules against simulated results
+- **Verified escalation** — when a model exhausts its fix budget, the run climbs to the next model instead of failing silently
+- **Per-repo routing memory** — the router learns which models succeed in your repo, self-corrects
+- **Transient retry + stuck-loop guard** — one 429 doesn't downgrade your run; repeated tool calls trigger a nudge then honest stop
+- **Pre-run quote** — `sparrow run` shows estimated cost before executing; `--yes` to skip
 
-**Install & distribution**
-- **`cargo install sparrow-cli` v0.6.2** on crates.io.
-- **Homebrew tap, Scoop bucket, winget manifests** with cross-compiled binaries.
-- **`sparrow launch`** — first-run wizard auto-detects 20+ provider keys, ranks by cost tier, offers free fallbacks.
-- **`sparrow demo`** — 30-second snake game live coding demo.
+**🖥️ Console & CLI**
+- **Replay-on-connect** — refresh mid-run replays current events instead of blank feed
+- **`--continue` / `--fresh`** — session continuity visible across all surfaces
+- **`sparrow skills install gh:user/repo`** — GitHub shorthand for skill installs
+- Budget caps work after subcommand: `sparrow run "task" --max-cost-usd 0.50`
+
+**Install & distribution** (v0.6.2 baseline)
+- **`cargo install sparrow-cli` v0.6.2** on crates.io — v0.7.0 coming
+- **Pre-built binaries** for Linux, macOS, Windows on every release
+- **`sparrow launch`** — first-run wizard with free provider fallbacks
 
 **What was already here (v0.5.x)**
 - Agentic engine with planner → coder → verifier pipeline, swarm orchestrator, git checkpoints + rewind.
