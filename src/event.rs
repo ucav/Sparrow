@@ -158,6 +158,12 @@ pub enum Decision {
     Allow,
     AskUser,
     Deny,
+    /// Allow this specific tool call once and ask again next time.
+    AllowOnce,
+    /// Allow this tool for the remainder of the session.
+    AllowSession,
+    /// Allow this tool permanently (persisted to disk).
+    AllowAlways,
 }
 
 // ─── Agent status ───────────────────────────────────────────────────────────────

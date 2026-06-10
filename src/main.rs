@@ -106,7 +106,11 @@ async fn async_main() -> anyhow::Result<()> {
             providers: Default::default(),
             surfaces: Default::default(),
             skills: Default::default(),
-            permissions: Default::default(),
+            permissions: {
+                let mut pc = sparrow::permissions::PermissionConfig::default();
+                pc.store = sparrow::permissions::store::PermissionStore::load(&active_config_dir);
+                pc
+            },
             hooks: Default::default(),
             theme: "captain".into(),
             config_dir: active_config_dir.clone(),
@@ -116,6 +120,13 @@ async fn async_main() -> anyhow::Result<()> {
     });
     config.config_dir = active_config_dir.clone();
     config.state_dir = active_state_dir.clone();
+
+    // Load persisted per-tool permission decisions from permissions.json.
+    // Durable decisions (AllowAlways, Deny) survive across sessions.
+    config.permissions.store =
+        sparrow::permissions::store::PermissionStore::load(&config.config_dir);
+    // Expire session-scoped decisions from previous sessions.
+    config.permissions.store.expire_session_scoped();
     migrate_inline_provider_keys(&mut config, &config_store);
     apply_cli_overrides(&mut config, &cli);
 

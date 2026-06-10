@@ -116,6 +116,10 @@ pub struct PermissionConfig {
     pub providers: PermissionList,
     #[serde(default)]
     pub surfaces: PermissionList,
+    /// Per-tool persisted decisions (loaded from permissions.json).
+    /// Not serialized in config.toml — stored separately.
+    #[serde(skip)]
+    pub store: crate::permissions::store::PermissionStore,
 }
 
 impl Default for PermissionConfig {
@@ -126,6 +130,7 @@ impl Default for PermissionConfig {
             paths: PathPermissions::default(),
             providers: PermissionList::default(),
             surfaces: PermissionList::default(),
+            store: store::PermissionStore::default(),
         }
     }
 }
@@ -148,6 +153,17 @@ pub struct PermissionVerdict {
 
 impl PermissionConfig {
     pub fn evaluate(&self, ctx: &PermissionContext<'_>) -> PermissionVerdict {
+        // ── Check persisted per-tool decisions first ──────────────────────
+        // Durable decisions (AllowAlways, Deny) survive across sessions.
+        if let Some(pd) = self.store.get(ctx.tool_name) {
+            if pd.is_durable() {
+                return verdict(
+                    pd.to_decision(),
+                    format!("tool '{}' has persisted decision: {:?}", ctx.tool_name, pd),
+                );
+            }
+        }
+
         if matches!(self.mode, PermissionMode::EmergencyStop) {
             return verdict(Decision::Deny, "emergency stop blocks every action");
         }
@@ -361,3 +377,4 @@ mod tests {
         assert_eq!(verdict.decision, Decision::AskUser);
     }
 }
+pub mod store;

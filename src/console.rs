@@ -347,11 +347,16 @@ struct PermissionsResponse {
     ok: bool,
     message: String,
     permissions: Option<crate::permissions::PermissionConfig>,
+    /// Per-tool persisted decisions (for the WebView approval UI).
+    #[serde(default)]
+    persisted_tools: std::collections::HashMap<String, String>,
 }
 
 #[derive(serde::Deserialize)]
 struct PermissionsRequest {
     mode: Option<String>,
+    /// Per-tool permission updates: {"web_search": "allow_always", "code_exec": "deny"}
+    tools: Option<std::collections::HashMap<String, String>>,
 }
 
 #[derive(serde::Serialize)]
@@ -1815,10 +1820,12 @@ async fn get_permissions(
         });
     };
     let cfg = shared.read().expect("config lock poisoned").clone();
+    let persisted_tools = cfg.permissions.store.to_api_map();
     axum::extract::Json(PermissionsResponse {
         ok: true,
         message: "loaded".into(),
         permissions: Some(cfg.permissions),
+        persisted_tools,
     })
 }
 
@@ -1833,6 +1840,8 @@ async fn save_permissions(
         });
     };
     let mut cfg = shared.write().expect("config lock poisoned");
+
+    // ── Global permission mode ───────────────────────────────────────────
     if let Some(mode) = req.mode.as_deref() {
         let Some(mode) = crate::permissions::PermissionMode::parse(mode) else {
             return axum::extract::Json(RunResponse {
@@ -1843,6 +1852,24 @@ async fn save_permissions(
         cfg.defaults.autonomy = mode.autonomy_level();
         cfg.permissions.mode = mode;
     }
+
+    // ── Per-tool persisted decisions ──────────────────────────────────────
+    if let Some(tools) = &req.tools {
+        for (tool_name, decision_str) in tools {
+            let decision = match decision_str.as_str() {
+                "allow_always" => crate::event::Decision::AllowAlways,
+                "allow_session" => crate::event::Decision::AllowSession,
+                "deny" => crate::event::Decision::Deny,
+                "ask_user" => crate::event::Decision::AskUser,
+                _ => continue,
+            };
+            let _ = cfg
+                .permissions
+                .store
+                .set_and_save(tool_name, &decision, &cfg.config_dir);
+        }
+    }
+
     let saved = cfg.clone();
     let store = FsConfigStore::new(saved.config_dir.clone());
     if let Err(err) = store.save(&saved) {
