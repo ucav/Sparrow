@@ -1336,13 +1336,22 @@ pub fn infer_caps_from_name(model_name: &str) -> ModelCaps {
     // accidentally requesting more output than any current provider supports.
     let max_output = (context_window / 8).clamp(4_096, 32_000);
 
+    let (cost_input_per_mtok, cost_output_per_mtok) =
+        if n.contains("deepseek-r1") || n.contains("deepseek-reasoner") {
+            (0.55, 2.19)
+        } else if n.contains("deepseek") {
+            (0.27, 1.10)
+        } else {
+            (0.0, 0.0)
+        };
+
     ModelCaps {
         context_window,
         max_output,
         tools,
         vision,
-        cost_input_per_mtok: 0.0,
-        cost_output_per_mtok: 0.0,
+        cost_input_per_mtok,
+        cost_output_per_mtok,
         latency,
     }
 }

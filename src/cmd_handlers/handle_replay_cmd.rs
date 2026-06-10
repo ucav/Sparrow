@@ -24,10 +24,15 @@ pub async fn handle_replay(
                         println!("\n[Tool: {}]", name);
                     }
                     sparrow::event::Event::RunFinished { outcome, .. } => {
+                        let duration = outcome
+                            .duration_ms
+                            .map(|ms| format!(" | Duration: {:.1}s", ms as f64 / 1000.0))
+                            .unwrap_or_default();
                         println!(
-                            "\n--- Done: {} | Cost: ${:.4} {}---",
+                            "\n--- Done: {} | Cost: ${:.4}{} {}---",
                             outcome.status,
                             outcome.cost_usd,
+                            duration,
                             sparrow::cost::format_comparison_oneliner(
                                 outcome.cost_usd,
                                 &outcome.tokens

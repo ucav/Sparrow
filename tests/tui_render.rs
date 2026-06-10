@@ -168,6 +168,7 @@ fn run_finished_reports_status_and_cost() {
                 output: 800,
             },
             cost_comparison: String::new(),
+            duration_ms: Some(1234),
         },
     });
     let text = joined(&tui.render_to_lines(120, 40));

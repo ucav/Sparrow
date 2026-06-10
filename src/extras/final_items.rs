@@ -91,6 +91,7 @@ pub async fn run_team(
             diffs: vec![], cost_usd: 0.0,
             tokens: crate::event::TokenUsage { input: 0, output: 0 },
             cost_comparison: String::new(),
+            duration_ms: None,
         },
     });
 

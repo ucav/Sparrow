@@ -40,6 +40,35 @@ impl OllamaAdapter {
         self
     }
 
+    async fn live_caps(&self) -> ModelCaps {
+        let mut caps = self.caps.clone();
+        let url = format!("{}/api/show", self.base_url);
+        let Ok(response) = self
+            .client
+            .post(&url)
+            .json(&json!({ "model": self.model }))
+            .send()
+            .await
+        else {
+            return caps;
+        };
+        if !response.status().is_success() {
+            return caps;
+        }
+        let Ok(payload) = response.json::<serde_json::Value>().await else {
+            return caps;
+        };
+
+        if let Some(capabilities) = payload.get("capabilities").and_then(|v| v.as_array()) {
+            caps.tools = capabilities.iter().any(|cap| cap.as_str() == Some("tools"));
+        }
+        if let Some(ctx) = find_context_window(&payload) {
+            caps.context_window = ctx;
+            caps.max_output = (ctx / 8).clamp(4_096, 32_000);
+        }
+        caps
+    }
+
     /// Convert Sparrow Msg into Ollama's native format
     fn build_ollama_messages(req: &BrainRequest) -> Vec<serde_json::Value> {
         let mut messages: Vec<serde_json::Value> = Vec::new();
@@ -138,8 +167,13 @@ impl Brain for OllamaAdapter {
     }
 
     async fn complete(&self, req: BrainRequest) -> anyhow::Result<BrainStream> {
+        let caps = self.live_caps().await;
         let messages = Self::build_ollama_messages(&req);
-        let tools = Self::build_ollama_tools(&req.tools);
+        let tools = if caps.tools {
+            Self::build_ollama_tools(&req.tools)
+        } else {
+            Vec::new()
+        };
 
         let mut body = json!({
             "model": self.model,
@@ -152,6 +186,9 @@ impl Brain for OllamaAdapter {
 
         if req.max_tokens > 0 {
             body["options"]["num_predict"] = json!(req.max_tokens);
+        }
+        if caps.context_window > 0 {
+            body["options"]["num_ctx"] = json!(caps.context_window);
         }
         if !tools.is_empty() {
             body["tools"] = json!(tools);
@@ -261,4 +298,33 @@ impl Brain for OllamaAdapter {
 
         Ok(Box::pin(event_stream))
     }
+}
+
+fn find_context_window(value: &serde_json::Value) -> Option<u64> {
+    fn visit(value: &serde_json::Value, best: &mut Option<u64>) {
+        match value {
+            serde_json::Value::Object(map) => {
+                for (key, child) in map {
+                    let key = key.to_ascii_lowercase();
+                    if (key.ends_with("context_length")
+                        || key == "num_ctx"
+                        || key == "context_window")
+                        && child.as_u64().is_some()
+                    {
+                        *best = (*best).max(child.as_u64());
+                    }
+                    visit(child, best);
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    visit(item, best);
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut best = None;
+    visit(value, &mut best);
+    best
 }

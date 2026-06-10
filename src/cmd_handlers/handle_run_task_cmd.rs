@@ -232,15 +232,25 @@ pub async fn run_task(
                         print!("{}", tail);
                         let _ = std::io::stdout().flush();
                     }
-                    println!(
-                        "\nDone. Cost: ${:.4}, Tokens: {} in / {} out",
-                        outcome.cost_usd, outcome.tokens.input, outcome.tokens.output,
-                    );
-                    // Full cost comparison — Sparrow's competitive moat
-                    if outcome.tokens.input > 0 || outcome.tokens.output > 0 {
+                    if outcome.status == "completed" {
                         println!(
-                            "{}",
-                            sparrow::cost::format_comparison(outcome.cost_usd, &outcome.tokens)
+                            "\nDone. Cost: ${:.4}, Tokens: {} in / {} out",
+                            outcome.cost_usd, outcome.tokens.input, outcome.tokens.output,
+                        );
+                        // Full cost comparison — Sparrow's competitive moat
+                        if outcome.tokens.input > 0 || outcome.tokens.output > 0 {
+                            println!(
+                                "{}",
+                                sparrow::cost::format_comparison(outcome.cost_usd, &outcome.tokens)
+                            );
+                        }
+                    } else {
+                        println!(
+                            "\nRun {}. Cost so far: ${:.4}, Tokens: {} in / {} out",
+                            outcome.status,
+                            outcome.cost_usd,
+                            outcome.tokens.input,
+                            outcome.tokens.output,
                         );
                     }
                 }

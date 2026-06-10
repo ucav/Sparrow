@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Sparrow — webview console</title>
+<!-- F9: inline favicon so the browser never fires a 404 for /favicon.ico. -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23f0674a'/%3E%3Ctext x='16' y='23' font-size='20' text-anchor='middle' fill='%23fff'%3E%F0%9F%90%A6%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -1050,7 +1052,7 @@
   <div style="display:none">
     <select id="provSelect"></select>
     <select id="modelSelect"></select>
-    <input type="password" id="apiKey">
+    <input type="password" id="apiKey" autocomplete="off">
     <span id="credBadge" class="badge missing">no key</span>
     <div id="modelTags"></div>
   </div>
@@ -1308,6 +1310,7 @@ const term=document.getElementById('term');
 const $=id=>document.getElementById(id);
 let costV=0,tokV=0,tokInV=0,tokOutV=0,sessionTok=0,sessionCost=0;
 let runStartMs=0,runDiffsApplied=0,runCheckpoints=0;
+let _verifierRan=false; // F1: did the verifier actually run this run?
 let actualInV=0,actualOutV=0,estInV=0,estOutV=0;
 let tokenMeter=null,tokenMeterTimer=null;
 let demoTokenInterval=null;
@@ -1757,8 +1760,17 @@ function initTheme(){
 // ─── Sprint 1 inc 5 : sound (bird-style chirps via WebAudio) ─────────
 let audioCtx=null;
 let muted=localStorage.getItem('sparrow-muted')==='1';
+// F10: an AudioContext created before any user gesture is blocked by Chromium
+// and logs "The AudioContext was not allowed to start" on every load. Only
+// arm audio once the user has actually interacted with the page.
+let userGestured=false;
+function armAudio(){
+  userGestured=true;
+  if(audioCtx&&audioCtx.state==='suspended')audioCtx.resume().catch(()=>{});
+}
+['pointerdown','keydown'].forEach(ev=>window.addEventListener(ev,armAudio,{once:true}));
 function chirp(freq=900,dur=0.08){
-  if(muted)return;
+  if(muted||!userGestured)return;
   try{
     if(!audioCtx)audioCtx=new (window.AudioContext||window.webkitAudioContext)();
     const o=audioCtx.createOscillator(),g=audioCtx.createGain();
@@ -2584,6 +2596,18 @@ function openToolCard(ev){
   term.appendChild(d);TOOL_CARDS.set(id,d);
   term.scrollTop=term.scrollHeight;
 }
+function markToolAwaitingApproval(id){
+  if(!id)return;
+  const d=TOOL_CARDS.get(id);
+  if(!d)return;
+  d.classList.remove('running');
+  d.classList.add('awaiting-approval');
+  const st=d.querySelector('[data-status]');
+  if(st){
+    st.textContent='en attente';
+    st.style.color='var(--gold)';
+  }
+}
 function inferToolSummary(name,output){
   // Build a one-line summary like "2 files · 6 KB" for fs_read, "search · 14 hits" etc.
   if(!output)return '';
@@ -2738,6 +2762,17 @@ function renderDiffCard(ev){
   const path=ev.file||ev.path||'<unknown>';
   const patch=ev.patch||ev.diff||'';
   const applied=(ev.type==='DiffApplied');
+  if(applied&&!patch.trim()){
+    const card=document.createElement('div');card.className='diff-card';
+    card.innerHTML='<div class="h">◇ <span class="p">'+esc(path)+'</span><span class="m"><span style="color:var(--add)">applied</span></span></div>';
+    card.querySelector('.p').style.cursor='pointer';
+    card.querySelector('.p').title='Click to view full file';
+    card.querySelector('.p').onclick=()=>loadFileInPanel(path);
+    term.appendChild(card);
+    term.scrollTop=term.scrollHeight;
+    chirp(1500,.06);
+    return;
+  }
   // Count +/- lines from the patch.
   let pl=0,mn=0;patch.split(/\r?\n/).forEach(l=>{if(/^\+[^+]/.test(l)||l.startsWith('+ '))pl++;else if(/^-[^-]/.test(l)||l.startsWith('- '))mn++;});
   const card=document.createElement('div');card.className='diff-card';
@@ -3320,10 +3355,10 @@ function handleEvent(ev){
       const turnCount=parseInt(localStorage.getItem('sparrow-turn-count')||'0',10)+1;
       localStorage.setItem('sparrow-turn-count',String(turnCount));
       // The frontend already echoed `sparrow > <task>` when the user submitted
-      // (runTask line()). Re-printing `▸ started: <task>` here was a noisy
-      // double-render. Show a compact "started" indicator only.
-      line(`<span class="acc">▸ started</span>${turnCount>1?` <span style="color:var(--add);font-size:10px;margin-left:8px">● context retained · turn #${turnCount}</span>`:''}`);
-      resetRunMetrics();resetSwarm();runStartMs=Date.now();runDiffsApplied=0;runCheckpoints=0;runCheckpointIds=[];CHECKPOINT_TIMELINE=null;
+      // (runTask line()). Re-printing `▸ started` here was a noisy
+      // double-render, so keep it verbose-only.
+      if(VERBOSE)verboseLine(`started${turnCount>1?` · context retained · turn #${turnCount}`:''}`,'planner');
+      resetRunMetrics();resetSwarm();_verifierRan=false;runStartMs=Date.now();runDiffsApplied=0;runCheckpoints=0;runCheckpointIds=[];CHECKPOINT_TIMELINE=null;
       // Clear any stale verbose-tick row so the new run starts with a fresh counter.
       VERBOSE_TICK_ROW=null; VERBOSE_TICK_TOTAL_IN=0; VERBOSE_TICK_TOTAL_OUT=0;
       LAST_AGENT_LINE=null;
@@ -3334,7 +3369,7 @@ function handleEvent(ev){
       const compact=compactChain(ev.chain);
       setRoute(chain);
       setSwarm('planner','done','route selected · '+compact);
-      line(`<span class="muted">↳ route: <span class="planner">${esc(chain)}</span></span>`);
+      if(VERBOSE)verboseLine(`route selected · ${chain}`,'planner');
       if(ev.context_window&&ev.context_window>0){contextLimit=ev.context_window;updateContextMeter();}
       const primary=Array.isArray(ev.chain)&&ev.chain[0]?ev.chain[0]:'auto';
       const lbl=$('modelPickerLabel');if(lbl)lbl.textContent=primary.length>22?primary.slice(0,20)+'…':primary;
@@ -3345,11 +3380,11 @@ function handleEvent(ev){
     case 'Message':
       if(ev.role==='router'){
         // Skip raw classification dumps — keep routing messages clean
-        if(ev.text&&!ev.text.startsWith('requete:')){
-          line('<span class="muted">↳ </span><span class="planner">'+esc(ev.text)+'</span>');
+        if(VERBOSE&&ev.text&&!ev.text.startsWith('requete:')){
+          verboseLine(ev.text,'planner');
         }
       }
-      else{line('<span class="muted">'+esc(ev.role)+':</span> <span class="cmd">'+esc(ev.text)+'</span>')}
+      else if(VERBOSE){line('<span class="muted">'+esc(ev.role)+':</span> <span class="cmd">'+esc(ev.text)+'</span>')}
       break;
     case 'ThinkingDelta':streamDelta(ev.text);break;
     case 'ToolUseProposed':
@@ -3382,6 +3417,7 @@ function handleEvent(ev){
     case 'DiffApplied':renderDiffCard(ev);recordWrittenFile(ev.file);runDiffsApplied++;break;
     case 'Compacted':renderCompactBanner(ev);break;
     case 'ApprovalRequested':{
+      markToolAwaitingApproval(ev.id);
       const id=escAttr(ev.id||'');
       const tool=esc(ev.tool||'tool');
       const risk=esc(ev.risk||'unknown');
@@ -3409,7 +3445,7 @@ function handleEvent(ev){
       </details>`);
       break;
     }
-    case 'ApprovalResolved':line(`<span class="muted">↳ approval: <span class="planner">${esc(ev.decision)}</span></span>`);break;
+    case 'ApprovalResolved':if(VERBOSE)verboseLine(`approval · ${ev.decision}`,'planner');break;
     case 'AgentSpawned':
       setSwarm(ev.role,'working',`spawned · ${ev.model}`);
       updateCrewLiveStatus(ev.role||ev.name,'working',`spawned · ${ev.model}`);
@@ -3419,6 +3455,10 @@ function handleEvent(ev){
     case 'AgentStatus':{
       const isThinking=ev.status==='Thinking'||ev.status==='Working';
       const note=ev.note||'';
+      // F1: remember whether the verifier lane actually did work this run, so
+      // RunFinished doesn't fabricate a "verifier done" for a run that never
+      // verified anything.
+      if(ev.role==='verifier'&&isThinking)_verifierRan=true;
       const verbedNote=isThinking&&!note.includes('·')?FLIGHT_VERBS[(_vi++)%FLIGHT_VERBS.length]+' · '+note:note;
       setSwarm(ev.role,ev.status,verbedNote);
       updateCrewLiveStatus(ev.role||ev.name,ev.status,verbedNote);
@@ -3439,8 +3479,8 @@ function handleEvent(ev){
       }
       break;
     }
-    case 'CheckpointCreated':line(`<span class="acc">● checkpoint:</span> <span class="muted">${esc(ev.label)}</span>`);addCheckpointNode(ev.label,ev.id);runCheckpoints++;chirp(1400,.07);break;
-    case 'SkillLearned':line(`<span class="skill-pop">✦ skill learned · ${esc(ev.name)}</span>`);chirp(1100,.05);setTimeout(()=>chirp(1700,.07),80);break;
+    case 'CheckpointCreated':if(VERBOSE)verboseLine(`checkpoint · ${ev.label||ev.id||''}`,'planner');addCheckpointNode(ev.label,ev.id);runCheckpoints++;chirp(1400,.07);break;
+    case 'SkillLearned':if(VERBOSE)line(`<span class="skill-pop">✦ skill learned · ${esc(ev.name)}</span>`);chirp(1100,.05);setTimeout(()=>chirp(1700,.07),80);break;
     case 'CostUpdate':
       setCost(ev.usd);
       // CostUpdate can arrive for nearly every streamed delta. Keep it in the
@@ -3466,29 +3506,21 @@ function handleEvent(ev){
       // over so the caret shouldn't keep blinking on stale lines.
       stripActiveDecorations();
       setSwarm('coder','done','response completed');
-      setSwarm('verifier','done','run closed · metrics captured');
-      const durMs=runStartMs?Date.now()-runStartMs:0;
+      // F1: only close the verifier lane if verification actually ran this
+      // run — otherwise leave it idle instead of claiming "metrics captured".
+      if(_verifierRan)setSwarm('verifier','done','verification complete');
+      const durMs=ev.outcome?.duration_ms??(runStartMs?Date.now()-runStartMs:0);
       const durStr=durMs>60000?Math.floor(durMs/60000)+'m '+Math.round((durMs%60000)/1000)+'s':durMs>1000?(durMs/1000).toFixed(1)+'s':durMs+'ms';
       const finalCost=ev.outcome?.cost_usd??costV;
       const finalTok=ev.outcome?.tokens?.input+ev.outcome?.tokens?.output||tokV;
       const status=esc(ev.outcome?.status||'done');
-      const card=document.createElement('details');card.className='run-summary';card.open=true;
-      card.innerHTML='<summary class="rs-head">'+
-        '<span class="rs-ok">✓</span>'+
-        '<span class="rs-status">'+status+'</span>'+
-        '<span style="color:var(--brand);font-size:10px">$'+finalCost.toFixed(4)+'</span>'+
-        '<span style="color:var(--agent);font-size:10px">'+(finalTok||tokV).toLocaleString('en-US')+' tok</span>'+
-        '<span class="rs-dur">'+durStr+'</span>'+
-        '<span class="rs-chev" style="margin-left:auto;color:var(--dimmer);font-size:9px;transition:transform .2s">▼</span>'+
-      '</summary>'+
-      '<div class="rs-grid">'+
-        '<div class="rs-stat"><span class="k">cost</span><span class="v cost">$'+finalCost.toFixed(4)+'</span></div>'+
-        '<div class="rs-stat"><span class="k">tokens</span><span class="v tok">'+(finalTok||tokV).toLocaleString('en-US')+'</span></div>'+
-        '<div class="rs-stat"><span class="k">files edited</span><span class="v files">'+runDiffsApplied+'</span></div>'+
-        '<div class="rs-stat"><span class="k">checkpoints</span><span class="v checks">'+runCheckpoints+'</span></div>'+
-      '</div>';
-      term.appendChild(card);term.scrollTop=term.scrollHeight;
-      setTimeout(function(){card.open=false;},2500);
+      const meta=document.createElement('div');meta.className='ln run-meta';
+      meta.innerHTML='<span class="ok">✓</span> <span class="muted">'+status+'</span>'+
+        '<span style="color:var(--brand);font-size:10px;margin-left:8px">$'+finalCost.toFixed(4)+'</span>'+
+        '<span style="color:var(--agent);font-size:10px;margin-left:8px">'+(finalTok||tokV).toLocaleString('en-US')+' tok</span>'+
+        '<span class="muted" style="font-size:10px;margin-left:8px">'+durStr+'</span>'+
+        (runDiffsApplied?'<span class="muted" style="font-size:10px;margin-left:8px">'+runDiffsApplied+' file'+(runDiffsApplied===1?'':'s')+'</span>':'');
+      term.appendChild(meta);term.scrollTop=term.scrollHeight;
       chirp(900,.05);setTimeout(function(){chirp(1400,.07);},100);
       setRunActive(false);
       break;
@@ -4344,7 +4376,7 @@ function renderProviderList(){
         <div class="models">${models||'<div style="color:var(--dimmer);font-size:10.5px;padding:6px">no models declared</div>'}</div>
         <div class="keyrow">
           ${envHint}
-          <input type="password" id="key-${escHtml(p.name)}" placeholder="${p.has_credential?'key configured · paste to override':'paste API key'}">
+          <input type="password" autocomplete="off" id="key-${escHtml(p.name)}" placeholder="${p.has_credential?'key configured · paste to override':'paste API key'}">
           <button onclick="saveProviderKey('${escHtml(p.name)}')">save key</button>
           <button class="btn sm" onclick="scanProviderModels('${escHtml(p.name)}',this)" title="Fetch all available models from this provider API">🔍 scan models</button>
         </div>

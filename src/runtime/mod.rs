@@ -374,6 +374,7 @@ impl Runtime for SparrowRuntime {
                             },
                             diffs: vec![],
                             cost_comparison: String::new(),
+                            duration_ms: None,
                         })
                     }
                 }

@@ -536,6 +536,7 @@ mod tests {
                         output: 50,
                     },
                     cost_comparison: String::new(),
+                    duration_ms: Some(1234),
                 },
             },
         ];
@@ -736,6 +737,14 @@ mod tests {
         let anthropic = sparrow::config::providers::model_caps("anthropic", "claude-sonnet-4-6");
         assert!(anthropic.vision);
         assert!(anthropic.cost_input_per_mtok > 0.0);
+    }
+
+    #[test]
+    fn test_discovered_deepseek_models_get_nonzero_price() {
+        let caps =
+            sparrow::config::providers::model_caps("opencode-zen", "deepseek-ai/deepseek-v4-flash");
+        assert!(caps.cost_input_per_mtok > 0.0);
+        assert!(caps.cost_output_per_mtok > 0.0);
     }
 
     #[test]
@@ -1231,6 +1240,7 @@ mod tests {
                     output: 50,
                 },
                 cost_comparison: String::new(),
+                duration_ms: Some(1234),
             },
         });
 
@@ -1273,6 +1283,7 @@ mod tests {
                         output: 5,
                     },
                     cost_comparison: String::new(),
+                    duration_ms: Some(1234),
                 },
             },
         ];

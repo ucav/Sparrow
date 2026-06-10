@@ -6,6 +6,25 @@ use std::collections::HashMap;
 
 use super::{Brain, BrainEvent, BrainRequest, BrainStream, ContentBlock, LatencyClass, ModelCaps};
 
+/// Process-monotonic counter for synthesized tool-call ids (B8): markup-derived
+/// and id-less native calls get a unique id so two turns in one run can't
+/// collide on `markup-call-0` and confuse id-keyed approval/replay state.
+static SYNTH_TOOL_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn next_synth_id(kind: &str) -> String {
+    let n = SYNTH_TOOL_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("{kind}-call-{n}")
+}
+
+/// Sorted indices of a tool-call accumulator, ascending. Used to emit
+/// `ToolUseEnd` in the order the model declared the calls (index order), not
+/// the arbitrary order a `HashMap` drains in (A1/A2).
+fn sorted_indices(keys: impl Iterator<Item = u64>) -> Vec<u64> {
+    let mut idxs: Vec<u64> = keys.collect();
+    idxs.sort_unstable();
+    idxs
+}
+
 /// OpenAI-compatible adapter. Covers OpenAI, Groq, NVIDIA NIM, Together, Cerebras,
 /// OpenRouter, NovitaAI, Nous Portal, HuggingFace, Ollama, and custom endpoints.
 pub struct OpenAICompatAdapter {
@@ -14,6 +33,7 @@ pub struct OpenAICompatAdapter {
     base_url: String,
     client: Client,
     caps: ModelCaps,
+    echo_reasoning: bool,
 }
 
 impl OpenAICompatAdapter {
@@ -25,11 +45,17 @@ impl OpenAICompatAdapter {
             base_url: base_url.to_string(),
             client: Client::new(),
             caps: ModelCaps::default(),
+            echo_reasoning: true,
         }
     }
 
     pub fn with_caps(mut self, caps: ModelCaps) -> Self {
         self.caps = caps;
+        self
+    }
+
+    pub fn with_echo_reasoning(mut self, echo_reasoning: bool) -> Self {
+        self.echo_reasoning = echo_reasoning;
         self
     }
 
@@ -48,7 +74,7 @@ impl OpenAICompatAdapter {
     }
 }
 
-fn build_chat_body(model: &str, req: &BrainRequest) -> serde_json::Value {
+fn build_chat_body(model: &str, req: &BrainRequest, echo_reasoning: bool) -> serde_json::Value {
     let mut messages: Vec<serde_json::Value> = Vec::new();
 
     // Add system message
@@ -93,7 +119,7 @@ fn build_chat_body(model: &str, req: &BrainRequest) -> serde_json::Value {
                         }
                     }));
                 }
-                ContentBlock::Reasoning { text } => {
+                ContentBlock::Reasoning { text } if echo_reasoning => {
                     // DeepSeek / Moonshot / Qwen "thinking mode" require the
                     // model's previous reasoning_content to be echoed back
                     // on the next turn or the API rejects with 400. We aggregate
@@ -104,6 +130,7 @@ fn build_chat_body(model: &str, req: &BrainRequest) -> serde_json::Value {
                     }
                     reasoning_buf.push_str(text);
                 }
+                ContentBlock::Reasoning { .. } => {}
                 ContentBlock::ToolUse { id, name, input } => {
                     tool_calls.push(json!({
                         "id": id,
@@ -226,7 +253,7 @@ impl Brain for OpenAICompatAdapter {
     }
 
     async fn complete(&self, req: BrainRequest) -> anyhow::Result<BrainStream> {
-        let body = build_chat_body(&self.model, &req);
+        let body = build_chat_body(&self.model, &req, self.echo_reasoning);
 
         let url = format!("{}/chat/completions", self.base_url.trim_end_matches('/'));
 
@@ -271,6 +298,16 @@ impl Brain for OpenAICompatAdapter {
             /// True once we've decided the content is inline tool-call markup
             /// and should be suppressed from the visible text stream.
             suppress_text: bool,
+            /// Text held while the beginning of `content` is ambiguous: it may
+            /// still become inline tool-call markup once more chunks arrive.
+            pending_text: String,
+            /// B4: true once reasoning has been seen on the streaming `delta`
+            /// path. Providers also repeat the full reasoning under
+            /// `message.reasoning_content` on the final chunk; without this
+            /// flag the engine concatenated both and echoed doubled reasoning
+            /// back (context bloat + 400 risk). We take delta OR message,
+            /// never both.
+            reasoning_seen: bool,
         }
 
         let event_stream = stream
@@ -280,6 +317,8 @@ impl Brain for OpenAICompatAdapter {
                     lines: super::sse_buffer::LineBuffer::new(),
                     content_buf: String::new(),
                     suppress_text: false,
+                    pending_text: String::new(),
+                    reasoning_seen: false,
                 },
                 |state, chunk| {
                     let events: Vec<BrainEvent> = match chunk {
@@ -316,6 +355,7 @@ impl Brain for OpenAICompatAdapter {
                                             {
                                                 if !text.is_empty() {
                                                     state.content_buf.push_str(text);
+                                                    state.pending_text.push_str(text);
                                                     // If this completion's content turns
                                                     // out to be inline tool-call markup
                                                     // (DeepSeek DSML / Anthropic-style
@@ -329,10 +369,16 @@ impl Brain for OpenAICompatAdapter {
                                                         )
                                                     {
                                                         state.suppress_text = true;
+                                                        state.pending_text.clear();
                                                     }
-                                                    if !state.suppress_text {
+                                                    if !state.suppress_text
+                                                        && !super::tool_markup::could_be_tool_markup_prefix(
+                                                            &state.content_buf,
+                                                        )
+                                                        && !state.pending_text.is_empty()
+                                                    {
                                                         parsed.push(BrainEvent::TextDelta(
-                                                            text.to_string(),
+                                                            std::mem::take(&mut state.pending_text),
                                                         ));
                                                     }
                                                 }
@@ -354,6 +400,7 @@ impl Brain for OpenAICompatAdapter {
                                                     delta.get(key).and_then(|v| v.as_str())
                                                 {
                                                     if !rtext.is_empty() {
+                                                        state.reasoning_seen = true;
                                                         parsed.push(BrainEvent::ReasoningDelta(
                                                             rtext.to_string(),
                                                         ));
@@ -361,25 +408,28 @@ impl Brain for OpenAICompatAdapter {
                                                 }
                                             }
                                         }
-                                        // Some providers (non-streaming chunk at end of
-                                        // turn) bundle the reasoning under
-                                        // `message.reasoning_content` rather than
-                                        // streaming it through `delta`. Cover that path
-                                        // too — duplicate captures are harmless because
-                                        // the engine joins them.
-                                        if let Some(msg_obj) =
-                                            choice.get("message").and_then(|v| v.as_object())
-                                        {
-                                            for key in
-                                                ["reasoning_content", "reasoning", "thinking"]
+                                        // Some providers bundle the reasoning under
+                                        // `message.reasoning_content` on the final chunk
+                                        // rather than streaming it through `delta`. B4:
+                                        // only use it when nothing streamed via delta —
+                                        // otherwise it's the SAME trace repeated and
+                                        // concatenating both doubles it.
+                                        if !state.reasoning_seen {
+                                            if let Some(msg_obj) =
+                                                choice.get("message").and_then(|v| v.as_object())
                                             {
-                                                if let Some(rtext) =
-                                                    msg_obj.get(key).and_then(|v| v.as_str())
+                                                for key in
+                                                    ["reasoning_content", "reasoning", "thinking"]
                                                 {
-                                                    if !rtext.is_empty() {
-                                                        parsed.push(BrainEvent::ReasoningDelta(
-                                                            rtext.to_string(),
-                                                        ));
+                                                    if let Some(rtext) =
+                                                        msg_obj.get(key).and_then(|v| v.as_str())
+                                                    {
+                                                        if !rtext.is_empty() {
+                                                            state.reasoning_seen = true;
+                                                            parsed.push(BrainEvent::ReasoningDelta(
+                                                                rtext.to_string(),
+                                                            ));
+                                                        }
                                                     }
                                                 }
                                             }
@@ -413,10 +463,11 @@ impl Brain for OpenAICompatAdapter {
                                                         {
                                                             if !state.started {
                                                                 if state.id.is_empty() {
-                                                                    state.id = format!(
-                                                                        "tool-call-{}",
-                                                                        idx
-                                                                    );
+                                                                    // B8: unique even when
+                                                                    // the provider omits the
+                                                                    // id, across turns.
+                                                                    state.id =
+                                                                        next_synth_id("tool");
                                                                 }
                                                                 state.started = true;
                                                                 parsed.push(
@@ -453,32 +504,69 @@ impl Brain for OpenAICompatAdapter {
                                             if !reason.is_empty() && reason != "null" {
                                                 let stop = match reason {
                                                     "stop" => {
-                                                        // Recover tool calls a provider
-                                                        // emitted as inline XML/DSML
-                                                        // markup in `content` (with
-                                                        // finish_reason "stop") instead
-                                                        // of native tool_calls. Without
-                                                        // this the call leaks as raw
-                                                        // text and never runs.
-                                                        let calls = if super::tool_markup::looks_like_tool_markup(
-                                                            &state.content_buf,
+                                                        // A2: a provider may stream native
+                                                        // tool_calls and then finish with
+                                                        // "stop" (not "tool_calls"). Drain
+                                                        // any pending native calls FIRST so
+                                                        // they actually execute instead of
+                                                        // being silently dropped.
+                                                        let mut native = false;
+                                                        for idx in sorted_indices(
+                                                            tool_state.keys().copied(),
                                                         ) {
+                                                            if let Some(st) =
+                                                                tool_state.remove(&idx)
+                                                            {
+                                                                if !st.id.is_empty() {
+                                                                    parsed.push(
+                                                                        BrainEvent::ToolUseEnd {
+                                                                            id: st.id,
+                                                                        },
+                                                                    );
+                                                                    native = true;
+                                                                }
+                                                            }
+                                                        }
+                                                        // Otherwise recover tool calls a
+                                                        // provider emitted as inline
+                                                        // XML/DSML markup in `content` (with
+                                                        // finish_reason "stop") instead of
+                                                        // native tool_calls — without this
+                                                        // the call leaks as raw text and
+                                                        // never runs.
+                                                        let calls = if !native
+                                                            && super::tool_markup::looks_like_tool_markup(
+                                                                &state.content_buf,
+                                                            )
+                                                        {
                                                             super::tool_markup::extract_tool_calls(
                                                                 &state.content_buf,
                                                             )
                                                         } else {
                                                             Vec::new()
                                                         };
-                                                        if calls.is_empty() {
+                                                        if native {
+                                                            crate::event::StopReason::ToolUse
+                                                        } else if calls.is_empty() {
+                                                            if !state.suppress_text
+                                                                && !state.pending_text.is_empty()
+                                                            {
+                                                                parsed.push(
+                                                                    BrainEvent::TextDelta(
+                                                                        std::mem::take(
+                                                                            &mut state.pending_text,
+                                                                        ),
+                                                                    ),
+                                                                );
+                                                            }
                                                             crate::event::StopReason::EndTurn
                                                         } else {
-                                                            for (i, call) in
-                                                                calls.into_iter().enumerate()
-                                                            {
-                                                                let id = format!(
-                                                                    "markup-call-{}",
-                                                                    i
-                                                                );
+                                                            for call in calls.into_iter() {
+                                                                // B8: unique id per
+                                                                // synthesized call so two
+                                                                // markup turns in one run
+                                                                // never collide.
+                                                                let id = next_synth_id("markup");
                                                                 parsed.push(
                                                                     BrainEvent::ToolUseStart {
                                                                         id: id.clone(),
@@ -502,13 +590,21 @@ impl Brain for OpenAICompatAdapter {
                                                     }
                                                     "length" => crate::event::StopReason::MaxTokens,
                                                     "tool_calls" => {
-                                                        for (_, state) in tool_state.drain() {
-                                                            if !state.id.is_empty() {
-                                                                parsed.push(
-                                                                    BrainEvent::ToolUseEnd {
-                                                                        id: state.id,
-                                                                    },
-                                                                );
+                                                        // A1/A2: emit Ends in index order,
+                                                        // not HashMap-arbitrary order.
+                                                        for idx in sorted_indices(
+                                                            tool_state.keys().copied(),
+                                                        ) {
+                                                            if let Some(st) =
+                                                                tool_state.remove(&idx)
+                                                            {
+                                                                if !st.id.is_empty() {
+                                                                    parsed.push(
+                                                                        BrainEvent::ToolUseEnd {
+                                                                            id: st.id,
+                                                                        },
+                                                                    );
+                                                                }
                                                             }
                                                         }
                                                         crate::event::StopReason::ToolUse
@@ -556,6 +652,9 @@ impl Brain for OpenAICompatAdapter {
 mod tests {
     use super::*;
     use crate::provider::{Msg, PromptCacheConfig, PromptCacheTtl};
+    use futures::StreamExt;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
 
     #[test]
     fn openai_chat_body_adds_prompt_cache_controls() {
@@ -575,7 +674,7 @@ mod tests {
             ..BrainRequest::default()
         };
 
-        let body = build_chat_body("gpt-test", &req);
+        let body = build_chat_body("gpt-test", &req, true);
         assert_eq!(body["prompt_cache_key"], "sparrow-repo-abc");
         assert_eq!(body["prompt_cache_retention"], "in_memory");
     }
@@ -600,7 +699,7 @@ mod tests {
             ..BrainRequest::default()
         };
 
-        let body = build_chat_body("gpt-test", &req);
+        let body = build_chat_body("gpt-test", &req, true);
         assert_eq!(body["messages"][0]["content"][0]["type"], "text");
         assert_eq!(body["messages"][0]["content"][1]["type"], "image_url");
         assert_eq!(
@@ -626,11 +725,36 @@ mod tests {
             ..BrainRequest::default()
         };
 
-        let body = build_chat_body("deepseek-test", &req);
+        let body = build_chat_body("deepseek-test", &req, true);
         assert_eq!(body["messages"][0]["content"], "visible answer");
         assert_eq!(
             body["messages"][0]["reasoning_content"],
             "opaque provider reasoning"
+        );
+    }
+
+    #[test]
+    fn openai_chat_body_can_disable_reasoning_echo() {
+        let req = BrainRequest {
+            messages: vec![Msg {
+                role: "assistant".into(),
+                content: vec![
+                    ContentBlock::Reasoning {
+                        text: "provider-private reasoning".into(),
+                    },
+                    ContentBlock::Text {
+                        text: "visible answer".into(),
+                    },
+                ],
+            }],
+            ..BrainRequest::default()
+        };
+
+        let body = build_chat_body("provider-no-echo", &req, false);
+        assert_eq!(body["messages"][0]["content"], "visible answer");
+        assert!(
+            body["messages"][0].get("reasoning_content").is_none(),
+            "provider flagged echo_reasoning=false must not receive reasoning_content"
         );
     }
 
@@ -664,7 +788,7 @@ mod tests {
             ..BrainRequest::default()
         };
 
-        let body = build_chat_body("deepseek-test", &req);
+        let body = build_chat_body("deepseek-test", &req, true);
         // exactly one assistant message
         assert_eq!(body["messages"].as_array().unwrap().len(), 1);
         // reasoning_content present on it
@@ -678,5 +802,74 @@ mod tests {
         assert_eq!(calls[0]["id"], "call_0");
         assert_eq!(calls[1]["id"], "call_1");
         assert_eq!(calls[0]["function"]["name"], "fs_write");
+    }
+
+    #[tokio::test]
+    async fn b1_partial_markup_stream_never_emits_visible_text() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buf = [0_u8; 4096];
+            let _ = socket.read(&mut buf).await.unwrap();
+            let chunks = [
+                "<",
+                "｜｜DSML｜｜invoke name=\"read\">",
+                "<｜｜DSML｜｜parameter name=\"file_path\" string=\"true\">",
+                "config.py",
+                "</｜｜DSML｜｜parameter>",
+                "</｜｜DSML｜｜invoke>",
+            ];
+            let mut body = String::new();
+            for chunk in chunks {
+                body.push_str("data: ");
+                body.push_str(
+                    &serde_json::json!({
+                        "choices": [{
+                            "delta": {"content": chunk},
+                            "finish_reason": null
+                        }]
+                    })
+                    .to_string(),
+                );
+                body.push_str("\n\n");
+            }
+            body.push_str("data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n");
+            let response = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: {}\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            socket.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        let adapter =
+            OpenAICompatAdapter::new("deepseek-test", "test-key", &format!("http://{}", addr));
+        let mut stream = adapter.complete(BrainRequest::default()).await.unwrap();
+
+        let mut text = String::new();
+        let mut tool_name = None;
+        let mut tool_args = String::new();
+        let mut done = None;
+        while let Some(event) = stream.next().await {
+            match event {
+                BrainEvent::TextDelta(delta) => text.push_str(&delta),
+                BrainEvent::ToolUseStart { name, .. } => tool_name = Some(name),
+                BrainEvent::ToolUseDelta { json, .. } => tool_args.push_str(&json),
+                BrainEvent::ToolUseEnd { .. } => {}
+                BrainEvent::Done(reason) => done = Some(reason),
+                other => panic!("unexpected event: {other:?}"),
+            }
+        }
+        server.await.unwrap();
+
+        assert_eq!(
+            text, "",
+            "partial inline markup must not leak as visible text"
+        );
+        assert_eq!(tool_name.as_deref(), Some("read"));
+        let args: serde_json::Value = serde_json::from_str(&tool_args).unwrap();
+        assert_eq!(args["file_path"], "config.py");
+        assert!(matches!(done, Some(crate::event::StopReason::ToolUse)));
     }
 }

@@ -15,6 +15,62 @@ use crate::event::{Decision, Event};
 use crate::memory::{Memory, MemoryDocKind};
 use crate::plan::ReadOnlyPlan;
 
+// ─── Bind address resolution (security: loopback by default) ────────────────────
+//
+// v0.8.1 D1/D2/D3: the console used to bind `0.0.0.0` unconditionally while
+// `--bind` was parsed but never read, exposing the agent (run/agents/file
+// writes) to the whole LAN. We now bind 127.0.0.1 by default, honour an
+// explicit `--bind`, validate the value, refuse to start over an existing
+// console, and warn loudly when the bind is non-loopback.
+
+/// Resolved bind target plus whether it is reachable beyond loopback.
+#[derive(Debug)]
+pub struct BindTarget {
+    pub addr: SocketAddr,
+    pub is_public: bool,
+}
+
+/// Resolve the bind address from an optional `--bind` value and a port.
+///
+/// - `None` → `127.0.0.1` (loopback, safe default).
+/// - A bare IP (`"0.0.0.0"`, `"192.168.1.5"`, `"::1"`) → that IP.
+/// - Anything containing a port (`"127.0.0.1:9876"`) or not a valid IP → error.
+pub fn resolve_bind_addr(bind: Option<&str>, port: u16) -> anyhow::Result<BindTarget> {
+    use std::net::IpAddr;
+    let ip: IpAddr = match bind.map(str::trim).filter(|s| !s.is_empty()) {
+        None => IpAddr::from([127, 0, 0, 1]),
+        Some(raw) => raw.parse::<IpAddr>().map_err(|_| {
+            anyhow::anyhow!(
+                "--bind attend une adresse IP seule (ex. 127.0.0.1 ou 0.0.0.0), \
+                 pas « {raw} ». Le port se règle avec --port."
+            )
+        })?,
+    };
+    let is_public = !ip.is_loopback();
+    Ok(BindTarget {
+        addr: SocketAddr::new(ip, port),
+        is_public,
+    })
+}
+
+/// Probe `/healthz` on the loopback interface for `port`. Returns true when an
+/// existing Sparrow console already answers there, so the caller can refuse to
+/// start a duplicate instead of dying with a raw OS "address in use" error.
+pub async fn console_already_running(port: u16) -> bool {
+    let url = format!("http://127.0.0.1:{port}/healthz");
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_millis(500))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    match client.get(&url).send().await {
+        Ok(resp) => resp.status().is_success(),
+        Err(_) => false,
+    }
+}
+
 // ─── Embedded HTML ─────────────────────────────────────────────────────────────
 //
 // console.html is `include_str!`d into the binary so a release build ships as
@@ -242,11 +298,19 @@ impl WebApprovalBroker {
 impl ApprovalHandler for WebApprovalBroker {
     async fn request_approval(&self, request: ApprovalRequest) -> Decision {
         let (tx, rx) = oneshot::channel();
+        let id = request.id.clone();
         {
             let mut pending = self.pending.lock().await;
-            pending.insert(request.id, tx);
+            pending.insert(id.clone(), tx);
         }
-        rx.await.unwrap_or(Decision::Deny)
+        match tokio::time::timeout(Duration::from_secs(300), rx).await {
+            Ok(Ok(decision)) => decision,
+            _ => {
+                let mut pending = self.pending.lock().await;
+                pending.remove(&id);
+                Decision::Deny
+            }
+        }
     }
 }
 
@@ -951,7 +1015,11 @@ async fn get_status() -> axum::extract::Json<serde_json::Value> {
 /// Check for Sparrow updates — called by the WebView frontend on load.
 async fn check_update_api() -> axum::extract::Json<serde_json::Value> {
     let current = env!("CARGO_PKG_VERSION");
-    match crate::update::check_update() {
+    let update = tokio::task::spawn_blocking(crate::update::check_update)
+        .await
+        .ok()
+        .flatten();
+    match update {
         Some(info) => axum::extract::Json(serde_json::json!({
             "update_available": true,
             "current": info.current,
@@ -2124,5 +2192,44 @@ mod tests {
         assert!(blocked_webview_cli_command(&args).is_some());
         let args = webview_cli_args("/gateway start").unwrap();
         assert!(blocked_webview_cli_command(&args).is_some());
+    }
+
+    #[test]
+    fn resolve_bind_defaults_to_loopback() {
+        let t = resolve_bind_addr(None, 9339).unwrap();
+        assert_eq!(t.addr.ip().to_string(), "127.0.0.1");
+        assert_eq!(t.addr.port(), 9339);
+        assert!(
+            !t.is_public,
+            "default bind must not be reachable from the LAN"
+        );
+    }
+
+    #[test]
+    fn resolve_bind_honours_explicit_public_ip_and_flags_it() {
+        let t = resolve_bind_addr(Some("0.0.0.0"), 8080).unwrap();
+        assert_eq!(t.addr.ip().to_string(), "0.0.0.0");
+        assert!(
+            t.is_public,
+            "0.0.0.0 must be flagged as public for the warning"
+        );
+    }
+
+    #[test]
+    fn resolve_bind_rejects_value_with_port() {
+        // D3: a port inside --bind used to be silently ignored.
+        let err = resolve_bind_addr(Some("127.0.0.1:9876"), 9339).unwrap_err();
+        assert!(err.to_string().contains("--bind"));
+    }
+
+    #[test]
+    fn resolve_bind_rejects_garbage() {
+        assert!(resolve_bind_addr(Some("not-an-ip"), 9339).is_err());
+    }
+
+    #[test]
+    fn resolve_bind_blank_is_loopback() {
+        let t = resolve_bind_addr(Some("   "), 9339).unwrap();
+        assert_eq!(t.addr.ip().to_string(), "127.0.0.1");
     }
 }

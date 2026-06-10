@@ -229,6 +229,61 @@ pub fn summarize_model_chain(chain_ids: &[String], limit: usize) -> String {
     visible.join(" -> ")
 }
 
+fn strip_ui_status_leaks(text: &str) -> String {
+    text.lines()
+        .filter(|line| {
+            let lower = line.to_lowercase();
+            !((lower.contains(" completed ·") && lower.contains('↑') && lower.contains('↓'))
+                || (lower.contains("◌") && lower.contains("consulting"))
+                || (lower.contains("parsing request") && lower.contains("consulting")))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn sanitize_messages_for_provider(messages: &[Msg]) -> Vec<Msg> {
+    messages
+        .iter()
+        .map(|msg| Msg {
+            role: msg.role.clone(),
+            content: msg
+                .content
+                .iter()
+                .filter_map(|block| match block {
+                    ContentBlock::Text { text } => {
+                        let cleaned = strip_ui_status_leaks(text);
+                        if cleaned.trim().is_empty() {
+                            None
+                        } else {
+                            Some(ContentBlock::Text { text: cleaned })
+                        }
+                    }
+                    ContentBlock::Reasoning { text } => Some(ContentBlock::Reasoning {
+                        text: strip_ui_status_leaks(text),
+                    }),
+                    ContentBlock::ToolResult {
+                        tool_use_id,
+                        content,
+                        is_error,
+                    } => Some(ContentBlock::ToolResult {
+                        tool_use_id: tool_use_id.clone(),
+                        content: sanitize_messages_for_provider(&[Msg {
+                            role: "tool".into(),
+                            content: content.clone(),
+                        }])
+                        .into_iter()
+                        .next()
+                        .map(|m| m.content)
+                        .unwrap_or_default(),
+                        is_error: *is_error,
+                    }),
+                    other => Some(other.clone()),
+                })
+                .collect(),
+        })
+        .collect()
+}
+
 fn prompt_cache_key(scope: &str, workspace_root: &std::path::Path, tools: &[ToolSpec]) -> String {
     use std::hash::{Hash, Hasher};
 
@@ -322,15 +377,30 @@ fn read_git_context(workspace_root: &PathBuf) -> Option<String> {
     Some(block)
 }
 
-fn build_system_prompt(
-    identity: &Identity,
-    workspace_root: &PathBuf,
-    facts: &[Fact],
-    memory_docs: &[MemoryDoc],
-    instruction_docs: &[InstructionDoc],
-    skills: &[crate::capabilities::Skill],
-    skill_catalog: &[crate::capabilities::Skill],
-) -> String {
+struct SystemPromptInput<'a> {
+    identity: &'a Identity,
+    tier: Option<&'a crate::router::TaskTier>,
+    workspace_root: &'a PathBuf,
+    facts: &'a [Fact],
+    memory_docs: &'a [MemoryDoc],
+    instruction_docs: &'a [InstructionDoc],
+    skills: &'a [crate::capabilities::Skill],
+    skill_catalog: &'a [crate::capabilities::Skill],
+}
+
+fn build_system_prompt(input: SystemPromptInput<'_>) -> String {
+    let identity = input.identity;
+    let tier = input.tier;
+    let workspace_root = input.workspace_root;
+    let facts = input.facts;
+    let memory_docs = input.memory_docs;
+    let instruction_docs = input.instruction_docs;
+    let skills = input.skills;
+    let skill_catalog = input.skill_catalog;
+    let lean_prompt = matches!(
+        tier,
+        Some(crate::router::TaskTier::Trivial | crate::router::TaskTier::Small)
+    );
     let mut parts = vec![format!(
         r#"You are {name}, a {role}.
 
@@ -380,8 +450,13 @@ the user's actual filesystem.
     // decomposition → tribunal → verification) baked in at compile time from
     // main_soul.md. Named agents (planner/coder/…) keep their own focused
     // souls — injecting a generic protocol over them would dilute their roles.
-    if identity.name == "sparrow" {
+    if identity.name == "sparrow" && !lean_prompt {
         parts.push(include_str!("main_soul.md").trim().to_string());
+    } else if identity.name == "sparrow" {
+        parts.push(
+            "## Simple-task mode\nThis run was classified as trivial/small. Answer directly, use tools only when needed, and keep the response compact and verifiable."
+                .to_string(),
+        );
     }
 
     // ── Auto git context ──────────────────────────────────────────────────
@@ -424,7 +499,7 @@ the user's actual filesystem.
     // invoke one — without this list it has no way to discover that, say,
     // a `code-review` skill exists. Bodies of the top-N pre-selected
     // relevant skills follow below for fast in-context use.
-    if !skill_catalog.is_empty() {
+    if !skill_catalog.is_empty() && !lean_prompt {
         let relevant_names: std::collections::HashSet<&str> =
             skills.iter().map(|s| s.name.as_str()).collect();
         let mut lines = vec![format!(
@@ -476,6 +551,21 @@ fn tool_result_text(blocks: &[Block]) -> String {
         }
     }
     out.join("\n")
+}
+
+fn humanize_tool_action(tool_name: &str, args: &serde_json::Value) -> String {
+    let path = args
+        .get("path")
+        .or_else(|| args.get("file_path"))
+        .and_then(|v| v.as_str());
+    match (tool_name, path) {
+        ("fs_write", Some(path)) => format!("Sparrow veut créer ou remplacer `{path}`."),
+        ("edit" | "multi_edit", Some(path)) => format!("Sparrow veut modifier `{path}`."),
+        ("fs_read", Some(path)) => format!("Sparrow veut lire `{path}`."),
+        ("exec", _) => "Sparrow veut exécuter une commande.".to_string(),
+        (name, Some(path)) => format!("Sparrow veut lancer `{name}` sur `{path}`."),
+        (name, None) => format!("Sparrow veut lancer `{name}`."),
+    }
 }
 
 fn tool_result_content_blocks(blocks: &[Block]) -> Vec<ContentBlock> {
@@ -1178,24 +1268,29 @@ impl Engine {
             anyhow::bail!("PreRun hook vetoed run: {}", reason);
         }
 
+        // F7: a single, clear router line — no "requete: requete …" doubling,
+        // no franglais. Booleans become plain on/off words.
+        let yn = |b: bool| if b { "oui" } else { "non" };
         let _ = event_tx.send(Event::Message {
             run: run_id.clone(),
             role: "router".into(),
             text: format!(
-                "requete: {} · tier: {} · tools: {} · vision: {} · local: {}",
-                task_summary,
+                "tâche classée : {} · outils : {} · vision : {} · local : {}",
                 tier.as_str(),
-                need.required_tools,
-                need.required_vision,
-                need.prefer_local
+                yn(need.required_tools),
+                yn(need.required_vision),
+                yn(need.prefer_local)
             ),
         });
+        let _ = &task_summary; // kept for potential telemetry; no longer shown raw
 
+        // F1: this is the router selecting a model chain — frame it honestly as
+        // routing, not as a "planner" agent deliberating over candidates.
         let _ = event_tx.send(Event::AgentStatus {
             run: run_id.clone(),
             role: "planner".into(),
             status: AgentStatus::Working,
-            note: format!("analyzing request · {} candidates", chain.len()),
+            note: format!("routage · {} modèles dans la chaîne", chain.len()),
         });
 
         let primary_ctx = chain
@@ -1231,6 +1326,7 @@ impl Engine {
                     output: 0,
                 },
                 cost_comparison: String::new(),
+                duration_ms: None,
             });
         }
 
@@ -1264,6 +1360,7 @@ impl Engine {
                     output: output_tokens,
                 },
                 cost_comparison: String::new(),
+                duration_ms: None,
             };
             let _ = event_tx.send(Event::RunFinished {
                 run: run_id.clone(),
@@ -1384,31 +1481,35 @@ impl Engine {
         let skill_catalog: Vec<crate::capabilities::Skill> =
             self.skills.as_ref().map(|s| s.all()).unwrap_or_default();
 
-        let system = build_system_prompt(
-            &identity,
+        let facts = self
+            .memory
+            .as_ref()
+            .map(|m| m.all_facts())
+            .unwrap_or_default();
+        let memory_docs = self
+            .memory
+            .as_ref()
+            .map(|m| {
+                [MemoryDocKind::Memory, MemoryDocKind::User]
+                    .into_iter()
+                    .filter_map(|kind| m.memory_doc(kind))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let instruction_docs = crate::instructions::discover_workspace_instructions(
             &workspace.root,
-            &self
-                .memory
-                .as_ref()
-                .map(|m| m.all_facts())
-                .unwrap_or_default(),
-            &self
-                .memory
-                .as_ref()
-                .map(|m| {
-                    [MemoryDocKind::Memory, MemoryDocKind::User]
-                        .into_iter()
-                        .filter_map(|kind| m.memory_doc(kind))
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default(),
-            &crate::instructions::discover_workspace_instructions(
-                &workspace.root,
-                &task.description,
-            ),
-            &relevant_skills,
-            &skill_catalog,
+            &task.description,
         );
+        let system = build_system_prompt(SystemPromptInput {
+            identity: &identity,
+            tier: Some(&tier),
+            workspace_root: &workspace.root,
+            facts: &facts,
+            memory_docs: &memory_docs,
+            instruction_docs: &instruction_docs,
+            skills: &relevant_skills,
+            skill_catalog: &skill_catalog,
+        });
         let mut system = format!(
             "{}\n\n## Active Sparrow Routing Context\nRequest category: {}\nTask tier: {}\nRequired tools: {}\nRequired vision: {}\nPreferred local: {}\nSelected fallback chain: {}\nRouting policy: free_first={}, session_budget_usd={:.2}.\nWhen answering routing questions, describe this context concretely.",
             system,
@@ -1459,6 +1560,7 @@ impl Engine {
         let mut last_error: Option<String> = None;
         let mut waiting_for_approval = false;
         let mut denied_by_approval = false;
+        let run_started_at = std::time::Instant::now();
         let mut skill_evidence = String::new();
         // Iteration safety cap: bound the agentic loop independently of budget.
         let mut turns: u32 = 0;
@@ -1734,7 +1836,7 @@ impl Engine {
 
             let req = BrainRequest {
                 system: Some(system.clone()),
-                messages: messages.clone(),
+                messages: sanitize_messages_for_provider(&messages),
                 tools: if need.required_tools {
                     tool_specs.clone()
                 } else {
@@ -1778,6 +1880,15 @@ impl Engine {
                     transient_retries = 0;
                     let mut current_tool_name = String::new();
                     let mut current_tool_json = String::new();
+                    // v0.8.1 A1: tool calls are accumulated PER id, not in a
+                    // single shared buffer. A model turn that emits N tool
+                    // calls arrives interleaved (Start0·Δ0·Start1·Δ1·End·End,
+                    // Ends in arbitrary order); the old single-buffer approach
+                    // let the 2nd Start wipe the 1st call's name+args, so the
+                    // first tool ran as `unknown`/`{}`. Keyed by id, each call
+                    // keeps its own (name, streamed-json) until its End.
+                    let mut pending_tools: std::collections::HashMap<String, (String, String)> =
+                        std::collections::HashMap::new();
                     let mut output_chars_seen: u64 = 0;
                     let mut output_tokens_emitted: u64 = 0;
                     let mut continue_agent_loop = false;
@@ -1839,6 +1950,8 @@ impl Engine {
                                 current_tool_name = name.clone();
                                 tools_called_this_turn.push(name.clone());
                                 current_tool_json.clear();
+                                // Open this call's per-id accumulator (A1).
+                                pending_tools.insert(id.clone(), (name.clone(), String::new()));
                                 let risk = tools
                                     .get(&name)
                                     .map(|tool| tool.risk())
@@ -1856,20 +1969,58 @@ impl Engine {
                                 });
                             }
                             BrainEvent::ToolUseDelta { id, json } => {
-                                let _ = id;
-                                current_tool_json.push_str(&json);
+                                output_chars_seen += json.chars().count() as u64;
+                                let estimated_output = (output_chars_seen + 3) / 4;
+                                let output_delta =
+                                    estimated_output.saturating_sub(output_tokens_emitted);
+                                if output_delta > 0 {
+                                    output_tokens_emitted += output_delta;
+                                    estimated_output_unconfirmed += output_delta;
+                                    estimated_cost_unconfirmed += caps.cost_output_per_mtok
+                                        * (output_delta as f64)
+                                        / 1_000_000.0;
+                                    let _ = event_tx.send(Event::TokenUsageEstimated {
+                                        run: run_id.clone(),
+                                        input: 0,
+                                        output: output_delta,
+                                        reason: "streamed tool arguments estimate".into(),
+                                    });
+                                    let _ = event_tx.send(Event::CostUpdate {
+                                        run: run_id.clone(),
+                                        usd: cost_usd + estimated_cost_unconfirmed,
+                                    });
+                                }
+                                // Append to THIS call's buffer (A1). Fall back
+                                // to a fresh entry if a provider streams a
+                                // delta before its Start (defensive).
+                                pending_tools
+                                    .entry(id.clone())
+                                    .or_insert_with(|| (String::new(), String::new()))
+                                    .1
+                                    .push_str(&json);
                             }
                             BrainEvent::ToolUseEnd { id } => {
+                                // Resolve THIS call's accumulated (name, json)
+                                // by id (A1) — never from a shared buffer that
+                                // a later call may have clobbered.
+                                let (resolved_name, resolved_json) =
+                                    pending_tools.remove(&id).unwrap_or_else(|| {
+                                        (current_tool_name.clone(), current_tool_json.clone())
+                                    });
+
                                 // Parse accumulated JSON
                                 let args: serde_json::Value =
-                                    serde_json::from_str(&current_tool_json).unwrap_or(json!({}));
+                                    serde_json::from_str(&resolved_json).unwrap_or(json!({}));
 
                                 // Check autonomy gate
-                                let tool_name = if current_tool_name.is_empty() {
+                                let tool_name = if resolved_name.is_empty() {
                                     "unknown".to_string()
                                 } else {
-                                    current_tool_name.clone()
+                                    resolved_name.clone()
                                 };
+                                // Keep the shared name current so the "running
+                                // tool · X" status note (below) names THIS call.
+                                current_tool_name = tool_name.clone();
                                 let tool = tools.get(&tool_name);
                                 let risk = tool
                                     .as_ref()
@@ -1922,8 +2073,9 @@ impl Engine {
                                 }
                                 if matches!(decision, Decision::AskUser) {
                                     let summary = format!(
-                                        "{}. Approve {} with args: {}",
-                                        permission.reason, proposed.tool_name, args
+                                        "{} Risque: {:?}.",
+                                        humanize_tool_action(&proposed.tool_name, &args),
+                                        proposed.risk
                                     );
                                     let _ = event_tx.send(Event::ApprovalRequested {
                                         run: run_id.clone(),
@@ -1931,6 +2083,15 @@ impl Engine {
                                         summary: summary.clone(),
                                         tool: Some(proposed.tool_name.clone()),
                                         risk: Some(format!("{:?}", proposed.risk)),
+                                    });
+                                    let _ = event_tx.send(Event::AgentStatus {
+                                        run: run_id.clone(),
+                                        role: "coder".into(),
+                                        status: AgentStatus::WaitingForApproval,
+                                        note: format!(
+                                            "en attente de ton accord pour {}",
+                                            proposed.tool_name
+                                        ),
                                     });
                                     // OnApprovalRequested hook so external
                                     // notifiers (Slack, email, …) can ping the
@@ -1950,7 +2111,42 @@ impl Engine {
                                                 summary,
                                             })
                                             .await;
+                                    } else if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+                                        let message = format!(
+                                            "Approbation requise pour `{}`, mais stdin n'est pas interactif. Relance avec une autonomie plus élevée ou approuve dans le cockpit.",
+                                            proposed.tool_name
+                                        );
+                                        let _ = event_tx.send(Event::Error {
+                                            run: run_id.clone(),
+                                            message: message.clone(),
+                                        });
+                                        decision = Decision::Deny;
+                                    } else {
+                                        use std::io::{self, Write};
+                                        print!(
+                                            "\n\x1b[1;33m{} Approve? [y/N]\x1b[0m ",
+                                            humanize_tool_action(&proposed.tool_name, &args)
+                                        );
+                                        io::stdout().flush().ok();
+                                        let mut input = String::new();
+                                        io::stdin().read_line(&mut input).ok();
+                                        decision = if input.trim().eq_ignore_ascii_case("y") {
+                                            Decision::Allow
+                                        } else {
+                                            Decision::Deny
+                                        };
                                     }
+                                }
+
+                                if matches!(decision, Decision::AskUser) {
+                                    let _ = event_tx.send(Event::Error {
+                                        run: run_id.clone(),
+                                        message: format!(
+                                            "Approbation requise pour `{}` mais aucune réponse exploitable n'a été reçue.",
+                                            proposed.tool_name
+                                        ),
+                                    });
+                                    decision = Decision::Deny;
                                 }
 
                                 let _ = event_tx.send(Event::ApprovalResolved {
@@ -2186,10 +2382,12 @@ impl Engine {
                                             run: run_id.clone(),
                                             id: approval_id.clone(),
                                             summary: format!(
-                                                "{} tool '{}' with args: {}",
-                                                format!("{:?}", approval_risk),
-                                                approval_name,
-                                                approval_args
+                                                "{} Risque: {:?}.",
+                                                humanize_tool_action(
+                                                    &approval_name,
+                                                    &approval_args
+                                                ),
+                                                approval_risk
                                             ),
                                             tool: Some(approval_name.clone()),
                                             risk: Some(format!("{:?}", approval_risk)),
@@ -2384,10 +2582,13 @@ impl Engine {
                             BrainEvent::Usage(usage) => {
                                 total_input += usage.input;
                                 total_output += usage.output;
-                                estimated_input_unconfirmed =
-                                    estimated_input_unconfirmed.saturating_sub(usage.input);
-                                estimated_output_unconfirmed =
-                                    estimated_output_unconfirmed.saturating_sub(usage.output);
+                                // E1: provider usage is authoritative for this
+                                // request. Replace all pre-usage estimates
+                                // instead of subtracting from them; otherwise
+                                // a conservative prompt estimate keeps a
+                                // phantom remainder and doubles HUD totals.
+                                estimated_input_unconfirmed = 0;
+                                estimated_output_unconfirmed = 0;
                                 let _ = event_tx.send(Event::TokenUsage {
                                     run: run_id.clone(),
                                     input: usage.input,
@@ -2401,8 +2602,7 @@ impl Engine {
                                     caps.cost_output_per_mtok * (usage.output as f64) / 1_000_000.0;
                                 let actual_cost = input_cost + output_cost;
                                 cost_usd += actual_cost;
-                                estimated_cost_unconfirmed =
-                                    (estimated_cost_unconfirmed - actual_cost).max(0.0);
+                                estimated_cost_unconfirmed = 0.0;
 
                                 let _ = event_tx.send(Event::CostUpdate {
                                     run: run_id.clone(),
@@ -3010,27 +3210,35 @@ impl Engine {
                 reason: "provider reported no usage events".into(),
             });
         }
+        let final_status = if had_error {
+            format!(
+                "error: {}",
+                last_error.unwrap_or_else(|| "run failed".into())
+            )
+        } else if waiting_for_approval {
+            "waiting_for_approval".into()
+        } else if denied_by_approval {
+            "denied".into()
+        } else {
+            "completed".into()
+        };
+        let final_note = match final_status.as_str() {
+            "completed" => format!("completed · {}↑ {}↓ tok", final_input, final_output),
+            "waiting_for_approval" => "en attente de ton accord".to_string(),
+            "denied" => "arrêté · approbation refusée".to_string(),
+            other => other.to_string(),
+        };
+
         // Mark coder lane done — clears the animated caret cleanly.
         let _ = event_tx.send(Event::AgentStatus {
             run: run_id.clone(),
             role: "coder".into(),
             status: AgentStatus::Done,
-            note: format!("completed · {}↑ {}↓ tok", final_input, final_output),
+            note: final_note,
         });
 
         let outcome = OutcomeSummary {
-            status: if had_error {
-                format!(
-                    "error: {}",
-                    last_error.unwrap_or_else(|| "run failed".into())
-                )
-            } else if waiting_for_approval {
-                "waiting_for_approval".into()
-            } else if denied_by_approval {
-                "denied".into()
-            } else {
-                "completed".into()
-            },
+            status: final_status,
             diffs,
             cost_usd: cost_usd + estimated_cost_unconfirmed,
             tokens: TokenUsage {
@@ -3038,6 +3246,7 @@ impl Engine {
                 output: total_output + estimated_output_unconfirmed,
             },
             cost_comparison: String::new(),
+            duration_ms: Some(run_started_at.elapsed().as_millis() as u64),
         };
 
         // Persist task to memory
@@ -3158,6 +3367,32 @@ fn tool_narration_detected(text: &str) -> bool {
         "running the command",
         "searching for",
         "looking up",
+        // I1: French narration. Sparrow answers in French, so the English-only
+        // guard above never fired for francophone users — the central
+        // "describe the tool instead of calling it" failsafe was dead in the
+        // user's own language. These cover the common openings.
+        "je vais utiliser",
+        "je vais lancer",
+        "je vais exécuter",
+        "je vais executer", // tolerate the unaccented spelling
+        "je vais lire",
+        "je vais écrire",
+        "je vais créer",
+        "je vais modifier",
+        "je vais chercher",
+        "je vais rechercher",
+        "je vais vérifier",
+        "je vais regarder",
+        "je vais consulter",
+        "je vais ouvrir",
+        "je vais appeler",
+        "laisse-moi",
+        "laissez-moi",
+        "permets-moi de",
+        "permettez-moi de",
+        "je m'occupe de",
+        "je commence par",
+        "je vais d'abord",
     ];
     patterns.iter().any(|p| lower.contains(p))
 }
@@ -3168,15 +3403,17 @@ mod tests {
 
     #[test]
     fn main_agent_system_prompt_carries_the_reasoning_protocol() {
-        let prompt = build_system_prompt(
-            &Identity::default(),
-            &PathBuf::from("."),
-            &[],
-            &[],
-            &[],
-            &[],
-            &[],
-        );
+        let workspace_root = PathBuf::from(".");
+        let prompt = build_system_prompt(SystemPromptInput {
+            identity: &Identity::default(),
+            tier: Some(&crate::router::TaskTier::Hard),
+            workspace_root: &workspace_root,
+            facts: &[],
+            memory_docs: &[],
+            instruction_docs: &[],
+            skills: &[],
+            skill_catalog: &[],
+        });
         // Anchors taken from src/engine/main_soul.md. The soul has been
         // rewritten more than once; we pin the load-bearing concepts (tier
         // triage, the tribunal with its three reviewer roles, the
@@ -3195,13 +3432,98 @@ mod tests {
     }
 
     #[test]
+    fn trivial_prompt_uses_lean_mode_without_main_soul_or_full_skill_catalog() {
+        let skill = crate::capabilities::Skill {
+            name: "tiny-skill".into(),
+            description: "Tiny relevant skill".into(),
+            trigger: vec!["tiny".into()],
+            body: "Do the tiny thing.".into(),
+            source_file: "tiny/SKILL.md".into(),
+            usage_count: 0,
+            created_at: String::new(),
+            score: 1.0,
+            auto_generated: false,
+            references: Vec::new(),
+            templates: Vec::new(),
+            scripts: Vec::new(),
+            assets: Vec::new(),
+        };
+        let workspace_root = PathBuf::from(".");
+        let skills = vec![skill];
+        let prompt = build_system_prompt(SystemPromptInput {
+            identity: &Identity::default(),
+            tier: Some(&crate::router::TaskTier::Trivial),
+            workspace_root: &workspace_root,
+            facts: &[],
+            memory_docs: &[],
+            instruction_docs: &[],
+            skills: &skills,
+            skill_catalog: &skills,
+        });
+
+        assert!(prompt.contains("Simple-task mode"));
+        assert!(!prompt.contains("TIER TRIAGE"));
+        assert!(!prompt.contains("Skill library ("));
+        assert!(prompt.contains("## Relevant skills for this task"));
+    }
+
+    #[test]
+    fn provider_messages_strip_ui_status_leaks() {
+        let messages = vec![Msg {
+            role: "user".into(),
+            content: vec![ContentBlock::Text {
+                text: "keep this\n✓ coder completed · 4487↑ 150↓ tok\ncoder ◌ consulting deepseek · parsing request…\nkeep that".into(),
+            }],
+        }];
+
+        let sanitized = sanitize_messages_for_provider(&messages);
+        let ContentBlock::Text { text } = &sanitized[0].content[0] else {
+            panic!("expected text block");
+        };
+        assert!(text.contains("keep this"));
+        assert!(text.contains("keep that"));
+        assert!(!text.contains("completed ·"));
+        assert!(!text.contains("◌ consulting"));
+    }
+
+    #[test]
+    fn tool_narration_guard_fires_in_french() {
+        // I1: the guard was English-only; francophone narration slipped through.
+        assert!(tool_narration_detected(
+            "Je vais créer le fichier poeme.txt."
+        ));
+        assert!(tool_narration_detected(
+            "Laisse-moi vérifier le contenu du dossier."
+        ));
+        assert!(tool_narration_detected(
+            "Je m'occupe de lire app.js tout de suite."
+        ));
+        // Still catches English.
+        assert!(tool_narration_detected("Let me run the tests."));
+        // A normal answer with no tool narration must NOT fire.
+        assert!(!tool_narration_detected(
+            "Voici le résultat : ton fichier contient un haïku."
+        ));
+    }
+
+    #[test]
     fn named_agents_keep_their_own_soul() {
         let planner = Identity {
             name: "planner".into(),
             role: "technical architect".into(),
             personality: "structured".into(),
         };
-        let prompt = build_system_prompt(&planner, &PathBuf::from("."), &[], &[], &[], &[], &[]);
+        let workspace_root = PathBuf::from(".");
+        let prompt = build_system_prompt(SystemPromptInput {
+            identity: &planner,
+            tier: Some(&crate::router::TaskTier::Hard),
+            workspace_root: &workspace_root,
+            facts: &[],
+            memory_docs: &[],
+            instruction_docs: &[],
+            skills: &[],
+            skill_catalog: &[],
+        });
         // The main soul's signature section header — if it leaks into a
         // named identity, the focused soul is being diluted.
         assert!(

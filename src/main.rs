@@ -277,6 +277,7 @@ async fn async_main() -> anyhow::Result<()> {
                     skill_library.clone(),
                     Some(agent_store.clone()),
                     9339,
+                    cli.bind.clone(),
                 )
                 .await?;
             } else {
@@ -336,6 +337,7 @@ async fn async_main() -> anyhow::Result<()> {
                     skill_library.clone(),
                     Some(agent_store.clone()),
                     port,
+                    cli.bind.clone(),
                 )
                 .await?;
             }
@@ -349,6 +351,7 @@ async fn async_main() -> anyhow::Result<()> {
                 skill_library.clone(),
                 Some(agent_store.clone()),
                 port,
+                cli.bind.clone(),
             )
             .await?;
         }
@@ -1106,6 +1109,7 @@ fn extract_webview_protocol_prefixes(input: &str) -> (String, Option<String>, Op
 
 // ─── WebView command ─────────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_webview(
     config: &sparrow::config::Config,
     memory: Arc<dyn Memory>,
@@ -1114,11 +1118,21 @@ async fn handle_webview(
     skills: Arc<dyn SkillLibrary>,
     agent_store: Option<Arc<dyn AgentStore>>,
     port: u16,
+    bind: Option<String>,
 ) -> anyhow::Result<()> {
     use sparrow::engine::Engine;
     use sparrow::router::BasicRouter;
-    use std::net::SocketAddr;
     use std::sync::RwLock;
+
+    // Resolve and validate the bind target up front (D1/D3). Refuse to start
+    // over an already-running console (D2) before we touch any other state.
+    let bind_target = sparrow::console::resolve_bind_addr(bind.as_deref(), port)?;
+    if sparrow::console::console_already_running(port).await {
+        anyhow::bail!(
+            "Une console Sparrow tourne déjà sur http://127.0.0.1:{port}.\n\
+             Ouvre-la dans ton navigateur, ou relance avec --port <AUTRE_PORT>."
+        );
+    }
 
     let (event_tx, _) = tokio::sync::broadcast::channel::<sparrow::event::Event>(1024);
     let (command_tx, mut command_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
@@ -1251,6 +1265,7 @@ async fn handle_webview(
                                 output: 0,
                             },
                             cost_comparison: String::new(),
+                            duration_ms: None,
                         },
                     });
                 }
@@ -1432,9 +1447,16 @@ async fn handle_webview(
         }
     });
 
-    let addr: SocketAddr = format!("0.0.0.0:{}", port).parse()?;
+    let addr = bind_target.addr;
     let url = format!("http://127.0.0.1:{}", port);
     println!("WebView console: {}", url);
+    if bind_target.is_public {
+        println!(
+            "⚠️  Sparrow écoute sur {} — accessible depuis le réseau local.\n\
+             N'utilise ça que sur un réseau de confiance (clés, fichiers et agents y sont exposés).",
+            addr
+        );
+    }
     println!("Press Ctrl+C to stop.\n");
 
     // Auto-open the browser for the local WebView cockpit.

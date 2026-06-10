@@ -137,6 +137,7 @@ impl Tool for SubagentSpawn {
                         output: 0,
                     },
                     cost_comparison: String::new(),
+                    duration_ms: None,
                 },
             }
         });
@@ -175,6 +176,7 @@ impl Tool for SubagentSpawn {
                     output: 0,
                 },
                 cost_comparison: String::new(),
+                duration_ms: None,
             });
 
         Ok(ToolResult::ok(vec![Block::Text(format!(

@@ -1153,6 +1153,7 @@ impl Orchestrator for DefaultOrchestrator {
             cost_usd: outcome.cost_usd,
             tokens: total_tokens,
             cost_comparison,
+            duration_ms: None,
         };
 
         let _ = event_tx.send(Event::RunFinished {

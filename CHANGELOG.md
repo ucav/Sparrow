@@ -2,6 +2,132 @@
 
 All notable changes to Sparrow will be documented in this file.
 
+## [Unreleased] — v0.8.1 « Honnêteté » (vérifié)
+
+> Release de correction (aucune feature nouvelle) traçant l'audit v0.8.0.
+> Voir `AUDIT_v0.8.0.md` et `PLAN_v0.8.1.md`.
+
+### Sécurité
+- **La console se lie à `127.0.0.1` par défaut** (D1). Avant, elle écoutait
+  `0.0.0.0` sans condition alors que `--bind` était parsé mais jamais lu —
+  exposant run/agents/écriture de fichiers à tout le réseau local. `--bind`
+  est désormais honoré et un avertissement s'affiche quand l'écoute est
+  non-loopback.
+- Refus propre de démarrer une 2e console sur un port déjà pris : message clair
+  + sortie en erreur, via une sonde `/healthz` (D2, plus de « os error 10048 »).
+- `--bind` est validé : une valeur contenant un port est rejetée explicitement
+  au lieu d'être ignorée en silence (D3).
+
+### Corrigé — exécution des outils (le « bug DeepSeek »)
+- **Un tour à plusieurs tool calls n'écrase plus le premier appel** (A1). Le
+  moteur accumule chaque appel par `id` ; un test de régression
+  (`tests/multi_tool_streaming.rs`) reproduit la séquence SSE réelle.
+- Les tool calls natifs en attente sont drainés quand un provider termine en
+  `finish_reason: "stop"` au lieu de `"tool_calls"` (A2) — ils s'exécutent au
+  lieu d'être jetés.
+- `ToolUseEnd` émis dans l'ordre des index, ids synthétiques uniques par
+  session (B8).
+- Ollama natif interroge désormais `/api/show`, lit les capacités live
+  (`tools`) et le vrai contexte (`context_length`/`num_ctx`) ; si le modèle ne
+  déclare pas le support tools, Sparrow n'envoie pas de bloc `tools` à
+  `/api/chat` (B5/I5).
+
+### Corrigé — récupération de markup
+- Le parser de secours respecte `string="true"` (plus de coercition de `"123"`
+  en nombre) et ne `trim()` plus les valeurs (le `content` d'un fichier garde
+  ses espaces/sauts de ligne) (B2).
+- La détection de markup exige une structure ouverte ET fermée : une réponse
+  qui *parle* de `<invoke …>` n'est plus avalée comme un faux tool call (B3).
+- Récupération étendue aux formats d'outils cheap/local qui fuyaient en texte :
+  fences JSON `{"name":…,"arguments":…}`, blocs `[TOOL_CALL]…[/TOOL_CALL]`,
+  `function.arguments` encodé en string JSON, et format natif DeepSeek
+  `<｜tool▁call▁begin｜>…<｜tool▁call▁end｜>` (I4).
+- Les deltas de contenu qui commencent comme du markup DSML/DeepSeek sont
+  tamponnés jusqu'à décision : plus de fuite de tags fragmentés dans le
+  transcript avant qu'un tool call soit reconnu (B1).
+
+### Corrigé — appel d'outils & apprentissage
+- Le garde anti-narration reconnaît le **français** (« je vais créer… »,
+  « laisse-moi vérifier… ») : il était anglais-only et donc inerte pour les
+  réponses françaises (I1).
+- Les prompts système sont modulés par tier : les runs `trivial`/`small`
+  utilisent un prompt lean sans protocole tribunal ni catalogue complet de
+  skills ; `medium`/`hard` gardent le prompt complet (I3/E5).
+- **Curator assaini** : ne crée plus de skill à partir d'un texte de statut UI
+  (« ◌ consulting… », « completed · ↑↓ ») ou d'une plainte utilisateur ;
+  purge automatiquement les skills empoisonnés déjà sur disque (G1).
+- L'historique envoyé aux providers est filtré au point de sérialisation :
+  aucune ligne de statut UI (`completed ·`, tokens, consulting/parsing) ne peut
+  être réinjectée dans `BrainRequest.messages` (G3).
+
+### Corrigé — approbations & chiffres
+- Les approbations sont honnêtes en mode non interactif : pas de blocage sur
+  `stdin`, refus explicite si aucun handler d'approbation n'est disponible, et
+  statut `WaitingForApproval` visible dans le cockpit (A3/F2).
+- La carte d'approbation parle en langage humain via `humanize_tool_action`
+  (« Sparrow veut créer/modifier/lire… ») au lieu d'exposer le vocabulaire
+  interne ou le JSON brut comme message principal (F4).
+- Le broker d'approbation web expire après délai dur et retourne `deny` au lieu
+  de laisser une exécution “running” indéfiniment (F6).
+- Pendant une approbation, la tool card passe à `en attente` et le résumé
+  visible ne contient plus le vocabulaire interne `autonomy gate`/`permissions
+  allow` (F2/F4).
+- Le CLI n'imprime `Done.` et la comparaison de coûts que pour un run réellement
+  `completed` ; les runs interrompus/refusés affichent leur statut réel (A3).
+- Les usages provider réels remplacent les estimations au lieu de s'y ajouter ;
+  les arguments d'outils streamés comptent dans l'estimation de sortie quand un
+  tour est tool-only (E1/B6/E2).
+- `OutcomeSummary` porte `duration_ms`, et le replay réutilise la durée stockée
+  au lieu d'inventer une nouvelle durée au moment de la relecture (E3).
+- Les modèles DeepSeek découverts reçoivent un prix d'entrée/sortie non nul
+  dans les caps inférées, ce qui réactive les coûts et comparaisons quand la
+  route est payante (E4).
+
+### Corrigé — fin du théâtre & bruit (pass 2)
+- Le message du routeur est une ligne française claire (« tâche classée :
+  trivial · outils : non… ») au lieu du doublon franglais « requete: requete
+  trivial · tier: … » (F7).
+- La lane « verifier » ne se marque plus « run closed · metrics captured » à la
+  fin d'un run où aucune vérification n'a eu lieu — elle reste honnêtement au
+  repos (F1). Le routage n'est plus présenté comme un « planner » qui délibère.
+- Favicon inline : plus de 404 `/favicon.ico` à chaque chargement (F9).
+- L'AudioContext n'est armé qu'après un premier geste utilisateur — fini
+  l'avertissement Chromium au chargement ; champs API-key en `autocomplete=off`
+  (F10).
+- `reasoning_content` n'est plus capté à la fois en streaming (`delta`) et sur
+  le chunk final (`message`) puis concaténé : la source est unique, ce qui
+  évite de renvoyer au provider un raisonnement doublé (contexte/coût, risque
+  de 400) (B4).
+- Le body OpenAI-compatible peut désactiver l'écho de `reasoning_content` avec
+  `echo_reasoning=false`, pour les familles de modèles qui refusent ce champ
+  dans l'historique assistant (B4).
+- Confirmé : la corruption de streaming (syllabes perdues) ne se reproduit plus
+  sur la voie live (deepseek via opencode-go) — c'était un artefact d'avant le
+  tampon de lignes SSE de v0.5.8 (G2).
+
+### Corrigé — densité du transcript
+- Le transcript normal n'affiche plus les lignes internes `RunStarted`,
+  `RouteSelected`, messages routeur, `ApprovalResolved`, checkpoints et
+  apprentissages de skills ; ces détails restent disponibles en verbose ou dans
+  le cockpit (J1/J3).
+- Les tool cards restent dédupliquées par id et repliées par défaut ; les mises
+  à jour `proposed/started/output` modifient la même action au lieu d'empiler le
+  flux (J2/B7).
+- La fin de run est une ligne discrète `status · coût · tokens · durée · fichiers`
+  au lieu d'une grande card récapitulative ouverte dans le transcript (J4).
+- Un `DiffApplied` sans patch n'affiche plus une hunk vide `+0 −0` avec des
+  contrôles accept/reject contradictoires ; il montre seulement le fichier
+  appliqué et reste cliquable pour ouvrir le contenu (F3).
+
+### Vérification
+- `cargo fmt --check`, `cargo test --all-targets` et
+  `cargo clippy --all-targets -- -D warnings` sont verts après la fermeture des
+  lots 2 à 11.
+- `scripts/audit-webview.mjs hello`, `task`, `approve`, `ui` passent avec zéro
+  erreur console. Les artefacts d'audit ne contiennent plus `autonomy gate`,
+  `permissions allow`, `with args`, `running…`, ni faux `+0/−0`; le log serveur
+  ne contient plus de panic `/update/check`.
+
 ## [0.8.0] — 2026-06-10
 
 ## [0.7.0] — 2026-06-10

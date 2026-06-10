@@ -238,6 +238,10 @@ pub struct OutcomeSummary {
     /// Populated by the orchestrator at run completion so every surface can display it.
     #[serde(default)]
     pub cost_comparison: String,
+    /// Wall-clock duration captured at live run finish. Replays should display
+    /// this stored value instead of inventing a new elapsed time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

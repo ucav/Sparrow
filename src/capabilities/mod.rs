@@ -489,6 +489,24 @@ impl Curator {
             return Ok(());
         }
 
+        // 0. Purge poisoned skills (G1): any skill whose description or body
+        //    carries UI-status leakage or a user complaint is deleted from
+        //    disk — it must never be re-injected into a system prompt.
+        skills.retain(|s| {
+            let poisoned = is_unfit_for_skill(&s.description) || is_unfit_for_skill(&s.body);
+            if poisoned {
+                if let Ok(dir_name) = safe_skill_dir_name(&s.name) {
+                    let _ = std::fs::remove_dir_all(skills_dir.join(dir_name));
+                }
+                tracing::warn!("Curator: purged poisoned skill `{}`", s.name);
+            }
+            !poisoned
+        });
+
+        if skills.is_empty() {
+            return Ok(());
+        }
+
         // 1. Grade: score each skill based on usage and content quality
         for skill in &mut skills {
             // More usage = higher score
@@ -585,6 +603,15 @@ impl Curator {
             return None;
         }
 
+        // G1: never learn from UI-status leakage or a user complaint. The
+        // poisoned `code-review` skill on disk was born from a task description
+        // polluted with cockpit status text ("coder ◌ consulting … parsing
+        // request…") and an outcome carrying "✓ coder completed · 4487↑ 150↓
+        // tok" plus a frustrated correction. None of that is a reusable skill.
+        if is_unfit_for_skill(run_description) || is_unfit_for_skill(outcome) {
+            return None;
+        }
+
         let specificity_markers = [
             "github.com",
             "http",
@@ -664,6 +691,44 @@ impl Curator {
             Some(candidate)
         }
     }
+}
+
+/// G1: signatures of text that must NEVER become a skill — cockpit/UI status
+/// leakage and user complaints/corrections. Used to reject both the task
+/// description and the outcome before a skill is proposed, and to recognise
+/// already-poisoned skills on disk for purging.
+pub fn is_unfit_for_skill(text: &str) -> bool {
+    let lower = text.to_lowercase();
+    // UI / cockpit status artifacts that should never reach the curator.
+    const UI_ARTIFACTS: &[&str] = &[
+        "◌",
+        "consulting ",
+        "parsing request",
+        "↑",
+        "↓",
+        "completed ·",
+        "route set",
+        "reusable pattern learned from",
+        "metrics captured",
+    ];
+    if UI_ARTIFACTS.iter().any(|m| lower.contains(m)) {
+        return true;
+    }
+    // Complaint / correction markers — the user telling Sparrow it failed.
+    const COMPLAINT_MARKERS: &[&str] = &[
+        "tu as vraiment un problème",
+        "regarde ce que tu m'as",
+        "n'importe quoi",
+        "ça marche pas",
+        "ne marche pas",
+        "you have a problem",
+        "this is broken",
+        "that's wrong",
+    ];
+    if COMPLAINT_MARKERS.iter().any(|m| lower.contains(m)) {
+        return true;
+    }
+    false
 }
 
 pub fn skill_name_from_pattern(description: &str) -> Option<&'static str> {
@@ -794,6 +859,53 @@ mod tests {
         assert_eq!(invocation.loaded_references[0].1, "keep me");
 
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn curator_purges_poisoned_skill_from_disk() {
+        // G1: a skill whose description is a complaint laced with UI status
+        // text must be deleted on the next curate pass.
+        let root = temp_dir("curator-purge");
+        let toxic = root.join("code-review");
+        std::fs::create_dir_all(&toxic).unwrap();
+        std::fs::write(
+            toxic.join("SKILL.md"),
+            "# Skill: code-review\n\n**Trigger:** review, pr, diff\n\n**Description:** Reusable pattern learned from: non tu as vraiment un problème regarde ce que tu m'as écris : coder ◌ consulting deepseek-v4-pro\n\n## Body\n✓ coder completed · 4487↑ 150↓ tok",
+        )
+        .unwrap();
+        // A legitimate skill must survive.
+        let good = root.join("refactor-safely");
+        std::fs::create_dir_all(&good).unwrap();
+        std::fs::write(
+            good.join("SKILL.md"),
+            "# Skill: refactor-safely\n\n**Trigger:** refactor\n\n**Description:** Move code in small verified steps.\n\n## Body\nExtract, compile, test, repeat.",
+        )
+        .unwrap();
+
+        Curator::new().curate(&root).unwrap();
+
+        assert!(!toxic.exists(), "poisoned skill dir must be removed");
+        assert!(good.exists(), "legitimate skill must survive");
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn propose_skill_rejects_ui_status_and_complaints() {
+        // The exact polluted inputs that produced the poisoned skill.
+        assert!(
+            Curator::propose_skill(
+                "non tu as vraiment un problème regarde ce que tu m'as écris coder",
+                "✓ coder completed · 4487↑ 150↓ tok",
+            )
+            .is_none()
+        );
+        assert!(is_unfit_for_skill(
+            "coder ◌ consulting deepseek-v4-pro · parsing request…"
+        ));
+        assert!(!is_unfit_for_skill(
+            "Refactor the auth module by extracting the token parser into its own function."
+        ));
     }
 
     #[test]
