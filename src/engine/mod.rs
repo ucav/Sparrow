@@ -299,6 +299,14 @@ the user's actual filesystem.
         workspace = workspace_root.display(),
     )];
 
+    // The main agent's soul: a rigorous reasoning protocol (triage →
+    // decomposition → tribunal → verification) baked in at compile time from
+    // main_soul.md. Named agents (planner/coder/…) keep their own focused
+    // souls — injecting a generic protocol over them would dilute their roles.
+    if identity.name == "sparrow" {
+        parts.push(include_str!("main_soul.md").trim().to_string());
+    }
+
     if !facts.is_empty() {
         parts.push("## What you know about the user:".to_string());
         for fact in facts {
@@ -2973,6 +2981,43 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn main_agent_system_prompt_carries_the_reasoning_protocol() {
+        let prompt = build_system_prompt(
+            &Identity::default(),
+            &PathBuf::from("."),
+            &[],
+            &[],
+            &[],
+            &[],
+            &[],
+        );
+        for marker in [
+            "REFLEXION-MAX PROTOCOL",
+            "TRIAGE",
+            "THE SKEPTIC",
+            "ANTI-SIMULATION",
+            "ANTI-SYCOPHANCY",
+            "STOP CONDITION",
+        ] {
+            assert!(prompt.contains(marker), "main soul must contain `{marker}`");
+        }
+    }
+
+    #[test]
+    fn named_agents_keep_their_own_soul() {
+        let planner = Identity {
+            name: "planner".into(),
+            role: "technical architect".into(),
+            personality: "structured".into(),
+        };
+        let prompt = build_system_prompt(&planner, &PathBuf::from("."), &[], &[], &[], &[], &[]);
+        assert!(
+            !prompt.contains("REFLEXION-MAX PROTOCOL"),
+            "named souls must not be diluted by the main protocol"
+        );
+    }
 
     #[test]
     fn initial_user_content_blocks_embeds_uploaded_images() {

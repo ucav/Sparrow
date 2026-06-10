@@ -5,6 +5,12 @@ All notable changes to Sparrow will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- **Main agent soul: REFLEXION-MAX PROTOCOL V2** — the default agent now
+  carries a rigorous reasoning protocol (`src/engine/main_soul.md`, baked in
+  at compile time): tier triage, decomposition, a three-reviewer tribunal
+  (skeptic / adversary / hurried user), verification by a different method,
+  and absolute rules against simulated results, sycophancy, and fake
+  certainty. Named agents (planner, coder, …) keep their own focused souls.
 - **Verified escalation** — when a model exhausts its fix budget and the
   verify command still fails, the run escalates to the next model in the
   chain (bounded) instead of ending silently unverified; if the chain runs
