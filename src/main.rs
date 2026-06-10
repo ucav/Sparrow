@@ -1770,6 +1770,26 @@ async fn handle_daemon(
     );
     runtime.start().await?;
     println!("Sparrow daemon running. API on 127.0.0.1:9337. Ctrl+C to stop.");
+
+    // Background update check — non-blocking, emits UpdateAvailable event
+    // to all connected surfaces (WebView, TUI, gateway).
+    {
+        let bus = runtime.event_bus().clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+            if let Some(info) = sparrow::update::check_update() {
+                let _ = bus.publish(sparrow::event::Event::UpdateAvailable {
+                    current: info.current,
+                    latest: info.latest,
+                    download_url: info.download_url,
+                    crate_url: info.crate_url,
+                    release_url: info.release_url,
+                    install_cmd: info.install_cmd,
+                });
+            }
+        });
+    }
+
     tokio::signal::ctrl_c().await?;
     runtime.stop().await?;
     Ok(())

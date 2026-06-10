@@ -1037,6 +1037,21 @@ impl Tui {
                     self.add_line(message, LogStyle::Err, 0);
                 }
             }
+            Event::UpdateAvailable {
+                current,
+                latest,
+                install_cmd,
+                ..
+            } => {
+                self.add_line(
+                    &format!(
+                        "📦 Sparrow v{} available (current: v{}). Run: {}",
+                        latest, current, install_cmd
+                    ),
+                    LogStyle::Warn,
+                    0,
+                );
+            }
             _ => {}
         }
     }

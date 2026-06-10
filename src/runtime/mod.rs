@@ -394,6 +394,11 @@ impl Runtime for SparrowRuntime {
         self.event_bus.subscribe_all()
     }
 
+    /// Public accessor so surfaces can publish events (e.g. update notifications).
+    pub fn event_bus(&self) -> &EventBus {
+        &self.event_bus
+    }
+
     async fn interrupt(&self, run_id: &str, msg: &str) -> anyhow::Result<()> {
         tracing::info!("Interrupt requested for run {}: {}", run_id, msg);
         if let Some(token) = self.cancellations.lock().await.get(run_id).cloned() {

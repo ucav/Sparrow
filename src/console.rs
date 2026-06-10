@@ -181,6 +181,7 @@ impl WebViewServer {
             .route("/artifacts", get(list_artifacts))
             .route("/providers/scan", post(scan_provider_models))
             .route("/routing", get(get_routing).post(save_routing))
+            .route("/update/check", get(check_update_api))
             .route(
                 "/ws",
                 get(
@@ -940,6 +941,27 @@ async fn get_status() -> axum::extract::Json<serde_json::Value> {
         "providers_total": providers.len(),
         "workdir": std::env::current_dir().ok().map(|p| p.to_string_lossy().to_string()),
     }))
+}
+
+/// Check for Sparrow updates — called by the WebView frontend on load.
+async fn check_update_api() -> axum::extract::Json<serde_json::Value> {
+    let current = env!("CARGO_PKG_VERSION");
+    match crate::update::check_update() {
+        Some(info) => axum::extract::Json(serde_json::json!({
+            "update_available": true,
+            "current": info.current,
+            "latest": info.latest,
+            "download_url": info.download_url,
+            "crate_url": info.crate_url,
+            "release_url": info.release_url,
+            "install_cmd": info.install_cmd,
+        })),
+        None => axum::extract::Json(serde_json::json!({
+            "update_available": false,
+            "current": current,
+            "latest": current,
+        })),
+    }
 }
 
 #[derive(serde::Deserialize)]

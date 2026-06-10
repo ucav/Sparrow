@@ -383,6 +383,16 @@ pub enum Event {
         after_chars: usize,
         handoff_path: Option<String>,
     },
+    /// A newer version of Sparrow is available.
+    /// Surfaces should show a non-intrusive notification with update instructions.
+    UpdateAvailable {
+        current: String,
+        latest: String,
+        download_url: Option<String>,
+        crate_url: String,
+        release_url: String,
+        install_cmd: String,
+    },
 }
 
 impl Event {

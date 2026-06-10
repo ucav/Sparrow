@@ -4480,6 +4480,31 @@ document.querySelectorAll('.preset').forEach(el=>{
 for(let i=0;i<14;i++){const e=document.createElement('div');e.className='ember';
   e.style.left=Math.random()*100+'vw';e.style.background=Math.random()>.5?'#f2a93c':'#f0674a';
   e.style.animationDuration=(8+Math.random()*7)+'s';e.style.animationDelay=(Math.random()*7)+'s';document.body.appendChild(e);}
+
+// ── Update check ────────────────────────────────────────────────────
+(async function checkUpdate(){
+  try{
+    const r=await fetch('/update/check');
+    const j=await r.json();
+    if(j.update_available){
+      const banner=document.createElement('div');
+      banner.style.cssText='position:fixed;top:0;left:0;right:0;z-index:9999;'
+        +'background:linear-gradient(135deg,#f2a93c,#d4891a);color:#0e0b08;'
+        +'padding:10px 20px;font-family:Inter,system-ui,sans-serif;font-size:13px;'
+        +'display:flex;align-items:center;justify-content:center;gap:12px;'
+        +'box-shadow:0 2px 12px rgba(242,169,60,0.3);cursor:default';
+      banner.innerHTML='📦 <b>Sparrow v'+j.latest+'</b> available (current: v'+j.current+') '
+        +'<button onclick="navigator.clipboard.writeText(\\''+j.install_cmd+'\\');this.textContent=\\'copied!\\';setTimeout(()=>this.textContent=\\'copy cmd\\',2000)" '
+        +'style="background:#0e0b08;color:#f2a93c;border:none;padding:4px 12px;'
+        +'border-radius:4px;cursor:pointer;font-size:12px;font-weight:600">copy cmd</button> '
+        +'<a href="'+j.release_url+'" target="_blank" '
+        +'style="color:#0e0b08;font-weight:600;font-size:12px">release notes →</a> '
+        +'<span onclick="this.parentElement.remove()" style="cursor:pointer;margin-left:8px;opacity:.6;font-size:16px">✕</span>';
+      document.body.appendChild(banner);
+    }
+  }catch(_){/* offline or endpoint not yet available */}
+})();
+
 bootIntro();
 </script>
 </body>
