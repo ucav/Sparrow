@@ -240,6 +240,11 @@ pub trait SkillLibrary: Send + Sync {
     fn invoke(&self, name: &str) -> anyhow::Result<Option<SkillInvocation>>;
     /// Remove a skill by name (any kind). Returns true if it existed.
     fn remove(&self, name: &str) -> anyhow::Result<bool>;
+    /// On-disk root for the library, if any. In-memory implementations
+    /// return None; `sparrow skills update` reads SKILL.md from here.
+    fn skills_root(&self) -> Option<std::path::PathBuf> {
+        None
+    }
 }
 
 // ─── Filesystem-backed skill library ────────────────────────────────────────────
@@ -261,6 +266,13 @@ impl FsSkillLibrary {
     pub fn with_memory(mut self, memory: Arc<dyn Memory>) -> Self {
         self.memory = Some(memory);
         self
+    }
+
+    /// Path to the skills root. Exposed so commands like
+    /// `sparrow skills update` can re-read a skill from disk without going
+    /// through the cached library view.
+    pub fn skills_dir(&self) -> &std::path::Path {
+        &self.skills_dir
     }
 
     /// Scan the skills directory and load all SKILL.md files
@@ -305,6 +317,10 @@ impl FsSkillLibrary {
 }
 
 impl SkillLibrary for FsSkillLibrary {
+    fn skills_root(&self) -> Option<std::path::PathBuf> {
+        Some(self.skills_dir.clone())
+    }
+
     fn relevant(&self, ctx: &str, limit: usize) -> Vec<Skill> {
         let mut scored: Vec<(f64, Skill)> = self
             .scan()

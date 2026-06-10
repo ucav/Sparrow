@@ -149,6 +149,14 @@ impl HookRegistry {
     }
 
     async fn run_command(&self, command: &str, hook_id: &str) -> HookResult {
+        // Built-in hooks: in-process Rust checks invoked by an opaque
+        // `builtin:name <args>` command string. Keeps the wiring identical
+        // to shell hooks (same exit_code → veto contract) without paying
+        // shell-exec cost for the safety net we always want enabled.
+        if let Some(rest) = command.strip_prefix("builtin:") {
+            return run_builtin(rest, hook_id);
+        }
+
         let cmd = crate::sandbox::Command {
             program: if cfg!(windows) { "cmd" } else { "sh" }.into(),
             args: vec![
@@ -185,6 +193,66 @@ impl HookRegistry {
     }
 }
 
+/// In-process implementation of `builtin:NAME` hooks.
+///
+/// The first word of `spec` is the builtin name; the rest is whatever
+/// context the caller passed (the engine passes "tool_name args_json").
+/// Returning `exit_code != 0` makes the surrounding blocking hook veto
+/// the action — matching the shell-hook contract exactly.
+fn run_builtin(spec: &str, hook_id: &str) -> HookResult {
+    let (name, ctx) = match spec.split_once(' ') {
+        Some((n, c)) => (n, c),
+        None => (spec, ""),
+    };
+    match name {
+        // Block tool calls whose payload mentions sensitive files. Keep the
+        // list intentionally short and well-known so false positives are
+        // rare: anything that ends up in this list is a "yes, you really
+        // do want to be asked first" path. Operators can disable the hook
+        // entirely with `sparrow permissions` if they need to edit one.
+        "protect-sensitive-files" => {
+            const NEEDLES: &[&str] = &[
+                ".env",
+                "auth.enc",
+                "id_rsa",
+                "id_ed25519",
+                ".pem",
+                ".pfx",
+                ".p12",
+                "credentials.json",
+                "service-account",
+            ];
+            let lower = ctx.to_ascii_lowercase();
+            if let Some(hit) = NEEDLES.iter().find(|n| lower.contains(*n)) {
+                return HookResult {
+                    hook_id: hook_id.into(),
+                    exit_code: 1,
+                    stdout: String::new(),
+                    stderr: format!("touches sensitive path matcher: `{}`", hit),
+                    veto: false, // upgraded to veto by the blocking-hook branch
+                    veto_reason: None,
+                };
+            }
+            HookResult {
+                hook_id: hook_id.into(),
+                exit_code: 0,
+                stdout: String::new(),
+                stderr: String::new(),
+                veto: false,
+                veto_reason: None,
+            }
+        }
+        _ => HookResult {
+            hook_id: hook_id.into(),
+            exit_code: 0,
+            stdout: format!("unknown builtin `{}` — ignored", name),
+            stderr: String::new(),
+            veto: false,
+            veto_reason: None,
+        },
+    }
+}
+
 // ─── Default hooks ─────────────────────────────────────────────────────────────
 
 pub fn default_hooks() -> Vec<Hook> {
@@ -211,6 +279,18 @@ pub fn default_hooks() -> Vec<Hook> {
             matcher: None,
             command: "echo 'hook: cost threshold reached'".into(),
             blocking: false,
+            enabled: true,
+        },
+        // Default-enabled safety net: block any write/edit/exec whose
+        // arguments mention well-known sensitive paths (.env, auth.enc,
+        // ssh keys, .pem/.pfx, credentials.json). Built-in, so it runs
+        // in-process — no shell, no platform-specific quoting.
+        Hook {
+            id: "protect-sensitive-files".into(),
+            event: HookEvent::PreToolUse,
+            matcher: Some("fs_write|edit|multi_edit|exec".into()),
+            command: "builtin:protect-sensitive-files".into(),
+            blocking: true,
             enabled: true,
         },
     ]
