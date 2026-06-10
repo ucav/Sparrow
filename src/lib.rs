@@ -29,7 +29,7 @@ pub mod autonomy;
 pub mod capabilities;
 pub mod chat;
 pub mod cli;
-pub mod commands;
+pub mod cmd_handlers;
 pub mod completions;
 pub mod config;
 pub mod console;
