@@ -2859,22 +2859,21 @@ impl Engine {
             }
         }
 
-        // Emit final confirmed token usage — fallback to estimates if provider omitted usage events.
-        let final_input = if total_input > 0 {
-            total_input
-        } else {
-            total_input + estimated_input_unconfirmed
-        };
-        let final_output = if total_output > 0 {
-            total_output
-        } else {
-            total_output + estimated_output_unconfirmed
-        };
-        let _ = event_tx.send(Event::TokenUsage {
-            run: run_id.clone(),
-            input: final_input,
-            output: final_output,
-        });
+        // Final token usage. In-stream BrainEvent::Usage already emitted one
+        // Event::TokenUsage per completion with INCREMENTS — surfaces sum
+        // those events, so re-emitting the cumulative total here double-
+        // counted every confirmed token. Only emit when the provider never
+        // reported usage, and then as the ESTIMATE it actually is.
+        let final_input = total_input + estimated_input_unconfirmed;
+        let final_output = total_output + estimated_output_unconfirmed;
+        if total_input == 0 && total_output == 0 && (final_input > 0 || final_output > 0) {
+            let _ = event_tx.send(Event::TokenUsageEstimated {
+                run: run_id.clone(),
+                input: final_input,
+                output: final_output,
+                reason: "provider reported no usage events".into(),
+            });
+        }
         // Mark coder lane done — clears the animated caret cleanly.
         let _ = event_tx.send(Event::AgentStatus {
             run: run_id.clone(),

@@ -105,6 +105,16 @@ pub fn compare(sparrow_cost: f64, tokens: &TokenUsage) -> Vec<CostLine> {
         .collect()
 }
 
+/// Format a dollar amount without lying at small scales: sub-cent amounts
+/// keep 4 decimals instead of rounding to a silly "$0.00".
+fn fmt_usd(amount: f64) -> String {
+    if amount.abs() >= 0.01 {
+        format!("${:.2}", amount)
+    } else {
+        format!("${:.4}", amount)
+    }
+}
+
 /// Format a cost comparison report as a string suitable for terminal output.
 ///
 /// Example output:
@@ -126,11 +136,11 @@ pub fn format_comparison(sparrow_cost: f64, tokens: &TokenUsage) -> String {
     for line in &lines {
         if line.savings_percent > 0.0 {
             out.push_str(&format!(
-                "{} .......... ~${:.4} est. (save {:.0}% — ${:.2} cheaper)\n",
+                "{} .......... ~${:.4} est. (save {:.0}% — {} cheaper)\n",
                 line.competitor.display_name(),
                 line.estimated_cost,
                 line.savings_percent,
-                -line.savings
+                fmt_usd(-line.savings)
             ));
         } else {
             // Sparrow was not cheaper on this run (e.g. the task was routed to
@@ -151,9 +161,9 @@ pub fn format_comparison(sparrow_cost: f64, tokens: &TokenUsage) -> String {
     {
         if best.savings_percent > 50.0 {
             out.push_str(&format!(
-                "\n💡 Same tokens on {} would have cost ~${:.2} more (est. at list price).",
+                "\n💡 Same tokens on {} would have cost ~{} more (est. at list price).",
                 best.competitor.display_name(),
-                -best.savings
+                fmt_usd(-best.savings)
             ));
         }
     }
@@ -170,9 +180,9 @@ pub fn format_comparison_oneliner(sparrow_cost: f64, tokens: &TokenUsage) -> Str
 
     match best {
         Some(line) if line.savings_percent > 30.0 => format!(
-            "(vs {}: ~${:.2} est. — save {:.0}%)",
+            "(vs {}: ~{} est. — save {:.0}%)",
             line.competitor.display_name(),
-            line.estimated_cost,
+            fmt_usd(line.estimated_cost),
             line.savings_percent
         ),
         _ => String::new(),
