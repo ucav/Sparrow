@@ -6,7 +6,7 @@ description = "Model provider adapters (Brain trait, OpenAI-compat, Anthropic, O
 license = "MIT"
 
 [dependencies]
-sparrow-core = { path = "../sparrow-core" }
+sparrow-core = { version = "0.9.2", path = "../sparrow-core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 async-trait = "0.1"
