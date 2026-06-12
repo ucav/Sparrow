@@ -26,6 +26,14 @@ config.toml
 agents/nova.*
 state/
 sparrow/
+
+# Generated deliverables — Sparrow writes agent output here (v0.9.1 convention).
+# Ignored in this repo because we dogfood Sparrow inside it; in a user's own
+# project they decide whether to track ./artifacts/.
+artifacts/
+!artifacts/
+!artifacts/*.md
+!artifacts/*.toml
 *.db
 *.db-journal
 *.db-wal

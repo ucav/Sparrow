@@ -1,0 +1,11 @@
+[[source]]
+name = "Tokio"
+kind = "github_releases"
+url = "https://github.com/tokio-rs/tokio"
+tags = ["runtime", "performance"]
+
+[[source]]
+name = "Rust"
+kind = "github_releases"
+url = "https://github.com/rust-lang/rust"
+tags = ["compiler", "release"]

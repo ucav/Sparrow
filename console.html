@@ -1466,9 +1466,10 @@
     <span class="kbds">
       <kbd>⌘K</kbd>commands
       <kbd>@</kbd>agent
+      <kbd>Tab</kbd>complete
       <kbd>Alt+F</kbd>focus
       <kbd>⇧⏎</kbd>newline
-      <kbd>⌘M</kbd>sound
+      <kbd>⌘/</kbd>shortcuts
     </span>
   </div>
 
@@ -1567,6 +1568,14 @@
       <button class="deny" id="approvalDeny">deny</button>
       <button class="approve" id="approvalApprove">approve</button>
     </div>
+  </div>
+</div>
+
+<!-- v0.9: keyboard cheat-sheet (Ctrl+/) -->
+<div class="kbd-help" id="kbdHelp" role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" onclick="if(event.target===this)toggleKbdHelp(false)">
+  <div class="kh-card">
+    <h3>⌨ keyboard shortcuts</h3>
+    <div class="kh-grid" id="kbdHelpGrid"></div>
   </div>
 </div>
 
@@ -2005,6 +2014,16 @@ function runBootAnimation(){
   setTimeout(skip,2400); // auto-dismiss
   if(typeof chirp==='function'){chirp(880,.06);setTimeout(()=>chirp(1320,.06),140);setTimeout(()=>chirp(1760,.08),280);}
 }
+function isFastStart(){
+  return new URLSearchParams(location.search).get('fast')==='1';
+}
+function scheduleIdle(fn,timeout){
+  if(typeof requestIdleCallback==='function'){
+    requestIdleCallback(()=>fn(),{timeout:timeout||1800});
+  }else{
+    setTimeout(fn,timeout||250);
+  }
+}
 
 // ─── v0.9 a11y : taille du texte (A− / A+) ──────────────────────────
 // Accessibilité : n'importe qui doit pouvoir lire. Échelle de 0.85 à 1.6,
@@ -2195,6 +2214,8 @@ function bindChromeChips(){
     else if(mod&&e.shiftKey&&k==='d'){e.preventDefault();openRightSidebar('diff','shortcut');}
     else if(mod&&e.shiftKey&&k==='f'){e.preventDefault();openRightSidebar('files','shortcut');}
     else if(e.ctrlKey&&!e.shiftKey&&!e.altKey&&e.key==='`'){e.preventDefault();openRightSidebar('terminal','shortcut');}
+    else if(mod&&!e.shiftKey&&e.key==='/'){e.preventDefault();toggleKbdHelp();}
+    else if(e.key==='Escape'&&document.getElementById('kbdHelp')?.classList.contains('show')){toggleKbdHelp(false);}
   });
 }
 
@@ -2380,7 +2401,9 @@ function restoreActivePanel(){
   // is instant, but make ABSOLUTELY sure exactly one panel has .active set
   // after we're done — guard against any race that might add .active to
   // more than one element (the user reported "tout s'affiche").
-  Object.values(PANEL_LOADERS).forEach(fn=>fn().catch(()=>{}));
+  if(!isFastStart()){
+    scheduleIdle(()=>Object.values(PANEL_LOADERS).forEach(fn=>fn().catch(()=>{})),1200);
+  }
   setTimeout(()=>{
     const active=document.querySelectorAll('.drawer .panel.active');
     if(active.length!==1){
@@ -2668,20 +2691,27 @@ async function loadArtifactsPanel(){
   const host=document.getElementById('drw-artifacts-list');
   try{
     const r=await fetch('/artifacts');const j=await r.json();
-    const uploads=Array.isArray(j.items)?j.items:[];
+    const items=Array.isArray(j.items)?j.items:[];
+    const generated=items.filter(it=>it.source==='generated');
+    const uploads=items.filter(it=>it.source!=='generated');
     const written=[...window.SPARROW_WRITTEN.entries()].sort((a,b)=>b[1].ts-a[1].ts);
     const badge=document.getElementById('drw-artifacts-count');
-    badge.dataset.uploads=String(uploads.length);
-    badge.textContent=String(uploads.length+written.length);
-    if(!uploads.length && !written.length){host.innerHTML='<div class="drw-empty">_none yet_ · drag a file onto the page to upload, or run a task that writes files.</div>';return;}
+    badge.dataset.uploads=String(items.length);
+    badge.textContent=String(items.length+written.length);
+    if(!items.length && !written.length){host.innerHTML='<div class="drw-empty">_none yet_ · deliverables land in <b>./artifacts/</b>; drag a file onto the page to upload.</div>';return;}
     let html='';
+    const fileRow=(name,path,meta)=>`<div class="drw-row" title="${escHtml(path||name)}"><div class="ttl">${escHtml(name)}</div><div class="meta"><span>${escHtml(meta||'')}</span></div></div>`;
+    if(generated.length){
+      html+='<div style="font-size:10px;color:var(--add);letter-spacing:1px;text-transform:uppercase;margin:4px 6px">deliverables · ./artifacts/</div>';
+      html+=generated.map(it=>fileRow(it.name,it.path,`${it.kind||'file'} · ${Math.round((it.size||0)/1024)} KB`)).join('');
+    }
     if(written.length){
-      html+='<div style="font-size:10px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;margin:4px 6px">written by sparrow</div>';
-      html+=written.map(([file,meta])=>`<div class="drw-row" title="${escHtml(file)}"><div class="ttl">${escHtml(file.split(/[\\/]/).pop()||file)}</div><div class="meta"><span>${escHtml(file)}</span><span>×${meta.count}</span></div></div>`).join('');
+      html+='<div style="font-size:10px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;margin:8px 6px 4px">edited by sparrow</div>';
+      html+=written.map(([file,meta])=>fileRow(file.split(/[\\/]/).pop()||file,file,`${file} · ×${meta.count}`)).join('');
     }
     if(uploads.length){
       html+='<div style="font-size:10px;color:var(--dim);letter-spacing:1px;text-transform:uppercase;margin:8px 6px 4px">uploaded</div>';
-      html+=uploads.map(it=>`<div class="drw-row" title="${escHtml(it.path||'')}"><div class="ttl">${escHtml(it.name)}</div><div class="meta"><span>${escHtml(it.kind||'file')}</span><span>${Math.round((it.size||0)/1024)} KB</span></div></div>`).join('');
+      html+=uploads.map(it=>fileRow(it.name,it.path,`${it.kind||'file'} · ${Math.round((it.size||0)/1024)} KB`)).join('');
     }
     host.innerHTML=html;
   }catch(_){host.innerHTML='<div class="drw-empty">_none yet_ · unable to load /artifacts</div>';}
@@ -3081,6 +3111,50 @@ function ghostUpdate(){
   ghostLoadHistory();
 }
 
+// ─── Keyboard cheat-sheet (Ctrl+/) ───────────────────────────────────
+const KBD_HELP=[
+  ['Tools panel',[
+    ['Toggle tools panel',['Mod','Shift','S']],
+    ['Preview',['Mod','P']],
+    ['Diff',['Mod','Shift','D']],
+    ['Terminal',['Ctrl','`']],
+    ['Files',['Mod','Shift','F']],
+    ['Plan',['Mod','Shift','P']],
+  ]],
+  ['Composer',[
+    ['Accept ghost suggestion',['Tab']],
+    ['New line',['Shift','↵']],
+    ['Command palette',['Mod','K']],
+    ['Mention an agent',['@']],
+    ['Run / send',['↵']],
+  ]],
+  ['View & display',[
+    ['Focus / Cockpit',['Alt','F']],
+    ['Cycle theme',['Mod','Shift','L']],
+    ['Mute sounds',['Mod','M']],
+    ['Bigger / smaller text',['Mod','+ / −']],
+    ['This cheat-sheet',['Mod','/']],
+  ]],
+  ['Focus actions',[
+    ["D'accord (approve)",['Alt','A']],
+    ['Annule (undo)',['Alt','U']],
+    ['Explique',['Alt','E']],
+  ]],
+];
+function _kbdKeys(keys){return keys.map(k=>`<kbd>${esc(k==='Mod'?(RB_IS_MAC?'⌘':'Ctrl'):k)}</kbd>`).join(' ');}
+function renderKbdHelp(){
+  const grid=document.getElementById('kbdHelpGrid');if(!grid)return;
+  grid.innerHTML=KBD_HELP.map(([sec,rows])=>
+    `<div class="kh-sec">${esc(sec)}</div>`+rows.map(([desc,keys])=>
+      `<div class="kh-row"><span class="desc">${esc(desc)}</span>${_kbdKeys(keys)}</div>`).join('')
+  ).join('');
+}
+function toggleKbdHelp(force){
+  const el=document.getElementById('kbdHelp');if(!el)return;
+  const show=force===undefined?!el.classList.contains('show'):force;
+  if(show){renderKbdHelp();el.classList.add('show');}else el.classList.remove('show');
+}
+
 // ─── WebSocket ─────────────────────────────────────────────────────
 let ws;
 function connect(){
@@ -3090,10 +3164,12 @@ function connect(){
     const tag=document.getElementById('conn-tag');if(tag){tag.textContent='live';tag.classList.remove('offline');}
     $('status').className='status on';$('status').textContent='● live';
     loadConfig();
-    loadSwarmAgents();
-    loadAgentsCache();
-    loadCommandsCache();
-    loadHistoryCache();
+    if(!isFastStart()){
+      scheduleIdle(()=>loadSwarmAgents().catch(()=>{}));
+      scheduleIdle(()=>loadAgentsCache().catch(()=>{}));
+      scheduleIdle(()=>loadCommandsCache().catch(()=>{}));
+      scheduleIdle(()=>loadHistoryCache().catch(()=>{}));
+    }
     injectHero();hydrateHero();
     restoreActivePanel();
     runBootAnimation();
@@ -3901,11 +3977,16 @@ const RB_IS_MAC=/mac/i.test(navigator.platform||'');
 function rbKey(sc){return sc.replace('Mod',RB_IS_MAC?'⌘':'Ctrl')}
 const RB_TABS={
   preview:{label:'Preview',ico:'◫',sc:'Mod+P'},
+  timeline:{label:'Timeline',ico:'↧',sc:''},
+  costs:{label:'Costs',ico:'¢',sc:''},
   diff:{label:'Diff',ico:'◇',sc:'Mod+Shift+D'},
   terminal:{label:'Terminal',ico:'❯',sc:'Ctrl+`'},
   files:{label:'Files',ico:'▤',sc:'Mod+Shift+F'},
   tasks:{label:'Background tasks',ico:'◷',sc:''},
   plan:{label:'Plan',ico:'☰',sc:'Mod+Shift+P'},
+  roadmap:{label:'Roadmap',ico:'◎',sc:''},
+  releases:{label:'Watched releases',ico:'⬡',sc:''},
+  runs:{label:'Autonomous tasks',ico:'⟳',sc:''},
 };
 const RB={
   isOpen:false,
@@ -3921,6 +4002,11 @@ const RB_TERM=[];              // {cmd,output,ts}
 const RB_PREVIEW=new Map();    // url -> ts (detected local server URLs)
 const RB_TOOL_BY_ID=new Map(); // tool_use id -> {name,args}
 const RB_EXEC_NAMES=new Set(['exec','bash','shell','code_exec','run_command','terminal']);
+const RB_TIMELINE=[];          // compact event timeline from the WS stream
+const RB_COST_HISTORY=[];      // CostUpdate snapshots
+let RB_INTEL_BACKLOG=null;     // null = not fetched yet
+let RB_INTEL_DIGESTS=null;     // null = not fetched yet
+let RB_RUNS=null;              // null = not fetched yet
 let RB_OBJECTIVE='';
 let RB_PLAN_TODOS=null;        // null = not fetched yet; [] = fetched, empty
 
@@ -4018,11 +4104,16 @@ function rbRender(){
   if(title)title.textContent=tab?RB_TABS[tab].label:'Tools';
   if(!tab){body.innerHTML=rbMenuHtml();}
   else if(tab==='preview')rbRenderPreview(body);
+  else if(tab==='timeline')rbRenderTimeline(body);
+  else if(tab==='costs')rbRenderCosts(body);
   else if(tab==='diff')rbRenderDiff(body);
   else if(tab==='terminal')rbRenderTerminal(body);
   else if(tab==='files')rbRenderFiles(body);
   else if(tab==='tasks')rbRenderTasks(body);
   else if(tab==='plan')rbRenderPlan(body);
+  else if(tab==='roadmap')rbRenderRoadmap(body);
+  else if(tab==='releases')rbRenderReleases(body);
+  else if(tab==='runs')rbRenderRuns(body);
   rbTouch();
 }
 function rbMenuHtml(){
@@ -4030,11 +4121,16 @@ function rbMenuHtml(){
   const failed=[...RB_TASKS.values()].some(t=>t.status==='failed');
   const counts={
     preview:RB_PREVIEW.size,
+    timeline:RB_TIMELINE.length,
+    costs:RB_COST_HISTORY.length,
     diff:RB_DIFFS.size,
     terminal:RB_TERM.length,
     files:(window.SPARROW_WRITTEN?window.SPARROW_WRITTEN.size:0),
     tasks:running,
     plan:(RB_PLAN_TODOS||[]).filter(t=>t.status!=='completed'&&t.status!=='cancelled').length,
+    roadmap:(RB_INTEL_BACKLOG||[]).length,
+    releases:(RB_INTEL_DIGESTS||[]).length,
+    runs:(RB_RUNS||[]).length,
   };
   return Object.entries(RB_TABS).map(([k,t])=>{
     const n=counts[k]||0;
@@ -4045,6 +4141,29 @@ function rbMenuHtml(){
       <span class="mi-label">${t.label}</span>${badge}${kbd}
     </button>`;
   }).join('');
+}
+function rbRenderTimeline(body){
+  if(!RB_TIMELINE.length){
+    body.innerHTML='<div class="rb-empty">No run events yet.<br><span style="font-size:10.5px">RunStarted, tools, diffs, checkpoints, errors and finish events appear here live.</span></div>';
+    return;
+  }
+  body.innerHTML=RB_TIMELINE.slice(-80).reverse().map(e=>
+    `<div class="rb-row">
+      <div class="r-top"><span class="r-name">${esc(e.type)}</span><span class="r-meta">${esc(e.time)}</span></div>
+      <div class="r-meta"><span>${esc(e.summary)}</span></div>
+    </div>`).join('');
+}
+function rbRenderCosts(body){
+  const latest=RB_COST_HISTORY[RB_COST_HISTORY.length-1];
+  let html=`<div class="rb-objective"><div class="ob-label">current run cost</div>${esc((typeof costV==='number'?costV:0).toFixed(4))} USD</div>`;
+  html+=`<div class="rb-row"><div class="r-top"><span class="r-name">Tokens</span><span class="rb-st completed">${esc(String(typeof tokV==='number'?tokV:0))}</span></div><div class="r-meta"><span>live meter from CostUpdate/TokenUsage events</span></div></div>`;
+  if(!latest){
+    body.innerHTML=html+'<div class="rb-empty" style="padding:10px">No CostUpdate event yet.</div>';
+    return;
+  }
+  html+='<div class="rb-sec">recent cost updates</div>'+RB_COST_HISTORY.slice(-24).reverse().map(c=>
+    `<div class="rb-row"><div class="r-top"><span class="r-name">$${esc(c.usd.toFixed(4))}</span><span class="r-meta">${esc(c.time)}</span></div></div>`).join('');
+  body.innerHTML=html;
 }
 function rbRenderPreview(body){
   const draw=()=>{
@@ -4096,6 +4215,58 @@ async function rbScanPreviewServers(force){
     if(found)rbBadges();
   }catch(_){/* console offline / static serve — detected URLs still render */}
   finally{_rbScanInflight=false;}
+}
+async function rbFetchIntelBacklog(){
+  try{const j=await fetch('/intel/backlog').then(r=>r.json());RB_INTEL_BACKLOG=Array.isArray(j.tickets)?j.tickets:[];}
+  catch(_){RB_INTEL_BACKLOG=RB_INTEL_BACKLOG||[];}
+}
+async function rbFetchIntelDigests(){
+  try{const j=await fetch('/intel/digests').then(r=>r.json());RB_INTEL_DIGESTS=Array.isArray(j.digests)?j.digests:[];}
+  catch(_){RB_INTEL_DIGESTS=RB_INTEL_DIGESTS||[];}
+}
+async function rbFetchRuns(){
+  try{const j=await fetch('/runs').then(r=>r.json());RB_RUNS=Array.isArray(j.runs)?j.runs:[];}
+  catch(_){RB_RUNS=RB_RUNS||[];}
+}
+function rbRenderRoadmap(body){
+  const draw=()=>{
+    const items=RB_INTEL_BACKLOG||[];
+    if(!items.length){body.innerHTML='<div class="rb-empty">No scored intel backlog yet.<br><span style="font-size:10.5px">Run `sparrow intel scan` with opt-in public sources, then reopen this panel.</span></div>';return;}
+    body.innerHTML=items.map(t=>
+      `<div class="rb-row"><div class="r-top"><span class="r-name">${esc(t.title||'ticket')}</span><span class="rb-st waiting">${esc(String(t.score||0))}</span></div>
+      <div class="r-meta"><span>${esc(t.reason||'')}</span></div>
+      <div class="r-meta"><span>${esc(t.source||'')}</span><span>${esc(t.url||'')}</span></div></div>`).join('');
+  };
+  if(RB_INTEL_BACKLOG===null){body.innerHTML='<div class="rb-empty">loading roadmap…</div>';rbFetchIntelBacklog().then(draw);}else draw();
+}
+function rbRenderReleases(body){
+  const draw=()=>{
+    const items=RB_INTEL_DIGESTS||[];
+    if(!items.length){body.innerHTML='<div class="rb-empty">No watched releases cached yet.<br><span style="font-size:10.5px">The WebView reads the local intel cache only; scanning stays opt-in.</span></div>';return;}
+    body.innerHTML=items.map(d=>
+      `<div class="rb-row"><div class="r-top"><span class="r-name">${esc(d.source||'source')} ${esc(d.version||'')}</span><span class="r-meta">${esc((d.date||'').slice(0,10))}</span></div>
+      <div class="r-meta"><span>${esc(d.title||'')}</span></div>
+      <div style="font-size:10.5px;color:var(--dim);line-height:1.45;margin-top:4px">${esc(d.summary||'')}</div></div>`).join('');
+  };
+  if(RB_INTEL_DIGESTS===null){body.innerHTML='<div class="rb-empty">loading releases…</div>';rbFetchIntelDigests().then(draw);}else draw();
+}
+function rbRenderRuns(body){
+  const draw=()=>{
+    const persisted=RB_RUNS||[];
+    const active=[...RB_TASKS.values()].filter(t=>t.status==='running'||t.status==='waiting');
+    if(!persisted.length&&!active.length){body.innerHTML='<div class="rb-empty">No autonomous tasks recorded yet.</div>';return;}
+    let html='';
+    if(active.length){
+      html+='<div class="rb-sec">active</div>'+active.map(t=>`<div class="rb-row"><div class="r-top"><span class="r-name">${esc(t.label)}</span><span class="rb-st ${t.status}">${esc(t.status)}</span></div><div class="r-meta"><span>${esc(t.kind)}</span></div></div>`).join('');
+    }
+    if(persisted.length){
+      html+='<div class="rb-sec">recorded</div>'+persisted.slice(0,40).map(r=>
+        `<div class="rb-row"><div class="r-top"><span class="r-name">${esc(r.task||r.run_id||'run')}</span><span class="rb-st completed">${esc(r.status||'recorded')}</span></div>
+        <div class="r-meta"><span>${esc(r.run_id||'')}</span><span>${esc(r.created_at||'')}</span></div></div>`).join('');
+    }
+    body.innerHTML=html;
+  };
+  if(RB_RUNS===null){body.innerHTML='<div class="rb-empty">loading runs…</div>';rbFetchRuns().then(draw);}else draw();
 }
 function rbRenderDiff(body){
   if(!RB_DIFFS.size){body.innerHTML='<div class="rb-empty">No changes yet.</div>';return;}
@@ -4230,6 +4401,7 @@ function rbDetectIntent(task){
   }
 }
 function rbOnEvent(ev){
+  rbRecordTimeline(ev);
   switch(ev.type){
     case 'RunStarted':
       RB_OBJECTIVE=ev.task||'';
@@ -4480,6 +4652,9 @@ function handleEvent(ev){
     case 'CheckpointCreated':if(VERBOSE)verboseLine(`checkpoint · ${ev.label||ev.id||''}`,'planner');addCheckpointNode(ev.label,ev.id);runCheckpoints++;chirp(1400,.07);break;
     case 'SkillLearned':if(VERBOSE)line(`<span class="skill-pop">✦ skill learned · ${esc(ev.name)}</span>`);chirp(1100,.05);setTimeout(()=>chirp(1700,.07),80);break;
     case 'CostUpdate':
+      RB_COST_HISTORY.push({usd:Number(ev.usd||0),time:rbNow()});
+      if(RB_COST_HISTORY.length>200)RB_COST_HISTORY.shift();
+      autoOpenRightSidebar('costs','cost-updated','low');
       setCost(ev.usd);
       // CostUpdate can arrive for nearly every streamed delta. Keep it in the
       // cockpit/token meter only; never emit one chat line per tick.
@@ -4543,6 +4718,13 @@ function handleEvent(ev){
   }
 }
 
+function rbRecordTimeline(ev){
+  if(!ev||['ThinkingDelta','ReasoningDelta','TokenUsageEstimated'].includes(ev.type))return;
+  const summary=ev.task||ev.name||ev.file||ev.message||ev.role||ev.id||ev.outcome?.status||'';
+  RB_TIMELINE.push({idx:RB_TIMELINE.length+1,type:ev.type,time:rbNow(),summary:String(summary).slice(0,140)});
+  if(RB_TIMELINE.length>300)RB_TIMELINE.shift();
+}
+
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function escAttr(s){return esc(s).replace(/"/g,'&quot;');}
 function roleCls(r){return r==='planner'?'planner':r==='coder'?'coder':r==='verifier'?'verifier':'muted';}
@@ -4588,8 +4770,28 @@ async function bootIntro(){
         <h3>Memory &amp; crew</h3>
         <p id="memorySummary">Loading memory and agent index…</p>
       </div>
+      <div class="home-block">
+        <h3>Start now</h3>
+        <div class="qa-chips">
+          <button data-qa="Répare ce projet : décris le problème ou colle l'erreur ici">🔧 Répare</button>
+          <button data-qa="Explique-moi simplement ce que fait ce projet et par où commencer">💡 Explique</button>
+          <button data-qa="Fais un plan détaillé pour : ">📋 Plan</button>
+          <button data-qa="__ideas__">✨ Idées</button>
+          <button data-qa="__help__">⌨ Raccourcis</button>
+        </div>
+      </div>
     </section>`;
   term.appendChild(home);
+  home.querySelectorAll('.qa-chips button').forEach(b=>b.addEventListener('click',()=>{
+    const v=b.dataset.qa;
+    if(v==='__help__'){toggleKbdHelp(true);return;}
+    const inp=document.getElementById('taskInput');if(!inp)return;
+    inp.value=(v==='__ideas__')?'/idees':v;
+    if(typeof autoResizeComposer==='function')autoResizeComposer();
+    inp.focus();
+    if(v==='__ideas__')document.getElementById('runBtn')?.click();
+    else{inp.selectionStart=inp.selectionEnd=inp.value.length;ghostUpdate();}
+  }));
   const boot=line('<span class="sec">— cockpit online —</span>');
   const bootParent=term;
   [

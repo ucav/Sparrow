@@ -45,6 +45,12 @@ pub struct Skill {
     /// Optional assets advertised by the skill.
     #[serde(default)]
     pub assets: Vec<String>,
+    /// Optional manifest version for permission-aware skills.
+    #[serde(default)]
+    pub manifest_version: Option<String>,
+    /// Optional allow-list of tools while this skill is active.
+    #[serde(default)]
+    pub allowed_tools: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +60,14 @@ pub struct SkillInvocation {
     pub loaded_templates: Vec<(String, String)>,
     pub loaded_scripts: Vec<(String, String)>,
     pub loaded_assets: Vec<(String, String)>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SkillManifest {
+    #[serde(default)]
+    pub version: Option<String>,
+    #[serde(default)]
+    pub allowed_tools: Vec<String>,
 }
 
 fn default_score() -> f64 {
@@ -80,6 +94,7 @@ impl Skill {
         let mut templates = Vec::new();
         let mut scripts = Vec::new();
         let mut assets = Vec::new();
+        let mut allowed_tools = Vec::new();
         let mut in_body = false;
 
         for line in content.lines() {
@@ -130,6 +145,10 @@ impl Skill {
                 assets = parse_csv_field(trimmed.trim_start_matches("**Assets:**"));
                 continue;
             }
+            if trimmed.starts_with("**Allowed Tools:**") {
+                allowed_tools = parse_csv_field(trimmed.trim_start_matches("**Allowed Tools:**"));
+                continue;
+            }
 
             if trimmed == "## Body" || trimmed == "### Body" {
                 in_body = true;
@@ -174,6 +193,8 @@ impl Skill {
             templates,
             scripts,
             assets,
+            manifest_version: None,
+            allowed_tools,
         })
     }
 
@@ -187,6 +208,7 @@ impl Skill {
              **Templates:** {templates}\n\n\
              **Scripts:** {scripts}\n\n\
              **Assets:** {assets}\n\n\
+             **Allowed Tools:** {allowed_tools}\n\n\
              ## Body\n\
              {body}\n",
             name = self.name,
@@ -196,6 +218,7 @@ impl Skill {
             templates = self.templates.join(", "),
             scripts = self.scripts.join(", "),
             assets = self.assets.join(", "),
+            allowed_tools = self.allowed_tools.join(", "),
             body = self.body,
         )
     }
@@ -226,6 +249,33 @@ fn parse_csv_field(value: &str) -> Vec<String> {
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect()
+}
+
+fn apply_skill_manifest(skill: &mut Skill, dir: &Path) {
+    if let Some(manifest) = load_skill_manifest(dir) {
+        if manifest.version.is_some() {
+            skill.manifest_version = manifest.version;
+        }
+        if !manifest.allowed_tools.is_empty() {
+            skill.allowed_tools = manifest.allowed_tools;
+        }
+    }
+}
+
+fn load_skill_manifest(dir: &Path) -> Option<SkillManifest> {
+    let toml_path = dir.join("manifest.toml");
+    if toml_path.exists() {
+        return std::fs::read_to_string(toml_path)
+            .ok()
+            .and_then(|s| toml::from_str(&s).ok());
+    }
+    let json_path = dir.join("manifest.json");
+    if json_path.exists() {
+        return std::fs::read_to_string(json_path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok());
+    }
+    None
 }
 
 // ─── THE SKILL LIBRARY TRAIT ────────────────────────────────────────────────────
@@ -290,7 +340,8 @@ impl FsSkillLibrary {
                                 .file_name()
                                 .map(|n| n.to_string_lossy().to_string())
                                 .unwrap_or_default();
-                            if let Some(skill) = Skill::from_markdown(&content, &rel) {
+                            if let Some(mut skill) = Skill::from_markdown(&content, &rel) {
+                                apply_skill_manifest(&mut skill, &path);
                                 skills.push(skill);
                             }
                         }
@@ -305,7 +356,11 @@ impl FsSkillLibrary {
                             .file_name()
                             .map(|n| n.to_string_lossy().to_string())
                             .unwrap_or_default();
-                        if let Some(skill) = Skill::from_markdown(&content, &rel) {
+                        if let Some(mut skill) = Skill::from_markdown(&content, &rel) {
+                            apply_skill_manifest(
+                                &mut skill,
+                                path.parent().unwrap_or(&self.skills_dir),
+                            );
                             skills.push(skill);
                         }
                     }
@@ -676,6 +731,8 @@ impl Curator {
             templates: Vec::new(),
             scripts: Vec::new(),
             assets: Vec::new(),
+            manifest_version: None,
+            allowed_tools: Vec::new(),
         })
     }
 
@@ -926,10 +983,46 @@ mod tests {
             templates: Vec::new(),
             scripts: Vec::new(),
             assets: Vec::new(),
+            manifest_version: None,
+            allowed_tools: Vec::new(),
         };
 
         assert!(lib.add(skill).is_err());
         assert!(!root.join("..").join("outside").exists());
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn skill_manifest_restricts_tool_specs() {
+        let root = temp_dir("skill-manifest-tools");
+        let skill_dir = root.join("read-only-review");
+        std::fs::create_dir_all(&skill_dir).unwrap();
+        std::fs::write(
+            skill_dir.join("SKILL.md"),
+            "# Skill: read-only-review\n\n**Trigger:** review\n\n## Body\nInspect only.",
+        )
+        .unwrap();
+        std::fs::write(
+            skill_dir.join("manifest.toml"),
+            "version = \"2\"\nallowed_tools = [\"fs_read\"]\n",
+        )
+        .unwrap();
+
+        let lib = FsSkillLibrary::new(root.clone());
+        let invocation = lib
+            .invoke("read-only-review")
+            .unwrap()
+            .expect("skill should load");
+        assert_eq!(invocation.skill.manifest_version.as_deref(), Some("2"));
+        assert_eq!(invocation.skill.allowed_tools, vec!["fs_read"]);
+
+        let mut registry = crate::tools::ToolRegistry::new();
+        registry.register(std::sync::Arc::new(crate::tools::fs::FsRead));
+        registry.register(std::sync::Arc::new(crate::tools::fs::FsWrite));
+        let specs = registry.to_specs_for_skill(&invocation.skill);
+        let names: Vec<_> = specs.into_iter().map(|s| s.name).collect();
+        assert_eq!(names, vec!["fs_read"]);
 
         let _ = std::fs::remove_dir_all(root);
     }

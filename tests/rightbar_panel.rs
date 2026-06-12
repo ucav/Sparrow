@@ -1,4 +1,5 @@
-//! v0.9 — right tools sidebar (Preview · Diff · Terminal · Files · Tasks · Plan).
+//! v0.9 — right tools sidebar (Preview · Diff · Terminal · Files · Tasks · Plan
+//! plus v0.9.2 premium panels).
 //! Marker tests in the same spirit as `ui_finalisation.rs`: the WebView is a
 //! single embedded HTML file, so we assert the structural hooks ship with it.
 
@@ -29,7 +30,10 @@ fn console_html_declares_right_sidebar_shell() {
 #[test]
 fn right_sidebar_has_six_tools_and_helpers() {
     let html = console_html();
-    for tab in ["preview", "diff", "terminal", "files", "tasks", "plan"] {
+    for tab in [
+        "preview", "diff", "terminal", "files", "tasks", "plan", "timeline", "costs", "roadmap",
+        "releases", "runs",
+    ] {
         assert!(
             html.contains(&format!("{}:{{label:", tab)),
             "RB_TABS must declare the `{}` tool",
@@ -47,6 +51,29 @@ fn right_sidebar_has_six_tools_and_helpers() {
             html.contains(helper),
             "console.html must define `{}`",
             helper
+        );
+    }
+}
+
+#[test]
+fn right_sidebar_has_v092_premium_panels_and_endpoints() {
+    let html = console_html();
+    for marker in [
+        "rbRenderTimeline",
+        "rbRenderCosts",
+        "rbRenderRoadmap",
+        "rbRenderReleases",
+        "rbRenderRuns",
+        "fetch('/intel/backlog')",
+        "fetch('/intel/digests')",
+        "fetch('/runs')",
+        "RB_TIMELINE",
+        "RB_COST_HISTORY",
+    ] {
+        assert!(
+            html.contains(marker),
+            "v0.9.2 WebView premium panel marker `{}` must ship",
+            marker
         );
     }
 }

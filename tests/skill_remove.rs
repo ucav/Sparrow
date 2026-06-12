@@ -28,6 +28,8 @@ fn mk_skill(name: &str) -> Skill {
         templates: Vec::new(),
         scripts: Vec::new(),
         assets: Vec::new(),
+        manifest_version: None,
+        allowed_tools: Vec::new(),
     }
 }
 

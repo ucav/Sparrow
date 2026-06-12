@@ -33,22 +33,10 @@ pub mod treesitter;
 
 // ─── Agent identity ─────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone)]
-pub struct Identity {
-    pub name: String,
-    pub role: String,
-    pub personality: String,
-}
-
-impl Default for Identity {
-    fn default() -> Self {
-        Self {
-            name: "sparrow".into(),
-            role: "software engineer".into(),
-            personality: "concise, competent, helpful".into(),
-        }
-    }
-}
+// Identity now lives in `sparrow-core` (a trivial shared type) so the memory
+// crate can name an agent without depending on the engine. Re-exported here so
+// `crate::engine::Identity` keeps resolving everywhere it's used.
+pub use sparrow_core::Identity;
 
 // ─── Brain policy ───────────────────────────────────────────────────────────────
 
@@ -439,6 +427,16 @@ When you write or edit a file with `fs_write`, `edit`, or `multi_edit`, the file
 is persisted on disk and shows up in the Artifacts panel. You can read it back
 in the same run with `fs_read`. There is no separate sandbox — the workspace is
 the user's actual filesystem.
+
+## Where to put what you create
+- **Generated deliverables** you produce for the user — reports, exports,
+  generated code, diagrams, summaries, scratch output — go in `./artifacts/`
+  (relative to the workspace root). Create the directory if it doesn't exist.
+- **Edits to existing source** stay in place — never move a file the user
+  already has into `./artifacts/`.
+- If the user names a path, that path wins. Absent any instruction, default to
+  `./artifacts/<descriptive-name>` so deliverables are easy to find and never
+  pollute the project root.
 "#,
         name = identity.name,
         role = identity.role,
@@ -453,8 +451,12 @@ the user's actual filesystem.
     if identity.name == "sparrow" && !lean_prompt {
         parts.push(include_str!("main_soul.md").trim().to_string());
     } else if identity.name == "sparrow" {
+        // v0.9.1: even in lean mode the agent must keep the non-negotiable
+        // action invariants — otherwise "simple" tasks produce the "dumb"
+        // behaviour the user reported (narrating tools instead of calling them,
+        // editing files blind, ignoring the skill catalogue below).
         parts.push(
-            "## Simple-task mode\nThis run was classified as trivial/small. Answer directly, use tools only when needed, and keep the response compact and verifiable."
+            "## Simple-task mode\nThis run was classified as trivial/small — answer directly and keep it compact. The action invariants still hold:\n- Call tools, never narrate them (\"I'll run X\" with no call = failure).\n- Scan the skill library below; load any skill that clearly applies.\n- View a file before editing it; re-check after.\n- When the user tells you something durable, call `memory` with action:\"add\".\n- Put generated deliverables in `./artifacts/` unless the user gives a path."
                 .to_string(),
         );
     }
@@ -499,7 +501,13 @@ the user's actual filesystem.
     // invoke one — without this list it has no way to discover that, say,
     // a `code-review` skill exists. Bodies of the top-N pre-selected
     // relevant skills follow below for fast in-context use.
-    if !skill_catalog.is_empty() && !lean_prompt {
+    //
+    // v0.9.1: the index (names + one-line descriptions) is injected at ALL
+    // tiers. It is cheap (one line per skill) and was previously hidden in lean
+    // mode — so on "simple" tasks the agent literally could not see what skills
+    // existed and never used any. Only the full skill BODIES below stay gated to
+    // non-lean runs (those are token-expensive).
+    if !skill_catalog.is_empty() {
         let relevant_names: std::collections::HashSet<&str> =
             skills.iter().map(|s| s.name.as_str()).collect();
         let mut lines = vec![format!(
@@ -2121,10 +2129,13 @@ impl Engine {
                                 // tool · X" status note (below) names THIS call.
                                 current_tool_name = tool_name.clone();
                                 let tool = tools.get(&tool_name);
-                                let risk = tool
+                                let base_risk = tool
                                     .as_ref()
                                     .map(|tool| tool.risk())
                                     .unwrap_or(RiskLevel::ReadOnly);
+                                let risk = crate::permissions::effective_risk_for_tool(
+                                    &tool_name, base_risk, &args,
+                                );
 
                                 // Re-emit ToolUseProposed with the REAL args now
                                 // that the streamed JSON is complete. The first
@@ -3552,7 +3563,7 @@ mod tests {
     }
 
     #[test]
-    fn trivial_prompt_uses_lean_mode_without_main_soul_or_full_skill_catalog() {
+    fn trivial_prompt_uses_lean_mode_with_skill_index_but_no_full_soul() {
         let skill = crate::capabilities::Skill {
             name: "tiny-skill".into(),
             description: "Tiny relevant skill".into(),
@@ -3567,6 +3578,8 @@ mod tests {
             templates: Vec::new(),
             scripts: Vec::new(),
             assets: Vec::new(),
+            manifest_version: None,
+            allowed_tools: Vec::new(),
         };
         let workspace_root = PathBuf::from(".");
         let skills = vec![skill];
@@ -3583,8 +3596,14 @@ mod tests {
 
         assert!(prompt.contains("Simple-task mode"));
         assert!(!prompt.contains("TIER TRIAGE"));
-        assert!(!prompt.contains("Skill library ("));
+        // v0.9.1: the lightweight skill INDEX is now injected at every tier so
+        // the agent can discover what's installed even on simple tasks. The full
+        // reasoning protocol (soul) stays out of lean mode.
+        assert!(prompt.contains("Skill library ("));
         assert!(prompt.contains("## Relevant skills for this task"));
+        // Lean mode must still carry the action invariants so "simple" tasks
+        // don't regress into narrate-don't-call behaviour.
+        assert!(prompt.contains("Call tools, never narrate them"));
     }
 
     #[test]

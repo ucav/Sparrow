@@ -1,4 +1,4 @@
-use sparrow::tools::{known_tool_metadata, metadata_for, surface_allows};
+use sparrow::tools::{ToolManifest, known_tool_metadata, metadata_for, surface_allows};
 
 #[test]
 fn safe_toolset_does_not_expose_exec_or_edit() {
@@ -64,4 +64,19 @@ fn gateway_surface_excludes_dangerous_tools_by_default() {
 
     let exec = metadata_for("exec", sparrow::event::RiskLevel::Exec);
     assert!(!surface_allows("gateway", &exec));
+}
+
+#[test]
+fn tool_manifest_declares_permissions_from_risk() {
+    let read = ToolManifest::from_metadata(
+        "read files",
+        metadata_for("fs_read", sparrow::event::RiskLevel::ReadOnly),
+    );
+    assert_eq!(read.permissions, vec!["read"]);
+
+    let write = ToolManifest::from_metadata(
+        "write files",
+        metadata_for("fs_write", sparrow::event::RiskLevel::Mutating),
+    );
+    assert!(write.permissions.contains(&"files:write".to_string()));
 }

@@ -13,6 +13,9 @@ All planned Sparrow commands.
 | `sparrow launch --tui` | ✅ | Prepare first launch without questions, then open the terminal TUI |
 | `sparrow launch --pro` | ✅ | Use the expert setup wizard before opening the cockpit |
 | `sparrow setup` | ✅ | Conversational onboarding |
+| `sparrow mode simple` | ✅ | Beginner profile with plain language and guided entries |
+| `sparrow mode builder` | Alpha | Builder profile with Run/Test/Refactor/Git/Debug/Replay menu entries |
+| `sparrow mode pro` | ✅ | Expert profile with technical output and command palette |
 
 ## Run
 
@@ -24,8 +27,32 @@ All planned Sparrow commands.
 | `sparrow run "<task>" --budget <usd>` | ✅ | Session budget cap |
 | `sparrow run "<task>" --autonomy <level>` | ✅ | Override autonomy |
 | `sparrow run "<task>" --json` | ✅ | NDJSON event stream for CI |
+| `sparrow run "<task>" --plan-first --yes` | Alpha | Print a read-only plan before executing |
+| `sparrow run "<task>" --dry-run` | Alpha | Run in read-only permissions mode and propose changes only |
+| `sparrow run "<task>" --patch` | Alpha | Ask for a unified diff only while denying mutating tools |
 | `sparrow plan "<task>"` | Alpha | Produce a read-only plan without tools, edits, exec, or checkpoints |
 | `sparrow plan "<task>" --json` | Alpha | Emit the read-only plan as JSON |
+| `sparrow audit` | Alpha | Write `./artifacts/audit-<timestamp>.md` with repo map, stubs, TODO/FIXME, and suspicious Rust files |
+| `sparrow audit --json` | Alpha | Emit the repo audit as JSON |
+| `sparrow test` | Alpha | Detect and run `cargo test --all-targets`, `npm test`, or `python -m pytest` |
+| `sparrow test --fix` | Alpha | Run detected tests, then hand failures to Sparrow's repair loop |
+| `sparrow review --dry-run` | Alpha | Print the local diff review prompt without calling a model |
+| `sparrow commit --dry-run` | Alpha | Inspect staged changes, generate a message, and scan for secret-like patterns |
+| `sparrow commit -m "<msg>"` | Alpha | Commit staged changes after the secret scan |
+| `sparrow release prep` | Alpha | Generate launch and migration notes from local artifacts |
+
+## Intel
+
+| Command | Status | Description |
+|---|---|---|
+| `sparrow intel scan --config <file>` | Alpha | Opt-in network scan of public release/changelog sources into the local intel cache |
+| `sparrow intel scan --source kind:name:url` | Alpha | Explicit one-off public source scan; bypasses disabled config only for this invocation |
+| `sparrow intel report` | Alpha | Read cached release digests without network access |
+| `sparrow intel backlog` | Alpha | Read scored backlog tickets derived from cached digests |
+| `sparrow intel watch --interval <secs>` | Alpha | Repeated opt-in scan loop; refuses to run unless enabled or explicit sources are supplied |
+
+`intel.enabled` defaults to `false`. The WebView `Roadmap` and `Watched releases`
+panels read only the local cache through `/intel/backlog` and `/intel/digests`.
 
 ## Permissions
 
@@ -128,6 +155,10 @@ files with frontmatter fields such as `name`, `description`, `role`, `prompt`,
 | `sparrow skills prune` | ✅ | Curator prune |
 | `sparrow skills rm <name>` | ✅ | Remove a skill |
 
+Skills may include an optional `manifest.toml` or `manifest.json` next to
+`SKILL.md`. Manifest v2 currently supports `version` and `allowed_tools`, used
+to derive a restricted tool spec list when the skill is invoked.
+
 ## Plugins
 
 | Command | Status | Description |
@@ -146,6 +177,9 @@ files with frontmatter fields such as `name`, `description`, `role`, `prompt`,
 | `sparrow tools disable <tool>` | Alpha | Remove a tool allow rule and add a deny rule |
 | Tool `browser` | Alpha | Playwright-backed headless browser navigation, screenshots, clicks, typing, extraction, and JS evaluation |
 | Tool `computer` | Alpha | Playwright-backed screenshot/click/type/press primitive with selector or coordinate controls, gated as sandboxed exec |
+
+The WebView `/tools` endpoint exposes both legacy metadata and v0.9.2
+`ToolManifest` objects with derived permission labels.
 
 ## Security
 

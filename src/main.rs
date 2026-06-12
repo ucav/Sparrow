@@ -38,24 +38,32 @@ fn main() -> anyhow::Result<()> {
     // of the CLI inlines its locals into the future's size). On Windows the
     // OS main thread caps at ~1 MB, which the future + tokio runtime
     // initialisation blow through in debug builds even when the future is
-    // Box::pinned. Run the whole thing on a worker thread with an explicit
-    // 16 MB stack — release builds are fine on any platform, so this is a
-    // no-cost safety net.
+    // Box::pinned. `Cli` itself is also a large type (clap builds the full
+    // command tree), so even `Cli::parse()` must run on the roomy stack. Run
+    // everything on a worker thread with an explicit 16 MB stack.
     let worker = std::thread::Builder::new()
         .name("sparrow-main".into())
         .stack_size(16 * 1024 * 1024)
-        .spawn(|| -> anyhow::Result<()> {
+        .spawn(move || -> anyhow::Result<()> {
+            // Parse args BEFORE building the tokio runtime. Clap renders
+            // `--version`/`--help` (and usage errors) and exits right here — so
+            // those hot paths never pay for a multi-threaded tokio runtime (one
+            // worker per core + IO/timer drivers) or tracing init. That runtime
+            // spin-up was the dominant wasted cost in `sparrow --version` /
+            // `help` startup (see artifacts/perf-report.md, Plan B). Parsing on
+            // the 16 MB worker stack avoids the main-thread overflow.
+            let cli = Cli::parse();
             let runtime = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()?;
-            runtime.block_on(Box::pin(async_main()))
+            runtime.block_on(Box::pin(async_main(cli)))
         })?;
     worker
         .join()
         .map_err(|_| anyhow::anyhow!("sparrow main thread panicked"))?
 }
 
-async fn async_main() -> anyhow::Result<()> {
+async fn async_main(cli: Cli) -> anyhow::Result<()> {
     // Quiet by default so structured logs (e.g. "Transcript saved") never
     // interleave with the user-facing answer on stdout. Logs go to stderr;
     // set RUST_LOG=sparrow=info (or debug) for verbose diagnostics.
@@ -66,8 +74,6 @@ async fn async_main() -> anyhow::Result<()> {
                 .unwrap_or_else(|_| "sparrow=warn".into()),
         )
         .init();
-
-    let cli = Cli::parse();
 
     let config_dir = dirs::config_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
@@ -117,6 +123,7 @@ async fn async_main() -> anyhow::Result<()> {
             surfaces: Default::default(),
             experience: Default::default(),
             skills: Default::default(),
+            intel: Default::default(),
             permissions: sparrow::permissions::PermissionConfig {
                 store: sparrow::permissions::store::PermissionStore::load(&active_config_dir),
                 ..Default::default()
@@ -139,6 +146,7 @@ async fn async_main() -> anyhow::Result<()> {
     config.permissions.store.expire_session_scoped();
     migrate_inline_provider_keys(&mut config, &config_store);
     apply_cli_overrides(&mut config, &cli);
+    let fast_console = matches!(&cli.command, Some(Commands::Console { fast: true, .. }));
 
     // Initialize memory (SQLite) — isolated per profile via active_state_dir
     let memory = Arc::new(
@@ -155,7 +163,7 @@ async fn async_main() -> anyhow::Result<()> {
     // For every provider with an environment key or stored credential but an
     // empty model cache, kick off a silent background discovery so `sparrow
     // model --list` and the router see the full catalogue on first run.
-    {
+    if !fast_console {
         let memory_for_discovery: Arc<dyn Memory> = memory.clone();
         let auth_for_discovery =
             sparrow::auth::store::ChainedAuthStore::new(config.config_dir.clone());
@@ -265,6 +273,7 @@ async fn async_main() -> anyhow::Result<()> {
                     Some(agent_store.clone()),
                     9339,
                     cli.bind.clone(),
+                    false,
                 )
                 .await?;
             } else {
@@ -337,11 +346,12 @@ async fn async_main() -> anyhow::Result<()> {
                     Some(agent_store.clone()),
                     port,
                     cli.bind.clone(),
+                    false,
                 )
                 .await?;
             }
         }
-        Some(Commands::Console { port }) => {
+        Some(Commands::Console { port, fast }) => {
             handle_webview(
                 &config,
                 memory.clone(),
@@ -351,6 +361,7 @@ async fn async_main() -> anyhow::Result<()> {
                 Some(agent_store.clone()),
                 port,
                 cli.bind.clone(),
+                fast,
             )
             .await?;
         }
@@ -447,8 +458,24 @@ async fn async_main() -> anyhow::Result<()> {
         Some(Commands::Run {
             ref task,
             json: _json,
+            plan_first,
+            dry_run,
+            patch,
         }) => {
             {
+                if plan_first {
+                    sparrow::cmd_handlers::handle_plan_cmd::handle_plan(
+                        task,
+                        &config,
+                        skill_library.clone(),
+                        false,
+                    )?;
+                    if !cli.yes {
+                        anyhow::bail!(
+                            "`--plan-first` stops before execution. Re-run with `--yes` to execute this plan."
+                        );
+                    }
+                }
                 // NDJSON mode is currently a thin wrapper over the normal run
                 // path: the recorder already writes a JSONL transcript per
                 // run, so callers piping NDJSON can read $XDG_STATE/sparrow
@@ -465,9 +492,33 @@ async fn async_main() -> anyhow::Result<()> {
                     },
                     assume_yes: cli.yes,
                 };
+                let mut run_config;
+                let config_ref = if dry_run || patch {
+                    run_config = config.clone();
+                    run_config.permissions.mode = sparrow::permissions::PermissionMode::ReadOnly;
+                    &run_config
+                } else {
+                    &config
+                };
+                let task_with_mode;
+                let task_ref = if patch {
+                    task_with_mode = format!(
+                        "PATCH MODE: do not modify files. Produce a unified diff only, with enough context for `git apply`, for this task:\n\n{}",
+                        task
+                    );
+                    task_with_mode.as_str()
+                } else if dry_run {
+                    task_with_mode = format!(
+                        "DRY RUN: inspect and propose changes only. Do not modify files or execute mutating tools. Task:\n\n{}",
+                        task
+                    );
+                    task_with_mode.as_str()
+                } else {
+                    task.as_str()
+                };
                 sparrow::cmd_handlers::handle_run_task_cmd::run_task(
-                    task,
-                    &config,
+                    task_ref,
+                    config_ref,
                     memory.clone(),
                     skill_library.clone(),
                     recorder.clone(),
@@ -485,6 +536,90 @@ async fn async_main() -> anyhow::Result<()> {
                 json || cli.json,
             )?;
         }
+        Some(Commands::Audit { json }) => {
+            let root = std::env::current_dir()?;
+            let audit = sparrow::repo_audit::run_repo_audit(&root)?;
+            if json {
+                println!("{}", serde_json::to_string_pretty(&audit)?);
+            } else {
+                let path = sparrow::repo_audit::write_audit_markdown(&root, &audit)?;
+                println!("Audit written: {}", path.display());
+                println!(
+                    "Files: {} · Rust: {} · stubs: {} · TODO/FIXME: {}",
+                    audit.files_total,
+                    audit.rust_files,
+                    audit.production_stubs.len(),
+                    audit.todo_comments.len()
+                );
+            }
+        }
+        Some(Commands::Test { fix, json }) => {
+            let root = std::env::current_dir()?;
+            let Some(runner) = sparrow::project_test::detect_test_runner(&root) else {
+                anyhow::bail!(
+                    "No test runner detected. Expected Cargo.toml, package.json, pyproject.toml, pytest.ini, or setup.cfg."
+                );
+            };
+            let output = std::process::Command::new(&runner.command)
+                .args(&runner.args)
+                .current_dir(&root)
+                .output()?;
+            let success = output.status.success();
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "ok": success,
+                        "runner": runner,
+                        "status": output.status.code(),
+                        "stdout": stdout,
+                        "stderr": stderr,
+                    }))?
+                );
+            } else {
+                println!("Runner: {}", runner.display_command());
+                if !stdout.trim().is_empty() {
+                    println!("{stdout}");
+                }
+                if !stderr.trim().is_empty() {
+                    eprintln!("{stderr}");
+                }
+            }
+            if !success {
+                if fix {
+                    let task = format!(
+                        "The project test runner `{}` failed. Read the failure output below, fix the root cause with minimal edits, then rerun the same test command until it passes or after 3 bounded attempts. Output:\n\nSTDOUT:\n{}\n\nSTDERR:\n{}",
+                        runner.display_command(),
+                        stdout,
+                        stderr
+                    );
+                    let flags = RunFlags {
+                        session_mode: if cli.fresh {
+                            SessionMode::Fresh
+                        } else if cli.continue_last {
+                            SessionMode::ContinueLast
+                        } else {
+                            SessionMode::Auto
+                        },
+                        assume_yes: cli.yes,
+                    };
+                    sparrow::cmd_handlers::handle_run_task_cmd::run_task(
+                        &task,
+                        &config,
+                        memory.clone(),
+                        skill_library.clone(),
+                        recorder.clone(),
+                        None,
+                        flags,
+                    )
+                    .await?;
+                } else {
+                    anyhow::bail!("test runner failed: {}", runner.display_command());
+                }
+            }
+        }
         Some(Commands::Review {
             ref base,
             ref paths,
@@ -500,6 +635,77 @@ async fn async_main() -> anyhow::Result<()> {
                 recorder.clone(),
             )
             .await?;
+        }
+        Some(Commands::Commit {
+            ref message,
+            dry_run,
+        }) => {
+            let stat = std::process::Command::new("git")
+                .args(["diff", "--cached", "--stat"])
+                .output()?;
+            let staged_stat = String::from_utf8_lossy(&stat.stdout).to_string();
+            if staged_stat.trim().is_empty() {
+                if dry_run {
+                    println!("No staged changes to commit.");
+                    println!("Dry run: no commit created.");
+                    return Ok(());
+                }
+                anyhow::bail!(
+                    "No staged changes to commit. Stage files first, then run `sparrow commit`."
+                );
+            }
+            let diff = std::process::Command::new("git")
+                .args(["diff", "--cached"])
+                .output()?;
+            let staged_diff = String::from_utf8_lossy(&diff.stdout);
+            let plan = sparrow::git_workflow::build_commit_plan(
+                message.clone(),
+                staged_stat,
+                &staged_diff,
+            );
+            if !plan.secret_findings.is_empty() {
+                println!("Secret-like patterns found in staged diff:");
+                for finding in &plan.secret_findings {
+                    println!("- {finding}");
+                }
+                anyhow::bail!("Commit refused until the staged diff is clean.");
+            }
+            println!("Commit message: {}", plan.message);
+            println!("{}", plan.staged_stat);
+            if dry_run {
+                println!("Dry run: no commit created.");
+            } else {
+                let msg_path = std::env::temp_dir().join(format!(
+                    "sparrow-commit-{}.txt",
+                    chrono::Local::now().format("%Y%m%d%H%M%S")
+                ));
+                std::fs::write(&msg_path, &plan.message)?;
+                let status = std::process::Command::new("git")
+                    .arg("commit")
+                    .arg("-F")
+                    .arg(&msg_path)
+                    .status()?;
+                let _ = std::fs::remove_file(&msg_path);
+                if !status.success() {
+                    anyhow::bail!("git commit failed with status {status}");
+                }
+            }
+        }
+        Some(Commands::Release { action }) => match action {
+            sparrow::cli::ReleaseAction::Prep { dry_run } => {
+                let root = std::env::current_dir()?;
+                let files = if dry_run {
+                    sparrow::release_prep::planned_release_doc_paths(&root)
+                } else {
+                    sparrow::release_prep::prepare_release_docs(&root)?
+                };
+                for file in files {
+                    println!("{}", file.display());
+                }
+            }
+        },
+        Some(Commands::Intel { action }) => {
+            sparrow::intel_cli::handle_intel_action(action, &config).await?;
         }
         Some(Commands::Permissions { action }) => {
             sparrow::cmd_handlers::handle_permissions_cmd::handle_permissions(
@@ -1098,23 +1304,28 @@ async fn async_main() -> anyhow::Result<()> {
                 );
             }
         }
-        // v0.9 Pilier 2 — the depth switch. `sparrow mode simple|pro|auto`
+        // v0.9 Pilier 2 — the depth switch. `sparrow mode simple|builder|pro|auto`
         // sets how Sparrow talks to you; no argument prints the current mode.
         Some(Commands::Mode { mode }) => match mode {
             None => {
                 let m = config.experience.mode.to_lowercase();
                 let human = match m.as_str() {
                     "pro" => "détaillé (pro) — sortie technique complète",
+                    "builder" => "builder — run, test, refactor, git, debug, replay",
                     "simple" => "simple — langage clair, sans jargon",
                     _ => "auto — simple par défaut, bascule possible",
                 };
                 println!("Mode actuel : {human}.");
-                println!("Pour changer : sparrow mode simple · sparrow mode pro");
+                println!(
+                    "Pour changer : sparrow mode simple · sparrow mode builder · sparrow mode pro"
+                );
             }
             Some(requested) => {
                 let normalized = requested.trim().to_lowercase();
-                if !matches!(normalized.as_str(), "simple" | "pro" | "auto") {
-                    eprintln!("Mode inconnu : « {requested} ». Choisis : simple, pro ou auto.");
+                if !matches!(normalized.as_str(), "simple" | "builder" | "pro" | "auto") {
+                    eprintln!(
+                        "Mode inconnu : « {requested} ». Choisis : simple, builder, pro ou auto."
+                    );
                 } else {
                     let mut updated = config.clone();
                     updated.experience.mode = normalized.clone();
@@ -1126,6 +1337,9 @@ async fn async_main() -> anyhow::Result<()> {
                                 }
                                 "simple" => {
                                     "Mode simple activé — je te parle en clair, sans jargon."
+                                }
+                                "builder" => {
+                                    "Mode builder activé — menus Run/Test/Refactor/Git/Debug."
                                 }
                                 _ => "Mode auto activé — simple par défaut.",
                             };
@@ -1470,6 +1684,7 @@ async fn handle_webview(
     agent_store: Option<Arc<dyn AgentStore>>,
     port: u16,
     bind: Option<String>,
+    fast_start: bool,
 ) -> anyhow::Result<()> {
     use sparrow::engine::Engine;
     use sparrow::router::BasicRouter;
@@ -1522,6 +1737,7 @@ async fn handle_webview(
     let events_for_runs = event_tx.clone();
     let approvals_for_runs = approvals.clone();
     let recorder_for_runs = recorder.clone();
+    let agent_store_for_runs = agent_store.clone();
     tokio::spawn(async move {
         // Tracks the currently running task so we can inject mid-run messages
         // and abort on stop. `inject_tx` forwards user text into the live run;
@@ -1652,10 +1868,21 @@ async fn handle_webview(
             let repo_head = current_repo_head();
             let providers = build_provider_brains(&current_config, &memory_for_runs, false);
             let router = Arc::new(BasicRouter::new(&current_config, providers));
+            // v0.9.1: the console run path previously omitted agent_store and
+            // hooks_config, so from the WebView the agent could NOT spawn
+            // sub-agents (the soul tells it to) and NO lifecycle hooks fired.
+            // Wire them so the console behaves exactly like the CLI in production.
+            let hooks_for_engine = current_config.hooks.clone();
             let mut engine = Engine::new(router, current_config)
                 .with_memory(memory_for_runs.clone())
                 .with_skills(skills_for_runs.clone())
-                .with_approval_handler(approvals_for_runs.clone());
+                .with_approval_handler(approvals_for_runs.clone())
+                .with_hooks_config(hooks_for_engine);
+            // agent_store is optional at the console layer; wire it when present
+            // so sub-agent spawning works from the WebView like it does in CLI.
+            if let Some(store) = &agent_store_for_runs {
+                engine = engine.with_agent_store(store.clone());
+            }
             // Apply the identity extracted at the top of the loop. The
             // model_override is consumed inside the engine by the existing
             // `__model:` parser when present in the task description, so we
@@ -1799,7 +2026,11 @@ async fn handle_webview(
     });
 
     let addr = bind_target.addr;
-    let url = format!("http://127.0.0.1:{}", port);
+    let url = if fast_start {
+        format!("http://127.0.0.1:{}?boot=0&fast=1", port)
+    } else {
+        format!("http://127.0.0.1:{}", port)
+    };
     println!("WebView console: {}", url);
     if bind_target.is_public {
         println!(
@@ -1810,21 +2041,25 @@ async fn handle_webview(
     }
     println!("Press Ctrl+C to stop.\n");
 
-    // Auto-open the browser for the local WebView cockpit.
-    // Fire-and-forget — the server keeps running regardless.
-    #[cfg(target_os = "windows")]
-    {
-        let _ = std::process::Command::new("cmd")
-            .args(["/c", "start", &url])
-            .spawn();
-    }
-    #[cfg(target_os = "linux")]
-    {
-        let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let _ = std::process::Command::new("open").arg(&url).spawn();
+    // Auto-open the browser for the normal local WebView cockpit. `--fast`
+    // leaves this to the caller so the server can bind immediately and scripts
+    // can measure /healthz without paying the OS browser-launch cost.
+    if !fast_start {
+        // Fire-and-forget — the server keeps running regardless.
+        #[cfg(target_os = "windows")]
+        {
+            let _ = std::process::Command::new("cmd")
+                .args(["/c", "start", &url])
+                .spawn();
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let _ = std::process::Command::new("xdg-open").arg(&url).spawn();
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let _ = std::process::Command::new("open").arg(&url).spawn();
+        }
     }
 
     let server = WebViewServer::new(

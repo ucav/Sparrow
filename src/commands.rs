@@ -509,6 +509,8 @@ mod tests {
             templates: Vec::new(),
             scripts: Vec::new(),
             assets: Vec::new(),
+            manifest_version: None,
+            allowed_tools: Vec::new(),
         }]));
         let commands = all_commands(Path::new("."), Path::new("."), Some(&skills));
         assert!(commands.iter().any(|c| c.name == "fix-ci"));

@@ -111,6 +111,9 @@ pub trait Tool: Send + Sync {
     fn metadata(&self) -> ToolMetadata {
         metadata_for(self.name(), self.risk())
     }
+    fn manifest(&self) -> ToolManifest {
+        ToolManifest::from_metadata(self.description(), self.metadata())
+    }
     async fn call(&self, args: serde_json::Value, ctx: &ToolCtx) -> anyhow::Result<ToolResult>;
 }
 
@@ -123,6 +126,43 @@ pub struct ToolMetadata {
     pub mutates_files: bool,
     pub network: bool,
     pub exec: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ToolManifest {
+    pub name: String,
+    pub description: String,
+    pub toolset: String,
+    pub risk: RiskLevel,
+    pub permissions: Vec<String>,
+}
+
+impl ToolManifest {
+    pub fn from_metadata(description: &str, metadata: ToolMetadata) -> Self {
+        let mut permissions = Vec::new();
+        if metadata.requires_auth {
+            permissions.push("auth".to_string());
+        }
+        if metadata.mutates_files {
+            permissions.push("files:write".to_string());
+        }
+        if metadata.network {
+            permissions.push("network".to_string());
+        }
+        if metadata.exec {
+            permissions.push("exec".to_string());
+        }
+        if permissions.is_empty() {
+            permissions.push("read".to_string());
+        }
+        Self {
+            name: metadata.name,
+            description: description.to_string(),
+            toolset: metadata.toolset,
+            risk: metadata.risk,
+            permissions,
+        }
+    }
 }
 
 pub const TOOLSETS: &[&str] = &[
@@ -269,6 +309,10 @@ impl ToolRegistry {
         self.tools.values().map(|tool| tool.metadata()).collect()
     }
 
+    pub fn manifests(&self) -> Vec<ToolManifest> {
+        self.tools.values().map(|tool| tool.manifest()).collect()
+    }
+
     pub fn metadata_for_surface(&self, surface: &str) -> Vec<ToolMetadata> {
         self.metadata()
             .into_iter()
@@ -280,6 +324,30 @@ impl ToolRegistry {
         self.tools
             .values()
             .filter(|tool| surface_allows(surface, &tool.metadata()))
+            .map(|t| super::provider::ToolSpec {
+                name: t.name().to_string(),
+                description: t.description().to_string(),
+                input_schema: t.schema(),
+            })
+            .collect()
+    }
+
+    pub fn to_specs_for_skill(
+        &self,
+        skill: &crate::capabilities::Skill,
+    ) -> Vec<super::provider::ToolSpec> {
+        if skill.allowed_tools.is_empty() {
+            return self.to_specs();
+        }
+        let allowed: std::collections::HashSet<String> = skill
+            .allowed_tools
+            .iter()
+            .map(|tool| tool.trim().to_ascii_lowercase())
+            .filter(|tool| !tool.is_empty())
+            .collect();
+        self.tools
+            .values()
+            .filter(|tool| allowed.contains(&tool.name().to_ascii_lowercase()))
             .map(|t| super::provider::ToolSpec {
                 name: t.name().to_string(),
                 description: t.description().to_string(),

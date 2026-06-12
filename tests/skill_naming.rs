@@ -50,6 +50,8 @@ fn duplicate_skill_not_proposed() {
             templates: Vec::new(),
             scripts: Vec::new(),
             assets: Vec::new(),
+            manifest_version: None,
+            allowed_tools: Vec::new(),
         })
         .unwrap();
 

@@ -1075,6 +1075,8 @@ mod tests {
             templates: Vec::new(),
             scripts: Vec::new(),
             assets: Vec::new(),
+            manifest_version: None,
+            allowed_tools: Vec::new(),
         };
         let score = skill.relevance("I need help with Rust error handling in my code");
         assert!(score > 0.0, "Should be relevant for matching context");
@@ -1100,6 +1102,8 @@ mod tests {
             templates: Vec::new(),
             scripts: Vec::new(),
             assets: Vec::new(),
+            manifest_version: None,
+            allowed_tools: Vec::new(),
         };
         let md = original.to_markdown();
         let parsed = Skill::from_markdown(&md, "test.skill.md");
@@ -1142,6 +1146,8 @@ mod tests {
             templates: Vec::new(),
             scripts: Vec::new(),
             assets: Vec::new(),
+            manifest_version: None,
+            allowed_tools: Vec::new(),
         };
         lib.add(skill).expect("add skill");
         let found = lib.get("test-skill");
@@ -1793,7 +1799,8 @@ mod tests {
     fn test_regression_tokio_sleep_in_sandbox() {
         // BUG 2: no std::thread::sleep in sandbox async code
         use std::fs;
-        let src = fs::read_to_string("src/sandbox/mod.rs").unwrap();
+        // sandbox moved to the sparrow-config crate in the v0.9.2 workspace split.
+        let src = fs::read_to_string("crates/sparrow-config/src/sandbox/mod.rs").unwrap();
         // Verify the sleep is tokio::time::sleep, not std::thread::sleep
         // (the source now uses tokio::time::sleep)
         assert!(

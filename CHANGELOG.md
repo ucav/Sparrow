@@ -2,6 +2,193 @@
 
 All notable changes to Sparrow will be documented in this file.
 
+## [0.9.2] — 2026-06-11 « The Ring »
+
+> v0.9.2 closes the ring: measure, stabilize, accelerate.
+> No public metric without proof in `./artifacts/`.
+
+### Ajouté — Phase 0 audit et baselines
+- **Audit v0.9.2 traçable** : `artifacts/audit-v092.md` capture l'état réel du
+  monocrate, des surfaces CLI/WebView/TUI, des endpoints, de la CI, des dettes
+  D1-D8 et des gaps v0.9.2.
+- **Baseline perf reproductible** : `artifacts/perf-baseline.md` consigne build
+  release propre, rebuild incrémental tool/engine, startup `hyperfine`,
+  `/healthz`, first paint Playwright, taille binaire et `cargo bloat`.
+- **Journal de décisions** : `artifacts/decisions-v092.md` documente les écarts
+  d'exécution, notamment le target dir isolé `target/v092-release`.
+
+### Ajouté — Phase 1 stabilisation
+- **Garde CI anti-stub Rust** : CI et nightly échouent maintenant si
+  `todo!()` ou `unimplemented!()` apparaît dans `src/**/*.rs`.
+- **Rapport de stubs honnêtes** : `artifacts/stub-audit-v092.md` distingue les
+  vrais stubs de production des mentions documentaires ou états expérimentaux
+  assumés.
+
+### Corrigé — Phase 1 stabilisation
+- **Formatage v0.9.1 remis au vert** : `cargo fmt --all -- --check` repasse
+  après formatage des changements existants dans `src/extras.rs`.
+- **Rapports `./artifacts/*.md` suivables** : `.gitignore` garde les artefacts
+  lourds ignorés mais autorise les rapports Markdown demandés par le plan.
+
+### Corrigé — Phase 2 performance : démarrage CLI (suivi)
+- **`--version`/`help` ne paient plus le runtime tokio** : `Cli::parse()` tourne
+  désormais avant la construction du runtime multi-thread (parse sur le thread
+  worker 16 MB pour éviter l'overflow Windows). Clap rend version/aide et sort
+  sans spawner les threads du runtime ni initialiser le tracing.
+  - Mesuré (release, 30 runs, même méthode avant/après) : `--version`
+    **38 ms → 34 ms** en moyenne, mais surtout **max 98 ms → 40 ms** et
+    **écart-type 11 ms → 2 ms**. La moyenne `hyperfine` de 361 ms précédemment
+    rapportée était un artefact de variance (pics de spawn du runtime sous
+    charge), pas une médiane — démarrage désormais **toujours < 50 ms**, sous la
+    cible de 100 ms et prévisible.
+- **Clarification dev-loop** : le rebuild **debug incrémental** (moteur touché)
+  est de **~9 s** — le vrai cycle de développement est rapide. Les ~191 s du
+  rapport concernent le rebuild **release** (`codegen-units = 1`,
+  `opt-level = "z"`), un compromis taille/vitesse qui ne s'applique qu'au
+  moment des releases/CI, pas au développement courant.
+
+### Changé — Phase 2 performance
+- **Workspace Cargo initial** : le contrat `event` vit maintenant dans
+  `crates/sparrow-core` et reste réexporté comme `sparrow::event` pour préserver
+  les imports existants.
+- **Extraction `sparrow-providers`** : les adapters de modèles (trait `Brain`,
+  Anthropic, OpenAI-compatible, Ollama, Responses, discovery, `sse_buffer`,
+  `tool_markup`, types `ModelCaps`/`Msg`/`ContentBlock`…) — ~3050 lignes —
+  vivent désormais dans `crates/sparrow-providers`, qui ne dépend que de
+  `sparrow-core`. `crate::provider::*` reste réexporté (zéro import cassé) et
+  `provider::detect` reste dans le binaire (il dépend du registre config +
+  onboarding). Toucher l'engine ne recompile plus ce cluster d'adapters.
+- **Extraction `sparrow-memory`** : la mémoire persistante (SQLite facts, FTS5,
+  graphe de connaissances, symbol index) + la redaction de secrets — ~2350
+  lignes — vivent dans `crates/sparrow-memory`, qui ne dépend que de
+  `sparrow-core` + `sparrow-providers`. Le type `Identity` a migré vers
+  `sparrow-core` pour casser le cycle `memory → engine`. `crate::memory::*` et
+  `crate::redaction::*` restent réexportés (zéro import cassé) ; la feature
+  `treesitter` est propagée à la crate.
+- **Extraction `sparrow-config`** : la couche fondamentale config + registre de
+  providers + store de credentials (`auth`) + `permissions` + `hooks` +
+  `sandbox` + `humanize` — ~4810 lignes — vivent dans `crates/sparrow-config`
+  (dépend de core + providers + intel). Cluster entièrement fermé (aucune dep
+  arrière sur engine/memory/tools). Les 6 modules restent réexportés ; la feature
+  `keyring` est propagée. Total modularisé : **~10 240 lignes** hors du monocrate
+  sur 5 crates (core, intel, providers, memory, config).
+- **Profil dev explicite** : `debug = "line-tables-only"`, incremental activé,
+  dépendances optimisées à `opt-level = 2`.
+- **Rapport perf après premier split** : `artifacts/perf-report.md` montre que
+  ce split pose la structure mais ne réduit pas encore les rebuilds tool/engine ;
+  l'extraction suivante devra déplacer des clusters d'implémentation plus gros.
+- **CI perf hebdo/manuelle** : `.github/workflows/perf.yml` mesure
+  `sparrow --version`, `sparrow help` et la taille du binaire release, avec
+  seuils initiaux issus de la baseline + 15 %.
+- **Console fast-start** : `sparrow console --fast` saute la découverte provider
+  au boot, désactive l'animation via `?boot=0&fast=1`, évite l'ouverture
+  automatique du navigateur et laisse les panneaux se charger à la demande.
+- **Préchargements WebView en idle** : les caches de panneaux/commandes se
+  préchargent via `requestIdleCallback` en mode normal et restent lazy en mode
+  fast.
+- **Profil release affiné** : le release profile utilise maintenant
+  `lto = "thin"` avec `strip = true` et `codegen-units = 1`.
+- **Plan B perf documenté** : les cibles startup/rebuild non atteintes restent
+  marquées comme telles dans `artifacts/perf-report.md`, avec la prochaine
+  extraction workspace et l'early-exit `--version/help` comme suites mesurables.
+
+### Ajouté — Phase 3 cœur agentique
+- **`sparrow audit`** : cartographie locale du repo, écrit
+  `./artifacts/audit-<timestamp>.md`, détecte `todo!()`/`unimplemented!()`,
+  TODO/FIXME et fichiers Rust suspects non reliés.
+- **`sparrow test [--fix]`** : détecte `cargo`, `npm` ou `pytest`, exécute le
+  runner et transmet l'échec au moteur de réparation si `--fix` est demandé.
+- **`sparrow commit`** : commit uniquement les changements staged, génère un
+  message prudent si absent et refuse les diff staged contenant des motifs de
+  secrets.
+- **`sparrow release prep`** : génère les notes de lancement et migration depuis
+  les artefacts locaux, sans métriques inventées.
+- **Flags de run prudents** : `--plan-first`, `--dry-run` et `--patch` sont
+  branchés ; dry/patch basculent la run en permission `read-only`.
+- **Garde anti-destruction S2** : les commandes `exec` contenant `rm -rf`,
+  `del /s`, `rmdir /s`, `git clean -fdx` ou `DROP TABLE` sont surclassées en
+  risque `Destructive` avant approbation.
+
+### Ajouté — Phase 4 TUI
+- **Profil `builder`** : `sparrow mode builder` est accepté, persistant, documenté
+  et le splash TUI affiche les entrées Run, Test, Refactor, Git, Debug et Replay.
+
+### Ajouté — Phase 5 WebView premium
+- **Cinq panneaux cockpit** : la rightbar WebView expose Timeline, Costs,
+  Roadmap, Watched releases et Autonomous tasks en plus des panneaux existants.
+  Timeline/Costs se nourrissent du flux WebSocket réel ; Roadmap/Releases/Runs
+  lisent des endpoints locaux.
+- **Endpoints premium** : `GET /intel/backlog`, `GET /intel/digests` et
+  `GET /runs` sont ajoutés. Les endpoints intel lisent uniquement le cache
+  SQLite local et ne déclenchent jamais de réseau.
+
+### Ajouté — Phase 6 compatibilité tools/skills
+- **Manifest skill v2** : un `manifest.toml` ou `manifest.json` optionnel à côté
+  du `SKILL.md` peut déclarer `version` et `allowed_tools`. Le registry sait
+  produire une liste de tools restreinte pour une skill invoquée.
+- **Manifest tools** : chaque tool expose un `ToolManifest` dérivé de son risque
+  et de ses métadonnées (`read`, `files:write`, `network`, `exec`, `auth`), aussi
+  disponible via `/tools`.
+
+### Ajouté — Phase 7 auto-amélioration
+- **Crate `sparrow-intel`** : scanner public opt-in pour GitHub Releases,
+  changelog URL et docs URL, cache SQLite, digests et backlog scoré.
+- **CLI `sparrow intel`** : `scan`, `report`, `backlog`, `watch`. Le réseau est
+  refusé par défaut si `intel.enabled=false`, sauf source/config passée
+  explicitement sur la commande.
+- **Preuve réelle** : `artifacts/intel-sources-v092.toml` scanne deux sources
+  publiques (`tokio-rs/tokio`, `rust-lang/rust`) et les commandes `report` /
+  `backlog` produisent des digests et tickets scorés depuis le cache.
+
+### Changé — Release
+- Version crate portée à `0.9.2` pour la release “The Ring”.
+
+## [Unreleased] — v0.9.1 « Le cerveau » (en cours)
+
+> v0.9 a rendu Sparrow *compréhensible*. v0.9.1 le rend *compétent* : il utilise
+> ses outils/skills, **apprend** vraiment, **range** ses livrables, et fait
+> tourner en console tout ce qui tournait déjà en CLI. Plan : `PLAN_v0.9.1.md`.
+
+### Corrigé — mémoire qui apprend enfin
+- **Bug d'amnésie du Distiller** (`src/extras.rs`) : la déduplication se faisait
+  sur la **clé seule** (`user:preference`, `user:language`…), génériques. Dès
+  qu'un run avait enregistré un fait d'un type, **plus aucun autre** du même type
+  n'était jamais sauvé → la mémoire saturait après le 1er run. Désormais la dédup
+  porte sur la paire **(clé, valeur)** : chaque fait distinct est conservé.
+- **Capture des consignes durables** : le Distiller détecte les formulations
+  « retiens / souviens-toi / désormais / toujours / je m'appelle / je préfère »
+  (FR + EN) dans les messages utilisateur et les enregistre **mot pour mot**
+  comme faits `user:directive:<hash>` (clés sans collision).
+- **Soul** : la section mémoire nomme désormais explicitement l'outil — « call
+  `memory` with `action:"add"` » dès qu'une info durable est donnée, avec exemple
+  ancré. Les modèles faibles ne devinaient pas qu'il fallait appeler l'outil.
+
+### Corrigé — l'agent ne perd plus ses capacités sur les tâches « simples »
+- **Catalogue de skills injecté à tous les tiers** : l'index (noms +
+  descriptions) était caché en mode lean (Trivial/Small) → sur une tâche
+  « simple » l'agent ne **voyait** aucun skill et n'en utilisait jamais.
+  L'index léger est maintenant toujours présent ; seuls les corps complets
+  (coûteux en tokens) restent réservés aux runs non-lean.
+- **Invariants d'action en mode lean** : « appelle les outils sans les narrer,
+  scanne les skills, vois le fichier avant d'éditer, sauve en mémoire, range dans
+  ./artifacts » sont rappelés même sur les tâches triviales.
+
+### Corrigé — la console se comporte enfin comme le CLI en production
+- **Sous-agents activés depuis la WebView** : le moteur console n'instanciait pas
+  `agent_store` → l'outil `subagent_spawn` ne pouvait rien lancer, alors que le
+  soul ordonne d'en spawner. Câblé (`main.rs`).
+- **Hooks de cycle de vie actifs en console** : `with_hooks_config` n'était jamais
+  appelé → aucun hook PreToolUse/PostToolUse/OnError configuré ne se déclenchait
+  depuis la WebView. Câblé.
+
+### Ajouté — discipline d'artefacts
+- **Convention `./artifacts/`** : le prompt système dit à l'agent de ranger ses
+  livrables générés (rapports, exports, code généré, diagrammes) dans
+  `./artifacts/`, sans polluer la racine ni déplacer les sources existantes.
+- Le panneau **Artifacts** de la WebView liste désormais `./artifacts/` (section
+  « deliverables ») en plus des fichiers édités et des uploads ; `GET /artifacts`
+  scanne les deux répertoires avec un champ `source`.
+
 ## [0.9.0] — 2026-06-11 « Anyone »
 
 > Accessibilité radicale : n'importe qui doit pouvoir comprendre et utiliser
@@ -71,6 +258,23 @@ All notable changes to Sparrow will be documented in this file.
 - **Thème « white »** : interface claire et nette (fond blanc, contrastes
   lisibles, bordures visibles), sélectionnable dans config → appearance ; le
   bouton thème alterne désormais captain → paper → white.
+- **Replay branché pour de vrai** : le bouton « ▸ replay » ouvre un sélecteur
+  des runs enregistrés (`GET /replays`) et rejoue le transcript choisi
+  (`GET /replay?run_id=`, ou le dernier run sans argument) — endpoints adossés
+  à `FsRecorder`, garde anti-traversée de chemin. Fini le `prompt()` d'ID.
+- **MCP & hooks visibles** : `GET /mcp/list` et `GET /hooks` exposent les
+  connecteurs MCP (`mcp_servers.json`) et les hooks de cycle de vie configurés ;
+  l'onglet config les rend proprement au lieu d'un « not exposed yet ».
+- **Markdown riche dans le chat** : la prose streamée rend gras, italique,
+  titres, listes, citations, tables, liens et code inline (échappé d'abord,
+  rendu type Claude Code Desktop) au lieu de texte brut.
+- **Ghost-text dans le composer** : suggestion grise inline tirée de
+  l'historique réel (`GET /history`) pendant la frappe ; `Tab` accepte, `Échap`
+  ignore — sensation de shell premium.
+- **Cheat-sheet clavier** (`Ctrl/⌘+/`) : overlay listant tous les raccourcis,
+  groupés par section, libellés ⌘ sur Mac.
+- **Quick-actions d'accueil** : puces cliquables (Répare / Explique / Plan /
+  Idées / Raccourcis) qui pré-remplissent le composer.
 - **Mockup v0.9** : `sparrow-cockpit-v0.9.0-mockup.html`.
 - **Focus/Cockpit** dans la console : Focus par défaut, une colonne lisible,
   toggle persistant, raccourci `Alt+F`; Cockpit garde les métriques avancées.

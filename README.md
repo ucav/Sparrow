@@ -65,6 +65,8 @@ Pour le détail technique complet, tout le mode pro est là — rien n'est retir
 | Git checkpoints + `rewind` per run | ❌ | ❌ | ⚠️ | ✅ |
 | Budget caps (`--max-cost-usd` / `--max-wall-secs`) | ❌ | ❌ | ❌ | ✅ |
 | WebView cockpit + TUI + JSON stream | ⚠️ TUI only | ⚠️ TUI only | ⚠️ TUI only | ✅ all three |
+| Right-side tools panel (Preview/Diff/Terminal/Files/Tasks/Plan) | ⚠️ | ❌ | ❌ | ✅ event-driven |
+| Live app preview embed (port auto-detect) | ❌ | ❌ | ❌ | ✅ |
 | MCP server **host + client** | ✅ | ⚠️ | ❌ | ✅ |
 | Drop-in import (`~/.claude/`, Codex, OpenCode) | n/a | ❌ | ❌ | ✅ |
 | Multi-agent swarm (Planner → Coder → Verifier) | ❌ | ❌ | ❌ | ✅ |
@@ -103,8 +105,13 @@ See [`docs/comparison/vs-competitors.md`](docs/comparison/vs-competitors.md) for
 **🖥️ Focus / Cockpit — one console, two views**
 - **Focus** (default): one column, large text, three buttons — `[✅ Okay] [↩️ Undo] [❓ Explain]`
 - **Cockpit**: full 3-column view with swarm lanes, config, routing — zero power lost
-- Right-side tools panel: Preview, Diff, Terminal, Files, Tasks, Plan — all fed by real events
-- New **white theme** alongside Captain and Paper
+- **Right-side tools panel**: Preview, Diff, Terminal, Files, Background tasks, Plan — every panel fed by **real events**, never mock data. Opens manually (`Ctrl/⌘+Shift+S`) or auto-opens on diffs, failed tasks, and plan updates with priority rules that never nag.
+- **Live preview detection**: probes common dev ports (3000, 4200, 5173, 8080…) and embeds your running app in an iframe — or type any URL.
+- **Replay, finally one click**: `▸ replay` lists your recorded runs and re-renders any transcript — no more pasting run IDs.
+- **Ghost-text autocomplete**: fish-style inline suggestion from your real command history — `Tab` to accept.
+- **Rich Markdown in chat**: streamed prose renders bold, headings, lists, tables, links, and inline code.
+- **Keyboard cheat-sheet**: `Ctrl/⌘+/` shows every shortcut, grouped and platform-aware.
+- New **white theme** alongside Captain and Paper — clean, high-contrast light UI.
 
 **🛡️ Safety net**
 - `sparrow budget 2€` — set spending cap in human language
@@ -112,7 +119,7 @@ See [`docs/comparison/vs-competitors.md`](docs/comparison/vs-competitors.md) for
 - Contract displayed before ANY file modification: "I'll modify 2 files. Checkpoint created ✓. Proceed?"
 
 **Install & distribution**
-- **`cargo install sparrow-cli` v0.9.0** on crates.io
+- **`cargo install sparrow-cli` v0.9.2** on crates.io
 - **Pre-built binaries** for Linux, macOS, Windows on every release
 - **`sparrow launch`** — zero-question first launch with free/local fallbacks; `--pro` keeps the expert wizard
 
@@ -129,12 +136,13 @@ See [`docs/comparison/vs-competitors.md`](docs/comparison/vs-competitors.md) for
 | | |
 |---|---|
 | **Model routing** | Budget-aware fallback chains across Ollama, NVIDIA, Anthropic, OpenAI-compatible APIs, and 30+ registry entries |
-| **WebView cockpit** | Live route/token/cost/context at `http://127.0.0.1:9339/` with drawer panels, slash palette, and agent picker |
+| **WebView cockpit** | Live route/token/cost/context at `http://127.0.0.1:9339/` with drawer panels, premium Timeline/Costs/Roadmap/Releases/Runs panels, slash palette, and agent picker |
 | **Terminal-native** | Animated TUI cockpit, `sparrow run`, `sparrow chat`, `--json` output, replay, memory, gateway |
 | **Rollback safety** | Auto-checkpoint before any mutating action; `sparrow rewind <id>` to restore |
 | **Persistent context** | SQLite facts + knowledge graph, SOUL-style `.agent.md` files, guarded skill registry, full transcripts |
 | **Browser/computer-use** | Playwright-backed browser tool and gated screenshot/click/type computer primitive |
 | **Gateway** | Telegram, Discord, Slack, WebSocket API — wired with honest errors, not silent failures |
+| **Release intel** | Opt-in public release scanner (`sparrow intel scan`) with local digests/backlog and no network when disabled |
 
 <br>
 <p align="center">
