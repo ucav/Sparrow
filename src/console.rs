@@ -2009,7 +2009,7 @@ async fn list_replays() -> axum::extract::Json<serde_json::Value> {
                 .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
                 .and_then(|v| v.get("task").and_then(|t| t.as_str()).map(String::from))
                 .unwrap_or_default();
-            Some(serde_json::json!({
+            serde_json::json!({
                 "run_id": id,
                 "task": task,
                 "event_count": meta.get("event_count").cloned().unwrap_or(0.into()),
