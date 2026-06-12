@@ -1997,7 +1997,7 @@ async fn list_replays() -> axum::extract::Json<serde_json::Value> {
     let mut items: Vec<serde_json::Value> = rec
         .list_transcripts()
         .into_iter()
-        .filter_map(|id| {
+        .map(|id| {
             let meta_path = transcripts_dir().join(&id).join("meta.json");
             let inputs_path = transcripts_dir().join(&id).join("inputs.json");
             let meta: serde_json::Value = std::fs::read_to_string(&meta_path)
