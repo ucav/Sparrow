@@ -331,6 +331,13 @@ mod tests {
         assert!(auto.is_simple(), "auto resolves to simple (human-first)");
         assert_eq!(auto.lang(), Lang::Fr);
 
+        let builder = ExperienceConfig {
+            mode: "builder".into(),
+            language: "fr".into(),
+        };
+        assert!(builder.is_builder());
+        assert!(!builder.is_simple());
+
         // Default is auto/auto → simple.
         assert!(ExperienceConfig::default().is_simple());
     }

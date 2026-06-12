@@ -17,15 +17,33 @@ impl RunId {
     }
 }
 
+impl Default for RunId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CheckpointId {
     pub fn new() -> Self {
         Self(uuid::Uuid::new_v4().to_string())
     }
 }
 
+impl Default for CheckpointId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AgentId {
     pub fn new() -> Self {
         Self(uuid::Uuid::new_v4().to_string())
+    }
+}
+
+impl Default for AgentId {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

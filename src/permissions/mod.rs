@@ -253,6 +253,37 @@ impl PermissionConfig {
     }
 }
 
+pub fn effective_risk_for_tool(
+    tool_name: &str,
+    base: RiskLevel,
+    args: &serde_json::Value,
+) -> RiskLevel {
+    if tool_name == "exec" {
+        if let Some(command) = args.get("command").and_then(|value| value.as_str()) {
+            if is_forced_destructive_command(command) {
+                return RiskLevel::Destructive;
+            }
+        }
+    }
+    base
+}
+
+pub fn is_forced_destructive_command(command: &str) -> bool {
+    let lower = command.to_ascii_lowercase();
+    let compact = lower.replace(['"', '\''], "");
+    let patterns = [
+        "rm -rf",
+        "rm -fr",
+        "del /s",
+        "rmdir /s",
+        "rd /s",
+        "git clean -fdx",
+        "git clean -xdf",
+        "drop table",
+    ];
+    patterns.iter().any(|pattern| compact.contains(pattern))
+}
+
 fn verdict(decision: Decision, reason: impl Into<String>) -> PermissionVerdict {
     PermissionVerdict {
         decision,
@@ -375,6 +406,19 @@ mod tests {
             surface: None,
         });
         assert_eq!(verdict.decision, Decision::AskUser);
+    }
+
+    #[test]
+    fn exec_dangerous_command_escalates_to_destructive() {
+        let risk = effective_risk_for_tool(
+            "exec",
+            RiskLevel::Exec,
+            &serde_json::json!({"command":"git clean -fdx"}),
+        );
+        assert_eq!(risk, RiskLevel::Destructive);
+        assert!(is_forced_destructive_command("DROP TABLE users"));
+        assert!(is_forced_destructive_command("rmdir /s target"));
+        assert!(!is_forced_destructive_command("cargo test --all-targets"));
     }
 }
 pub mod store;

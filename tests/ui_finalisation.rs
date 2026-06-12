@@ -265,6 +265,8 @@ fn console_html_matches_v0_3_visual_polish_contract() {
     for marker in [
         "id=\"appVersion\"",
         "get('boot')==='0'",
+        "get('fast')==='1'",
+        "requestIdleCallback",
         ".boot-overlay[hidden]",
         "route-step",
         "class=\"arrow\"",

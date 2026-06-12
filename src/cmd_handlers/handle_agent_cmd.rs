@@ -684,6 +684,7 @@ pub async fn run_tui(
 
     let mut tui = Tui::new()
         .with_experience(config.experience.is_simple(), config.experience.lang())
+        .with_experience_mode(config.experience.mode_name())
         .with_channels(task_tx, event_rx);
     drop(inject_holder);
     tokio::task::spawn_blocking(move || tui.run()).await??;

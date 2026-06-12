@@ -1,0 +1,79 @@
+name: Perf
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    - cron: "0 4 * * 1"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  MAX_VERSION_MS: "272"
+  MAX_HELP_MS: "414"
+  MAX_BINARY_BYTES: "15061000"
+
+jobs:
+  startup-and-size:
+    name: Startup + binary size
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install hyperfine
+        run: cargo install hyperfine --locked
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Measure startup
+        run: |
+          mkdir -p artifacts/perf
+          hyperfine --warmup 2 --export-json artifacts/perf/startup.json \
+            './target/release/sparrow --version' \
+            './target/release/sparrow help'
+
+      - name: Check perf thresholds
+        shell: python
+        run: |
+          import json
+          import os
+          import pathlib
+          import sys
+
+          data = json.loads(pathlib.Path("artifacts/perf/startup.json").read_text())
+          results = {item["command"]: item["mean"] * 1000 for item in data["results"]}
+          version_ms = results["./target/release/sparrow --version"]
+          help_ms = results["./target/release/sparrow help"]
+          size = pathlib.Path("target/release/sparrow").stat().st_size
+
+          max_version = float(os.environ["MAX_VERSION_MS"])
+          max_help = float(os.environ["MAX_HELP_MS"])
+          max_size = int(os.environ["MAX_BINARY_BYTES"])
+
+          print(f"version_ms={version_ms:.1f} max={max_version:.1f}")
+          print(f"help_ms={help_ms:.1f} max={max_help:.1f}")
+          print(f"binary_bytes={size} max={max_size}")
+
+          failures = []
+          if version_ms > max_version:
+            failures.append(f"--version startup {version_ms:.1f}ms > {max_version:.1f}ms")
+          if help_ms > max_help:
+            failures.append(f"help startup {help_ms:.1f}ms > {max_help:.1f}ms")
+          if size > max_size:
+            failures.append(f"binary size {size} > {max_size}")
+
+          if failures:
+            print("\n".join(failures), file=sys.stderr)
+            sys.exit(1)
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: perf-startup
+          path: artifacts/perf/startup.json

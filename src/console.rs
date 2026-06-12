@@ -238,6 +238,9 @@ impl WebViewServer {
             .route("/providers/scan", post(scan_provider_models))
             .route("/routing", get(get_routing).post(save_routing))
             .route("/todos", get(list_todos))
+            .route("/runs", get(list_runs))
+            .route("/intel/digests", get(get_intel_digests))
+            .route("/intel/backlog", get(get_intel_backlog))
             .route("/preview/scan", get(scan_preview_servers))
             .route("/replay", get(replay_run))
             .route("/replays", get(list_replays))
@@ -495,6 +498,7 @@ struct ToolsResponse {
     message: String,
     toolsets: Vec<String>,
     tools: Vec<crate::tools::ToolMetadata>,
+    manifests: Vec<crate::tools::ToolManifest>,
 }
 
 #[derive(serde::Deserialize)]
@@ -915,6 +919,12 @@ async fn get_plugins(
 }
 
 async fn get_tools() -> axum::extract::Json<ToolsResponse> {
+    let tools = crate::tools::known_tool_metadata(None);
+    let manifests = tools
+        .iter()
+        .cloned()
+        .map(|meta| crate::tools::ToolManifest::from_metadata("", meta))
+        .collect();
     axum::extract::Json(ToolsResponse {
         ok: true,
         message: "loaded".into(),
@@ -922,7 +932,8 @@ async fn get_tools() -> axum::extract::Json<ToolsResponse> {
             .iter()
             .map(|set| set.to_string())
             .collect(),
-        tools: crate::tools::known_tool_metadata(None),
+        tools,
+        manifests,
     })
 }
 
@@ -1510,10 +1521,18 @@ async fn upload_attachment(
     }))
 }
 
-async fn list_artifacts() -> axum::extract::Json<serde_json::Value> {
-    let dir = attachments_dir();
-    let mut items: Vec<AttachmentMetadata> = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(&dir) {
+/// The dedicated directory where the agent is told to place generated
+/// deliverables (see the "Where to put what you create" prompt section).
+pub fn artifacts_dir() -> std::path::PathBuf {
+    std::env::current_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .join("artifacts")
+}
+
+/// Collect files (one level deep) from `dir` into `items`, tagging each with
+/// `source` so the WebView can group uploads vs generated deliverables.
+fn collect_artifact_files(dir: &std::path::Path, items: &mut Vec<serde_json::Value>, source: &str) {
+    if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if !path.is_file() {
@@ -1532,19 +1551,30 @@ async fn list_artifacts() -> axum::extract::Json<serde_json::Value> {
                 .to_string();
             let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
             let kind = classify_attachment(&mime, &ext);
-            items.push(AttachmentMetadata {
-                name,
-                path: path.to_string_lossy().to_string(),
-                size,
-                mime,
-                kind,
-            });
+            items.push(serde_json::json!({
+                "name": name,
+                "path": path.to_string_lossy().to_string(),
+                "size": size,
+                "mime": mime,
+                "kind": kind,
+                "source": source,
+            }));
         }
     }
+}
+
+async fn list_artifacts() -> axum::extract::Json<serde_json::Value> {
+    let attachments = attachments_dir();
+    let generated = artifacts_dir();
+    let mut items: Vec<serde_json::Value> = Vec::new();
+    // Generated deliverables first (the dedicated ./artifacts/ dir), then uploads.
+    collect_artifact_files(&generated, &mut items, "generated");
+    collect_artifact_files(&attachments, &mut items, "upload");
     axum::extract::Json(serde_json::json!({
         "ok": true,
         "items": items,
-        "dir": dir.to_string_lossy().to_string(),
+        "dir": attachments.to_string_lossy().to_string(),
+        "artifacts_dir": generated.to_string_lossy().to_string(),
     }))
 }
 
@@ -1961,6 +1991,78 @@ async fn list_todos() -> axum::extract::Json<serde_json::Value> {
     axum::extract::Json(serde_json::json!({ "ok": true, "todos": todos }))
 }
 
+async fn intel_cache_from_state(
+    state: &AppState,
+) -> anyhow::Result<(sparrow_intel::IntelCache, bool, usize)> {
+    let (state_dir, enabled, source_count) = state
+        .config
+        .as_ref()
+        .and_then(|cfg| {
+            cfg.read()
+                .ok()
+                .map(|c| (c.state_dir.clone(), c.intel.enabled, c.intel.sources.len()))
+        })
+        .unwrap_or_else(|| {
+            (
+                dirs::state_dir()
+                    .or_else(dirs::data_local_dir)
+                    .or_else(dirs::data_dir)
+                    .unwrap_or_else(|| std::path::PathBuf::from("."))
+                    .join("sparrow"),
+                false,
+                0,
+            )
+        });
+    let cache = sparrow_intel::IntelCache::open(sparrow_intel::default_cache_path(&state_dir))?;
+    Ok((cache, enabled, source_count))
+}
+
+/// `GET /intel/digests` — read cached public release digests. This endpoint is
+/// deliberately network-free; `sparrow intel scan` is the opt-in fetch step.
+async fn get_intel_digests(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> axum::extract::Json<serde_json::Value> {
+    match intel_cache_from_state(&state).await {
+        Ok((cache, enabled, source_count)) => {
+            let digests = cache.digests(30).unwrap_or_default();
+            axum::extract::Json(serde_json::json!({
+                "ok": true,
+                "enabled": enabled,
+                "sources": source_count,
+                "digests": digests,
+            }))
+        }
+        Err(e) => axum::extract::Json(serde_json::json!({
+            "ok": false,
+            "message": e.to_string(),
+            "digests": [],
+        })),
+    }
+}
+
+/// `GET /intel/backlog` — scored tickets derived from cached digests. No
+/// network access; empty cache means honest empty state.
+async fn get_intel_backlog(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> axum::extract::Json<serde_json::Value> {
+    match intel_cache_from_state(&state).await {
+        Ok((cache, enabled, source_count)) => {
+            let tickets = cache.backlog(30).unwrap_or_default();
+            axum::extract::Json(serde_json::json!({
+                "ok": true,
+                "enabled": enabled,
+                "sources": source_count,
+                "tickets": tickets,
+            }))
+        }
+        Err(e) => axum::extract::Json(serde_json::json!({
+            "ok": false,
+            "message": e.to_string(),
+            "tickets": [],
+        })),
+    }
+}
+
 fn session_db_path() -> std::path::PathBuf {
     dirs::state_dir()
         .or_else(dirs::data_local_dir)
@@ -2025,6 +2127,50 @@ async fn list_replays() -> axum::extract::Json<serde_json::Value> {
             .cmp(a["created_at"].as_str().unwrap_or(""))
     });
     axum::extract::Json(serde_json::json!({ "ok": true, "replays": items }))
+}
+
+/// `GET /runs` — WebView view of known autonomous/long runs. Active local
+/// sidebar tasks are still sourced from WS events; persisted runs come from
+/// transcripts so the panel remains useful across refreshes.
+async fn list_runs() -> axum::extract::Json<serde_json::Value> {
+    use crate::runtime::recorder::{FsRecorder, Replayer};
+    let rec = FsRecorder::new(transcripts_dir());
+    let mut runs: Vec<serde_json::Value> = rec
+        .list_transcripts()
+        .into_iter()
+        .map(|id| {
+            let meta_path = transcripts_dir().join(&id).join("meta.json");
+            let inputs_path = transcripts_dir().join(&id).join("inputs.json");
+            let meta: serde_json::Value = std::fs::read_to_string(&meta_path)
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or(serde_json::Value::Null);
+            let task = std::fs::read_to_string(&inputs_path)
+                .ok()
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                .and_then(|v| v.get("task").and_then(|t| t.as_str()).map(String::from))
+                .unwrap_or_default();
+            serde_json::json!({
+                "run_id": id,
+                "task": task,
+                "status": "recorded",
+                "active": false,
+                "event_count": meta.get("event_count").cloned().unwrap_or(0.into()),
+                "created_at": meta.get("created_at").cloned().unwrap_or("".into()),
+            })
+        })
+        .collect();
+    runs.sort_by(|a, b| {
+        b["created_at"]
+            .as_str()
+            .unwrap_or("")
+            .cmp(a["created_at"].as_str().unwrap_or(""))
+    });
+    axum::extract::Json(serde_json::json!({
+        "ok": true,
+        "active": [],
+        "runs": runs,
+    }))
 }
 
 /// `GET /replay?run_id=<id>` — return a recorded transcript's public events so

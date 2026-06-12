@@ -399,6 +399,7 @@ pub struct Tui {
     /// v0.9 Pilier 2: when true, status events render as plain-language lines
     /// via the humanize table instead of technical labels.
     simple: bool,
+    experience_mode: String,
     lang: crate::humanize::Lang,
 }
 
@@ -464,6 +465,7 @@ impl Tui {
             ),
             // Default to the human-first experience; run_tui overrides from config.
             simple: true,
+            experience_mode: "simple".into(),
             lang: crate::humanize::Lang::Fr,
         };
         tui.show_splash();
@@ -477,6 +479,13 @@ impl Tui {
         self
     }
 
+    pub fn with_experience_mode(mut self, mode: &str) -> Self {
+        self.experience_mode = mode.trim().to_lowercase();
+        self.lines.clear();
+        self.show_splash();
+        self
+    }
+
     /// Show a rich-formatted splash screen demonstrating TUI capabilities.
     fn show_splash(&mut self) {
         self.add_line("══════════════════════════════════════", LogStyle::Brand, 0);
@@ -487,10 +496,43 @@ impl Tui {
         );
         self.add_line("══════════════════════════════════════", LogStyle::Brand, 0);
         self.add_line("", LogStyle::Cmd, 0);
-        self.add_line("Try these (type in the input below):", LogStyle::Cmd, 0);
-        self.add_line("  @nova     → Tab to toggle Nova agent", LogStyle::Dim, 0);
-        self.add_line("  /help     → list all slash commands", LogStyle::Dim, 0);
-        self.add_line("  Ctrl+R    → rewind to last checkpoint", LogStyle::Dim, 0);
+        match self.experience_mode.as_str() {
+            "builder" => {
+                self.add_line("Builder menu:", LogStyle::Cmd, 0);
+                self.add_line("  Run       → sparrow run \"task\"", LogStyle::Dim, 0);
+                self.add_line("  Test      → sparrow test --fix", LogStyle::Dim, 0);
+                self.add_line(
+                    "  Refactor  → /refactor or refactor-safely",
+                    LogStyle::Dim,
+                    0,
+                );
+                self.add_line("  Git       → sparrow commit --dry-run", LogStyle::Dim, 0);
+                self.add_line("  Debug     → /tools + terminal output", LogStyle::Dim, 0);
+                self.add_line("  Replay    → sparrow replay <run>", LogStyle::Dim, 0);
+            }
+            "pro" => {
+                self.add_line("Expert palette:", LogStyle::Cmd, 0);
+                self.add_line(
+                    "  /help     → all commands and skill entries",
+                    LogStyle::Dim,
+                    0,
+                );
+                self.add_line("  --json    → CI/headless event stream", LogStyle::Dim, 0);
+                self.add_line("  Ctrl+R    → rewind to last checkpoint", LogStyle::Dim, 0);
+                self.add_line("  Ctrl+I    → inject into the active run", LogStyle::Dim, 0);
+            }
+            _ => {
+                self.add_line("Try these (type in the input below):", LogStyle::Cmd, 0);
+                self.add_line("  Répare mon problème  → sparrow fix", LogStyle::Dim, 0);
+                self.add_line(
+                    "  Explique             → sparrow explique",
+                    LogStyle::Dim,
+                    0,
+                );
+                self.add_line("  Mes fichiers         → /files", LogStyle::Dim, 0);
+                self.add_line("  Réglages             → /permissions", LogStyle::Dim, 0);
+            }
+        }
         self.add_line("", LogStyle::Cmd, 0);
         // Demo: formatted code
         self.add_line("# RICH RENDERING DEMO", LogStyle::Gold, 0);
@@ -2274,6 +2316,26 @@ mod v09_tests {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(joined.contains("a") && joined.contains("b"));
+    }
+
+    #[test]
+    fn builder_mode_renders_builder_menu() {
+        let tui = Tui::new()
+            .with_experience(false, crate::humanize::Lang::Fr)
+            .with_experience_mode("builder");
+        let text = tui
+            .lines
+            .iter()
+            .map(|line| line.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            text.contains("Builder menu"),
+            "missing builder header:\n{text}"
+        );
+        for item in ["Run", "Test", "Refactor", "Git", "Debug", "Replay"] {
+            assert!(text.contains(item), "missing builder item {item}:\n{text}");
+        }
     }
 
     #[test]

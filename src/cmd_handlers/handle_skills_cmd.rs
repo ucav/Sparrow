@@ -58,6 +58,8 @@ pub fn handle_skills(
                 templates: Vec::new(),
                 scripts: Vec::new(),
                 assets: Vec::new(),
+                manifest_version: None,
+                allowed_tools: Vec::new(),
             };
             library.add(skill)?;
             println!(

@@ -25,6 +25,7 @@ impl Distiller {
         let mut style_hints: Vec<String> = Vec::new();
         let mut pref_hints: Vec<String> = Vec::new();
         let mut convention_hints: Vec<String> = Vec::new();
+        let mut directive_hints: Vec<String> = Vec::new();
 
         for event in events {
             match event {
@@ -59,6 +60,10 @@ impl Distiller {
                 Event::Message { text, role, .. } if role == "user" => {
                     // User messages often contain preferences
                     detect_preferences(text, &mut pref_hints);
+                    // Explicit durable directives ("remember that…", "I prefer…",
+                    // "always…", "my name is…"). Captured verbatim so memory keeps
+                    // the real instruction, not a generic hint.
+                    detect_directives(text, &mut directive_hints);
                 }
                 _ => {}
             }
@@ -70,6 +75,7 @@ impl Distiller {
         dedup(&mut style_hints);
         dedup(&mut pref_hints);
         dedup(&mut convention_hints);
+        dedup(&mut directive_hints);
 
         // ── 3. Save facts ───────────────────────────────────────────────────
         for lang in &lang_hints {
@@ -87,6 +93,11 @@ impl Distiller {
         for conv in &convention_hints {
             facts.push(fact("project:convention", conv));
         }
+        // Each captured directive becomes its own fact keyed by a stable hash of
+        // its text, so distinct directives never collide on a shared key.
+        for d in &directive_hints {
+            facts.push(fact(&format!("user:directive:{}", short_hash(d)), d));
+        }
         // Tools used 3+ times become learned preferences
         for (tool, count) in &tool_usage {
             if *count >= 3 {
@@ -98,12 +109,22 @@ impl Distiller {
         }
 
         // ── 4. Persist (skip duplicates) ────────────────────────────────────
+        // v0.9.1 fix: deduplicate on the (key, value) PAIR, not the key alone.
+        // The keys here are generic buckets (`user:preference`, `user:language`,
+        // `user:directive`…). The previous `existing_keys.contains(key)` check
+        // meant that once ONE `user:preference` existed, no further preference
+        // — with a different value — was ever stored. Memory saturated after the
+        // first run and stopped learning. Comparing the full pair lets every new
+        // distinct fact land while still skipping exact repeats.
         let existing = memory.all_facts();
-        let existing_keys: Vec<&str> = existing.iter().map(|f| f.key.as_str()).collect();
+        let existing_pairs: std::collections::HashSet<(String, String)> = existing
+            .iter()
+            .map(|f| (f.key.clone(), f.value.clone()))
+            .collect();
         let mut saved = 0;
 
         for fact in &facts {
-            if !existing_keys.contains(&fact.key.as_str()) {
+            if !existing_pairs.contains(&(fact.key.clone(), fact.value.clone())) {
                 let _ = memory.remember(fact.clone());
                 saved += 1;
             }
@@ -199,6 +220,71 @@ fn detect_preferences(text: &str, hints: &mut Vec<String>) {
     }
 }
 
+/// Capture explicit durable directives from a user message — the kind of thing
+/// a user expects the agent to *remember* across sessions. We keep the user's
+/// actual sentence (trimmed to one line, capped) rather than a generic hint, so
+/// recall is faithful. Triggers on common FR/EN durable-intent markers.
+fn detect_directives(text: &str, hints: &mut Vec<String>) {
+    const MARKERS: &[&str] = &[
+        // English
+        "remember that",
+        "remember to",
+        "don't forget",
+        "keep in mind",
+        "note that",
+        "from now on",
+        "always ",
+        "never ",
+        "my name is",
+        "i prefer",
+        "i want you to",
+        "make sure to",
+        "going forward",
+        // French
+        "retiens",
+        "souviens-toi",
+        "souviens toi",
+        "n'oublie pas",
+        "note que",
+        "désormais",
+        "dorénavant",
+        "toujours ",
+        "jamais ",
+        "je m'appelle",
+        "je préfère",
+        "je veux que",
+        "à partir de maintenant",
+        "rappelle-toi",
+    ];
+    let lower = text.to_lowercase();
+    for line in text.lines() {
+        let line_l = line.to_lowercase();
+        if MARKERS.iter().any(|m| line_l.contains(m)) {
+            let cleaned = line.trim();
+            if cleaned.len() >= 4 {
+                // Cap to keep a fact compact; preserve the real instruction.
+                let capped: String = cleaned.chars().take(220).collect();
+                hints.push(capped);
+            }
+        }
+    }
+    // Fallback: single-line message with a marker but no line break handled above.
+    if hints.is_empty() && MARKERS.iter().any(|m| lower.contains(m)) {
+        let capped: String = text.trim().chars().take(220).collect();
+        if capped.len() >= 4 {
+            hints.push(capped);
+        }
+    }
+}
+
+/// Short stable hex hash for deriving collision-free fact keys from text.
+fn short_hash(s: &str) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    s.trim().to_lowercase().hash(&mut h);
+    format!("{:08x}", (h.finish() & 0xffff_ffff) as u32)
+}
+
 fn detect_conventions(path: &str, hints: &mut Vec<String>) {
     let conv_patterns: &[(&str, &str)] = &[
         ("src/main.rs", "Rust binary project structure"),
@@ -231,6 +317,52 @@ fn fact(key: &str, value: &str) -> Fact {
         value: value.to_string(),
         created_at: chrono::Utc::now().format("%Y-%m-%d").to_string(),
         updated_at: chrono::Utc::now().format("%Y-%m-%d").to_string(),
+    }
+}
+
+#[cfg(test)]
+mod distiller_tests {
+    use super::*;
+
+    #[test]
+    fn detect_directives_captures_english_durable_instructions() {
+        let mut h = Vec::new();
+        detect_directives("Remember that I want reports in ./artifacts", &mut h);
+        assert!(h.iter().any(|s| s.contains("reports in ./artifacts")));
+
+        let mut h2 = Vec::new();
+        detect_directives("From now on, always run the tests first", &mut h2);
+        assert_eq!(h2.len(), 1);
+    }
+
+    #[test]
+    fn detect_directives_captures_french_durable_instructions() {
+        let mut h = Vec::new();
+        detect_directives("Retiens que je m'appelle Abdou", &mut h);
+        assert!(h.iter().any(|s| s.contains("Abdou")));
+
+        let mut h2 = Vec::new();
+        detect_directives("Désormais, range les livrables dans ./out", &mut h2);
+        assert_eq!(h2.len(), 1);
+    }
+
+    #[test]
+    fn detect_directives_ignores_ordinary_text() {
+        let mut h = Vec::new();
+        detect_directives("Can you fix the bug in main.rs please?", &mut h);
+        assert!(h.is_empty());
+    }
+
+    #[test]
+    fn short_hash_is_stable_and_distinct() {
+        // Stable across calls, case/whitespace-insensitive, distinct for
+        // different content — so directive keys never collide.
+        assert_eq!(
+            short_hash("use ./artifacts"),
+            short_hash("  USE ./artifacts  ")
+        );
+        assert_ne!(short_hash("prefer async"), short_hash("prefer sync"));
+        assert_eq!(short_hash("x").len(), 8);
     }
 }
 
@@ -775,6 +907,7 @@ impl Profile {
                     surfaces: Default::default(),
                     experience: Default::default(),
                     skills: Default::default(),
+                    intel: Default::default(),
                     permissions: Default::default(),
                     hooks: Default::default(),
                     theme: "captain".into(),

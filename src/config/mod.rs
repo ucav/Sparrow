@@ -26,6 +26,8 @@ pub struct Config {
     #[serde(default)]
     pub skills: SkillsConfig,
     #[serde(default)]
+    pub intel: IntelConfig,
+    #[serde(default)]
     pub permissions: PermissionConfig,
     #[serde(default)]
     pub hooks: Vec<crate::hooks::Hook>,
@@ -205,8 +207,9 @@ pub struct ProviderConfig {
 /// messaging `surfaces` (telegram/discord/…) which are a different concept.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExperienceConfig {
-    /// "simple" (plain language, no jargon) · "pro" (full technical output) ·
-    /// "auto" (start simple, the user can switch). Default: auto.
+    /// "simple" (plain language, no jargon) · "builder" (common build
+    /// workflows) · "pro" (full technical output) · "auto" (start simple, the
+    /// user can switch). Default: auto.
     #[serde(default = "default_experience_mode")]
     pub mode: String,
     /// "fr" · "en" · "auto" (follow the system locale, fall back to French).
@@ -236,7 +239,24 @@ impl ExperienceConfig {
     /// resolves to simple — v0.9's default is human-first; pro users opt in
     /// with `mode = "pro"` (or `sparrow mode pro`).
     pub fn is_simple(&self) -> bool {
-        !self.mode.eq_ignore_ascii_case("pro")
+        matches!(self.mode_name(), "simple" | "auto")
+    }
+
+    pub fn is_builder(&self) -> bool {
+        self.mode_name() == "builder"
+    }
+
+    pub fn mode_name(&self) -> &str {
+        let mode = self.mode.trim();
+        if mode.eq_ignore_ascii_case("simple") {
+            "simple"
+        } else if mode.eq_ignore_ascii_case("builder") {
+            "builder"
+        } else if mode.eq_ignore_ascii_case("pro") {
+            "pro"
+        } else {
+            "auto"
+        }
     }
 
     /// Resolved display language for the human layer.
@@ -338,6 +358,42 @@ fn default_curator_cron() -> String {
     "0 */6 * * *".into()
 }
 
+/// Public competitive intelligence is opt-in. When disabled, Sparrow may read
+/// cached digests/backlog locally, but it must not fetch the network.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct IntelConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub sources: Vec<IntelSourceConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IntelSourceConfig {
+    pub name: String,
+    pub kind: String,
+    pub url: String,
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
+
+impl IntelSourceConfig {
+    pub fn to_sparrow_intel(&self) -> Option<sparrow_intel::SourceConfig> {
+        let kind = match self.kind.trim().to_lowercase().as_str() {
+            "github_releases" => sparrow_intel::SourceKind::GithubReleases,
+            "changelog_url" => sparrow_intel::SourceKind::ChangelogUrl,
+            "docs_url" => sparrow_intel::SourceKind::DocsUrl,
+            _ => return None,
+        };
+        Some(sparrow_intel::SourceConfig {
+            name: self.name.clone(),
+            kind,
+            url: self.url.clone(),
+            tags: self.tags.clone(),
+        })
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -348,6 +404,7 @@ impl Default for Config {
             surfaces: SurfaceConfig::default(),
             experience: ExperienceConfig::default(),
             skills: SkillsConfig::default(),
+            intel: IntelConfig::default(),
             permissions: PermissionConfig::default(),
             hooks: Vec::new(),
             theme: "captain".into(),
@@ -429,6 +486,7 @@ impl ConfigStore for FsConfigStore {
                 surfaces: SurfaceConfig::default(),
                 experience: ExperienceConfig::default(),
                 skills: SkillsConfig::default(),
+                intel: IntelConfig::default(),
                 permissions: PermissionConfig::default(),
                 hooks: Vec::new(),
                 theme: "captain".into(),

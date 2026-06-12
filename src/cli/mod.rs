@@ -94,6 +94,18 @@ pub enum Commands {
         /// follow the task: `sparrow run "..." --json`)
         #[arg(long)]
         json: bool,
+
+        /// Show a read-only plan first; continue only with `--yes`.
+        #[arg(long)]
+        plan_first: bool,
+
+        /// Read-only dry run: propose actions/diffs, but deny mutating tools.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// Patch mode: ask for a unified diff only and deny mutating tools.
+        #[arg(long)]
+        patch: bool,
     },
 
     /// Create a read-only execution plan for a task
@@ -102,6 +114,25 @@ pub enum Commands {
         task: String,
 
         /// Emit JSON instead of Markdown
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Audit the current repository: architecture map, stubs, TODO/FIXME, and
+    /// suspicious Rust files. Writes `./artifacts/audit-<timestamp>.md`.
+    Audit {
+        /// Emit JSON instead of Markdown path output
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Detect and run the project test suite (`cargo`, `npm`, or `pytest`).
+    Test {
+        /// If tests fail, hand the failure to Sparrow's repair loop.
+        #[arg(long)]
+        fix: bool,
+
+        /// Emit JSON instead of human-readable output.
         #[arg(long)]
         json: bool,
     },
@@ -146,12 +177,41 @@ pub enum Commands {
         pro: bool,
     },
 
+    /// Create a clean git commit from staged changes after a secret scan.
+    Commit {
+        /// Commit message. If omitted, Sparrow generates a conservative one
+        /// from the staged diff stat.
+        #[arg(short, long)]
+        message: Option<String>,
+
+        /// Show what would be committed without running `git commit`.
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Release workflow helpers.
+    Release {
+        #[command(subcommand)]
+        action: ReleaseAction,
+    },
+
+    /// Public release intelligence (opt-in network scan, local cache reports).
+    Intel {
+        #[command(subcommand)]
+        action: IntelAction,
+    },
+
     /// Launch webview console (HTTP + WebSocket)
     #[command(visible_aliases = ["montre", "show"])]
     Console {
         /// TCP port for the webview HTTP/WS server
         #[arg(long, default_value = "9339")]
         port: u16,
+
+        /// Fast start: skip boot animation, eager panel preloads, and boot-time
+        /// provider discovery. Panels still load lazily when opened.
+        #[arg(long)]
+        fast: bool,
     },
 
     /// Réparer un problème — décris ce qui ne va pas, Sparrow diagnostique
@@ -218,11 +278,11 @@ pub enum Commands {
         term: Vec<String>,
     },
 
-    /// Choisir comment Sparrow te parle : simple (langage clair, zéro jargon),
-    /// pro (sortie technique complète) ou auto. Sans argument : affiche le
-    /// mode actuel.
+    /// Choisir comment Sparrow te parle : simple (langage clair), builder
+    /// (workflows build), pro (sortie technique complète) ou auto. Sans
+    /// argument : affiche le mode actuel.
     Mode {
-        /// « simple », « pro » ou « auto ».
+        /// « simple », « builder », « pro » ou « auto ».
         mode: Option<String>,
     },
 
@@ -524,6 +584,65 @@ pub enum GithubAction {
     Status,
     /// Fetch CI logs for a workflow run id (via `gh run view --log`)
     Logs { run_id: String },
+}
+
+#[derive(Subcommand)]
+pub enum ReleaseAction {
+    /// Prepare launch notes and migration notes from local artifacts.
+    Prep {
+        /// Show the target files without writing them.
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum IntelAction {
+    /// Fetch configured or explicit public sources into the local intel cache.
+    Scan {
+        /// TOML file containing [[source]] entries.
+        #[arg(long)]
+        config: Option<PathBuf>,
+
+        /// Explicit source as kind:name:url, e.g.
+        /// github_releases:Codex:https://github.com/openai/codex
+        #[arg(long)]
+        source: Vec<String>,
+
+        /// Max releases per GitHub source.
+        #[arg(long, default_value_t = 5)]
+        limit: usize,
+
+        /// Emit JSON instead of a human summary.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Show cached release digests without network access.
+    Report {
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Show cached scored backlog tickets without network access.
+    Backlog {
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Repeated opt-in scan loop. Requires intel.enabled=true or explicit sources.
+    Watch {
+        #[arg(long, default_value_t = 3600)]
+        interval: u64,
+        #[arg(long)]
+        config: Option<PathBuf>,
+        #[arg(long)]
+        source: Vec<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -862,6 +981,77 @@ mod tests {
     }
 
     #[test]
+    fn console_fast_flag_parses() {
+        match Cli::parse_from(["sparrow", "console", "--fast"]).command {
+            Some(Commands::Console { port, fast }) => {
+                assert_eq!(port, 9339);
+                assert!(fast);
+            }
+            _ => panic!("expected Console"),
+        }
+    }
+
+    #[test]
+    fn v092_audit_and_test_commands_parse() {
+        assert!(matches!(
+            Cli::parse_from(["sparrow", "audit", "--json"]).command,
+            Some(Commands::Audit { json: true })
+        ));
+        assert!(matches!(
+            Cli::parse_from(["sparrow", "test", "--fix"]).command,
+            Some(Commands::Test {
+                fix: true,
+                json: false
+            })
+        ));
+        assert!(matches!(
+            Cli::parse_from(["sparrow", "commit", "--dry-run", "-m", "feat: x"]).command,
+            Some(Commands::Commit {
+                dry_run: true,
+                message: Some(_)
+            })
+        ));
+        assert!(matches!(
+            Cli::parse_from(["sparrow", "release", "prep"]).command,
+            Some(Commands::Release {
+                action: ReleaseAction::Prep { dry_run: false }
+            })
+        ));
+        assert!(matches!(
+            Cli::parse_from([
+                "sparrow",
+                "intel",
+                "scan",
+                "--source",
+                "github_releases:Codex:https://github.com/openai/codex",
+                "--limit",
+                "2"
+            ])
+            .command,
+            Some(Commands::Intel {
+                action: IntelAction::Scan { limit: 2, .. }
+            })
+        ));
+        assert!(matches!(
+            Cli::parse_from([
+                "sparrow",
+                "run",
+                "fix it",
+                "--plan-first",
+                "--dry-run",
+                "--patch"
+            ])
+            .command,
+            Some(Commands::Run {
+                plan_first: true,
+                dry_run: true,
+                patch: true,
+                ..
+            })
+        ));
+    }
+
+    #[test]
     fn v09_human_commands_parse() {
         assert!(matches!(
             Cli::parse_from(["sparrow", "idees", "enseignant"]).command,
@@ -893,6 +1083,10 @@ mod tests {
         }
         match Cli::parse_from(["sparrow", "mode", "pro"]).command {
             Some(Commands::Mode { mode }) => assert_eq!(mode.as_deref(), Some("pro")),
+            _ => panic!("expected Mode"),
+        }
+        match Cli::parse_from(["sparrow", "mode", "builder"]).command {
+            Some(Commands::Mode { mode }) => assert_eq!(mode.as_deref(), Some("builder")),
             _ => panic!("expected Mode"),
         }
     }
