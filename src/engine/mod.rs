@@ -1671,6 +1671,39 @@ impl Engine {
                 break;
             }
 
+            // Wall-clock cap: hard stop if the run has run too long (--max-wall-secs).
+            if let Some(max_secs) = self.config.budget.max_wall_secs {
+                if run_started_at.elapsed().as_secs() >= max_secs {
+                    let msg = format!("Time limit reached: {}s wall-clock cap", max_secs);
+                    send(Event::Error {
+                        run: run_id.clone(),
+                        message: msg.clone(),
+                    });
+                    let _ = self.hooks.execute(&HookEvent::OnError, &msg).await;
+                    had_error = true;
+                    last_error = Some("wall-clock limit".into());
+                    break;
+                }
+            }
+            // Token cap: hard stop if total tokens exceed --max-tokens.
+            if let Some(max_tok) = self.config.budget.max_tokens {
+                if total_input + total_output >= max_tok {
+                    let msg = format!(
+                        "Token limit reached: {} of {} token cap",
+                        total_input + total_output,
+                        max_tok
+                    );
+                    send(Event::Error {
+                        run: run_id.clone(),
+                        message: msg.clone(),
+                    });
+                    let _ = self.hooks.execute(&HookEvent::OnError, &msg).await;
+                    had_error = true;
+                    last_error = Some("token limit".into());
+                    break;
+                }
+            }
+
             // Budget check: hard stop if exceeded
             if cost_usd + estimated_cost_unconfirmed >= budget_session {
                 let msg = format!(
@@ -1875,7 +1908,44 @@ impl Engine {
                 note: format!("consulting {} · parsing request…", brain.id()),
             });
 
-            match brain.complete(req).await {
+            // Bound the model call itself by the remaining wall budget: a slow
+            // or hung connection can otherwise blow the time cap before a
+            // single stream event arrives (the in-stream timeout never fires
+            // if the request never starts streaming). A timeout here STOPS the
+            // run — it must not fall through to the transient-retry path.
+            let completion = match self.config.budget.max_wall_secs {
+                Some(max_secs) => {
+                    let elapsed = run_started_at.elapsed().as_secs();
+                    if elapsed >= max_secs {
+                        None
+                    } else {
+                        let remaining =
+                            std::time::Duration::from_secs(max_secs.saturating_sub(elapsed).max(1));
+                        tokio::time::timeout(remaining, brain.complete(req))
+                            .await
+                            .ok()
+                    }
+                }
+                None => Some(brain.complete(req).await),
+            };
+            let complete_result = match completion {
+                Some(r) => r,
+                None => {
+                    let msg = format!(
+                        "Time limit reached: {}s wall-clock cap",
+                        self.config.budget.max_wall_secs.unwrap_or(0)
+                    );
+                    send(Event::Error {
+                        run: run_id.clone(),
+                        message: msg.clone(),
+                    });
+                    let _ = self.hooks.execute(&HookEvent::OnError, &msg).await;
+                    had_error = true;
+                    last_error = Some("wall-clock limit".into());
+                    break;
+                }
+            };
+            match complete_result {
                 Ok(mut stream) => {
                     // The provider answered — clear the transient-failure budget.
                     transient_retries = 0;
@@ -1905,7 +1975,34 @@ impl Engine {
                     // provider returns 400.
                     let mut reasoning_buf: String = String::new();
 
-                    while let Some(event) = stream.next().await {
+                    loop {
+                        // Wall-clock guard, tight: bound the wait for the next
+                        // stream event by the remaining time budget. A single
+                        // slow/hung completion (or a provider slow to send its
+                        // first byte) is interrupted here — the per-turn check
+                        // alone only fires between turns, so a long stream used
+                        // to blow past the cap. The outer loop's wall check then
+                        // ends the run honestly before any new model call.
+                        let next_event = match self.config.budget.max_wall_secs {
+                            Some(max_secs) => {
+                                let elapsed = run_started_at.elapsed().as_secs();
+                                if elapsed >= max_secs {
+                                    break;
+                                }
+                                let remaining = std::time::Duration::from_secs(
+                                    max_secs.saturating_sub(elapsed).max(1),
+                                );
+                                match tokio::time::timeout(remaining, stream.next()).await {
+                                    Ok(ev) => ev,
+                                    Err(_) => break, // wall cap hit while waiting
+                                }
+                            }
+                            None => stream.next().await,
+                        };
+                        let event = match next_event {
+                            Some(ev) => ev,
+                            None => break,
+                        };
                         match event {
                             BrainEvent::TextDelta(text) => {
                                 assistant_text.push_str(&text);
@@ -2213,23 +2310,30 @@ impl Engine {
                                                 stop_after_tool_result = true;
                                                 continue;
                                             }
-                                            let checkpoints =
-                                                GitCheckpoints::new(workspace.root.clone());
-                                            if let Ok(cp_id) = checkpoints
-                                                .snapshot(&format!("pre-{}", proposed.tool_name))
-                                            {
-                                                let _ = event_tx.send(Event::CheckpointCreated {
-                                                    run: run_id.clone(),
-                                                    id: cp_id,
-                                                    label: format!("pre-{}", proposed.tool_name),
-                                                });
-                                                let _ = self
-                                                    .hooks
-                                                    .execute(
-                                                        &HookEvent::PostCheckpoint,
-                                                        &proposed.tool_name,
-                                                    )
-                                                    .await;
+                                            if self.config.defaults.checkpointing {
+                                                let checkpoints =
+                                                    GitCheckpoints::new(workspace.root.clone());
+                                                if let Ok(cp_id) = checkpoints.snapshot(&format!(
+                                                    "pre-{}",
+                                                    proposed.tool_name
+                                                )) {
+                                                    let _ =
+                                                        event_tx.send(Event::CheckpointCreated {
+                                                            run: run_id.clone(),
+                                                            id: cp_id,
+                                                            label: format!(
+                                                                "pre-{}",
+                                                                proposed.tool_name
+                                                            ),
+                                                        });
+                                                    let _ = self
+                                                        .hooks
+                                                        .execute(
+                                                            &HookEvent::PostCheckpoint,
+                                                            &proposed.tool_name,
+                                                        )
+                                                        .await;
+                                                }
                                             }
                                         }
 
@@ -2254,6 +2358,7 @@ impl Engine {
                                                 run: run_id.clone(),
                                                 id: id.clone(),
                                                 blocks: vec![Block::Text(reason.clone())],
+                                                is_error: true,
                                             });
                                             tool_output_seen_this_completion = true;
                                             tool_results_pending.push((
@@ -2332,6 +2437,7 @@ impl Engine {
                                             run: run_id.clone(),
                                             id: id.clone(),
                                             blocks,
+                                            is_error,
                                         });
                                         // Surface writes as DiffApplied so the artifacts
                                         // ledger sees files that fs_write/edit/multi_edit
@@ -2435,24 +2541,30 @@ impl Engine {
                                                     stop_after_tool_result = true;
                                                     continue;
                                                 }
-                                                let checkpoints =
-                                                    GitCheckpoints::new(workspace.root.clone());
-                                                if let Ok(cp_id) = checkpoints
-                                                    .snapshot(&format!("pre-{}", approval_name))
-                                                {
-                                                    let _ =
-                                                        event_tx.send(Event::CheckpointCreated {
-                                                            run: run_id.clone(),
-                                                            id: cp_id,
-                                                            label: format!("pre-{}", approval_name),
-                                                        });
-                                                    let _ = self
-                                                        .hooks
-                                                        .execute(
-                                                            &HookEvent::PostCheckpoint,
-                                                            &approval_name,
-                                                        )
-                                                        .await;
+                                                if self.config.defaults.checkpointing {
+                                                    let checkpoints =
+                                                        GitCheckpoints::new(workspace.root.clone());
+                                                    if let Ok(cp_id) = checkpoints
+                                                        .snapshot(&format!("pre-{}", approval_name))
+                                                    {
+                                                        let _ = event_tx.send(
+                                                            Event::CheckpointCreated {
+                                                                run: run_id.clone(),
+                                                                id: cp_id,
+                                                                label: format!(
+                                                                    "pre-{}",
+                                                                    approval_name
+                                                                ),
+                                                            },
+                                                        );
+                                                        let _ = self
+                                                            .hooks
+                                                            .execute(
+                                                                &HookEvent::PostCheckpoint,
+                                                                &approval_name,
+                                                            )
+                                                            .await;
+                                                    }
                                                 }
                                             }
                                             let hook_results = self
@@ -2470,6 +2582,7 @@ impl Engine {
                                                     run: run_id.clone(),
                                                     id: approval_id.clone(),
                                                     blocks: vec![Block::Text(reason.clone())],
+                                                    is_error: true,
                                                 });
                                                 tool_output_seen_this_completion = true;
                                                 tool_results_pending.push((
@@ -2516,6 +2629,7 @@ impl Engine {
                                                 run: run_id.clone(),
                                                 id: approval_id.clone(),
                                                 blocks,
+                                                is_error,
                                             });
                                             let _ = self
                                                 .hooks
@@ -2534,6 +2648,7 @@ impl Engine {
                                                 run: run_id.clone(),
                                                 id: approval_id.clone(),
                                                 blocks: vec![Block::Text("Denied by user".into())],
+                                                is_error: true,
                                             });
                                             tool_output_seen_this_completion = true;
                                             tool_results_pending.push((
@@ -2556,6 +2671,7 @@ impl Engine {
                                             blocks: vec![Block::Text(
                                                 "Denied by autonomy policy".into(),
                                             )],
+                                            is_error: true,
                                         });
                                         tool_output_seen_this_completion = true;
                                         tool_results_pending.push((

@@ -237,6 +237,12 @@ impl WebViewServer {
             .route("/artifacts", get(list_artifacts))
             .route("/providers/scan", post(scan_provider_models))
             .route("/routing", get(get_routing).post(save_routing))
+            .route("/todos", get(list_todos))
+            .route("/preview/scan", get(scan_preview_servers))
+            .route("/replay", get(replay_run))
+            .route("/replays", get(list_replays))
+            .route("/mcp/list", get(list_mcp_servers))
+            .route("/hooks", get(list_hooks))
             .route("/update/check", get(check_update_api))
             .route(
                 "/ws",
@@ -249,7 +255,22 @@ impl WebViewServer {
                             // trailing event — harmless for a log feed).
                             let rx = state.event_tx.subscribe();
                             let snapshot: Vec<Event> = recent.lock().iter().cloned().collect();
-                            ws.on_upgrade(move |socket| handle_ws(socket, rx, snapshot))
+                            // v0.9 Pilier 2: resolve the experience mode/language
+                            // so the WS layer can attach a plain-language `human`
+                            // field to each event in simple mode (one table,
+                            // server-side — no duplication on the frontend).
+                            let (simple, lang) = state
+                                .config
+                                .as_ref()
+                                .and_then(|c| {
+                                    c.read().ok().map(|cfg| {
+                                        (cfg.experience.is_simple(), cfg.experience.lang())
+                                    })
+                                })
+                                .unwrap_or((true, crate::humanize::Lang::Fr));
+                            ws.on_upgrade(move |socket| {
+                                handle_ws(socket, rx, snapshot, simple, lang)
+                            })
                         }
                     },
                 ),
@@ -1851,6 +1872,95 @@ async fn get_history(
     })
 }
 
+/// Common local dev-server ports the Preview panel probes: Node/CRA/Express
+/// (3000/3001), Angular (4200), Astro (4321), Vite (5173/5174), Flask/uvicorn
+/// (5000/8000), php/http.server (8080/8081/8888), Hugo (1313), Streamlit (8501).
+const PREVIEW_SCAN_PORTS: &[u16] = &[
+    3000, 3001, 4200, 4321, 5000, 5173, 5174, 8000, 8080, 8081, 8501, 8888, 1313,
+];
+
+/// `GET /preview/scan` — probe the loopback interface for live HTTP dev
+/// servers so the Preview panel shows what is actually running (no guessing,
+/// no fakes). The console's own port is excluded via the request Host header.
+async fn scan_preview_servers(
+    headers: axum::http::HeaderMap,
+) -> axum::extract::Json<serde_json::Value> {
+    let self_port: Option<u16> = headers
+        .get(axum::http::header::HOST)
+        .and_then(|h| h.to_str().ok())
+        .and_then(|h| h.rsplit(':').next())
+        .and_then(|p| p.parse().ok());
+    let client = match reqwest::Client::builder()
+        .timeout(Duration::from_millis(600))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => {
+            return axum::extract::Json(serde_json::json!({ "ok": false, "servers": [] }));
+        }
+    };
+    let probes = PREVIEW_SCAN_PORTS
+        .iter()
+        .copied()
+        .filter(|p| Some(*p) != self_port)
+        .map(|port| {
+            let client = client.clone();
+            async move {
+                let url = format!("http://127.0.0.1:{port}/");
+                let resp = client.get(&url).send().await.ok()?;
+                let status = resp.status().as_u16();
+                // Any HTTP answer (including 404) means a live server.
+                Some(serde_json::json!({ "url": url, "port": port, "status": status }))
+            }
+        });
+    let servers: Vec<serde_json::Value> = futures::future::join_all(probes)
+        .await
+        .into_iter()
+        .flatten()
+        .collect();
+    axum::extract::Json(serde_json::json!({ "ok": true, "servers": servers }))
+}
+
+/// `GET /todos` — read-only view over the `todo` tool's SQLite table so the
+/// WebView Plan panel can render the agent's real task list (objective steps,
+/// status). Reads the same DB the tool writes (`state_dir/sparrow/sparrow.db`);
+/// a missing DB or table degrades to an empty list instead of a 500.
+async fn list_todos() -> axum::extract::Json<serde_json::Value> {
+    let db_path = dirs::state_dir()
+        .or_else(dirs::data_local_dir)
+        .or_else(dirs::data_dir)
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("sparrow")
+        .join("sparrow.db");
+    let todos = tokio::task::spawn_blocking(move || -> Vec<serde_json::Value> {
+        let Ok(conn) = rusqlite::Connection::open_with_flags(
+            &db_path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        ) else {
+            return Vec::new();
+        };
+        let Ok(mut stmt) = conn.prepare(
+            "SELECT id, content, status, updated_at FROM todos ORDER BY created_at LIMIT 100",
+        ) else {
+            return Vec::new();
+        };
+        stmt.query_map([], |row| {
+            Ok(serde_json::json!({
+                "id": row.get::<_, String>(0)?,
+                "content": row.get::<_, String>(1)?,
+                "status": row.get::<_, String>(2)?,
+                "updated_at": row.get::<_, i64>(3)?,
+            }))
+        })
+        .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        .unwrap_or_default()
+    })
+    .await
+    .unwrap_or_default();
+    axum::extract::Json(serde_json::json!({ "ok": true, "todos": todos }))
+}
+
 fn session_db_path() -> std::path::PathBuf {
     dirs::state_dir()
         .or_else(dirs::data_local_dir)
@@ -1858,6 +1968,180 @@ fn session_db_path() -> std::path::PathBuf {
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("sparrow")
         .join("sessions.db")
+}
+
+/// Default-profile transcripts dir — mirrors the resolution in main.rs.
+/// (Profile-scoped consoles record under profiles/<name>/transcripts; the
+/// replay endpoints serve the default tree, which is what `sparrow console`
+/// without --profile uses.)
+fn transcripts_dir() -> std::path::PathBuf {
+    dirs::state_dir()
+        .or_else(dirs::data_local_dir)
+        .or_else(dirs::data_dir)
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("sparrow")
+        .join("transcripts")
+}
+
+#[derive(serde::Deserialize)]
+struct ReplayQuery {
+    #[serde(default)]
+    run_id: Option<String>,
+}
+
+/// `GET /replays` — list recorded run transcripts (most recent first) so the
+/// WebView replay button can offer real runs instead of a blind prompt.
+async fn list_replays() -> axum::extract::Json<serde_json::Value> {
+    use crate::runtime::recorder::{FsRecorder, Replayer};
+    let rec = FsRecorder::new(transcripts_dir());
+    let mut items: Vec<serde_json::Value> = rec
+        .list_transcripts()
+        .into_iter()
+        .filter_map(|id| {
+            let meta_path = transcripts_dir().join(&id).join("meta.json");
+            let inputs_path = transcripts_dir().join(&id).join("inputs.json");
+            let meta: serde_json::Value = std::fs::read_to_string(&meta_path)
+                .ok()
+                .and_then(|s| serde_json::from_str(&s).ok())
+                .unwrap_or(serde_json::Value::Null);
+            let task = std::fs::read_to_string(&inputs_path)
+                .ok()
+                .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                .and_then(|v| v.get("task").and_then(|t| t.as_str()).map(String::from))
+                .unwrap_or_default();
+            Some(serde_json::json!({
+                "run_id": id,
+                "task": task,
+                "event_count": meta.get("event_count").cloned().unwrap_or(0.into()),
+                "created_at": meta.get("created_at").cloned().unwrap_or("".into()),
+            }))
+        })
+        .collect();
+    // meta.created_at is "YYYY-MM-DD HH:MM:SS" — lexicographic sort works.
+    items.sort_by(|a, b| {
+        b["created_at"]
+            .as_str()
+            .unwrap_or("")
+            .cmp(a["created_at"].as_str().unwrap_or(""))
+    });
+    axum::extract::Json(serde_json::json!({ "ok": true, "replays": items }))
+}
+
+/// `GET /replay?run_id=<id>` — return a recorded transcript's public events so
+/// the WebView can re-render the run. Without `run_id`, replays the most
+/// recent transcript. The chrome ▸ replay button has pointed here since v0.3;
+/// the endpoint finally exists.
+async fn replay_run(
+    axum::extract::Query(q): axum::extract::Query<ReplayQuery>,
+) -> axum::extract::Json<serde_json::Value> {
+    use crate::runtime::recorder::{FsRecorder, Replayer};
+    let rec = FsRecorder::new(transcripts_dir());
+    let run_id = match q.run_id.filter(|s| !s.trim().is_empty()) {
+        Some(id) => id.trim().to_string(),
+        None => {
+            // Most recent transcript by meta.created_at.
+            let mut best: Option<(String, String)> = None;
+            for id in rec.list_transcripts() {
+                let created =
+                    std::fs::read_to_string(transcripts_dir().join(&id).join("meta.json"))
+                        .ok()
+                        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+                        .and_then(|v| {
+                            v.get("created_at")
+                                .and_then(|c| c.as_str())
+                                .map(String::from)
+                        })
+                        .unwrap_or_default();
+                if best.as_ref().map(|(_, c)| created > *c).unwrap_or(true) {
+                    best = Some((id, created));
+                }
+            }
+            match best {
+                Some((id, _)) => id,
+                None => {
+                    return axum::extract::Json(serde_json::json!({
+                        "ok": false,
+                        "message": "no recorded runs yet — run a task first",
+                        "events": [],
+                    }));
+                }
+            }
+        }
+    };
+    // Path-traversal guard: transcript ids are directory names, never paths.
+    if run_id.contains(['/', '\\', '.']) {
+        return axum::extract::Json(serde_json::json!({
+            "ok": false, "message": "invalid run id", "events": [],
+        }));
+    }
+    match rec.load(&run_id) {
+        Some(t) => {
+            let events: Vec<&Event> = t.events.iter().filter(|e| e.is_public()).collect();
+            axum::extract::Json(serde_json::json!({
+                "ok": true,
+                "run_id": t.run_id,
+                "task": t.inputs.task,
+                "events": events,
+            }))
+        }
+        None => axum::extract::Json(serde_json::json!({
+            "ok": false,
+            "message": format!("transcript '{}' not found", run_id),
+            "events": [],
+        })),
+    }
+}
+
+/// `GET /mcp/list` — list configured MCP connectors (from the same
+/// `mcp_servers.json` the runtime loads) so the config panel's "MCP" tab shows
+/// real state instead of "not exposed yet".
+async fn list_mcp_servers(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> axum::extract::Json<serde_json::Value> {
+    use crate::capabilities::mcp::{BasicMcpClient, McpClient};
+    let config_dir = state
+        .config
+        .as_ref()
+        .and_then(|cfg| cfg.read().ok().map(|c| c.config_dir.clone()))
+        .unwrap_or_else(|| {
+            dirs::config_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("."))
+                .join("sparrow")
+        });
+    let client = BasicMcpClient::new(config_dir.clone());
+    let servers: Vec<serde_json::Value> = client
+        .list_servers()
+        .await
+        .into_iter()
+        .map(|s| {
+            serde_json::json!({
+                "name": s.name,
+                "transport": format!("{:?}", s.transport).to_lowercase(),
+                "command": s.command,
+                "args": s.args,
+                "url": s.url,
+                "allow_tools": s.allow_tools,
+            })
+        })
+        .collect();
+    axum::extract::Json(serde_json::json!({
+        "ok": true,
+        "servers": servers,
+        "config_path": config_dir.join("mcp_servers.json").to_string_lossy(),
+    }))
+}
+
+/// `GET /hooks` — list configured lifecycle hooks from the live config so the
+/// config panel's "hooks" tab shows real state.
+async fn list_hooks(
+    axum::extract::State(state): axum::extract::State<Arc<AppState>>,
+) -> axum::extract::Json<serde_json::Value> {
+    let hooks = state
+        .config
+        .as_ref()
+        .and_then(|cfg| cfg.read().ok().map(|c| c.hooks.clone()))
+        .unwrap_or_default();
+    axum::extract::Json(serde_json::json!({ "ok": true, "hooks": hooks }))
 }
 
 async fn get_security(
@@ -2125,16 +2409,36 @@ async fn save_routing(
     })
 }
 
+/// Serialize an event to JSON for the WS feed. In simple mode, attach a
+/// plain-language `human` line (from the one humanize table) and a `simple`
+/// flag so the frontend can render the human layer without duplicating the
+/// table. Returns `None` only if serialization fails.
+fn encode_event(event: &Event, simple: bool, lang: crate::humanize::Lang) -> Option<String> {
+    if !simple {
+        return serde_json::to_string(event).ok();
+    }
+    let mut value = serde_json::to_value(event).ok()?;
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("simple".into(), serde_json::Value::Bool(true));
+        if let Some(human) = crate::humanize::humanize(event, lang) {
+            obj.insert("human".into(), serde_json::Value::String(human));
+        }
+    }
+    serde_json::to_string(&value).ok()
+}
+
 async fn handle_ws(
     mut socket: axum::extract::ws::WebSocket,
     mut event_rx: tokio::sync::broadcast::Receiver<Event>,
     snapshot: Vec<Event>,
+    simple: bool,
+    lang: crate::humanize::Lang,
 ) {
     tracing::info!("WebSocket connected, replaying {} events", snapshot.len());
     // Replay the current run so far, so a refresh mid-run never shows a
     // blank feed. The snapshot only holds public events.
     for event in &snapshot {
-        if let Ok(json) = serde_json::to_string(event) {
+        if let Some(json) = encode_event(event, simple, lang) {
             use axum::extract::ws::Message;
             if socket.send(Message::Text(json.into())).await.is_err() {
                 return;
@@ -2149,7 +2453,7 @@ async fn handle_ws(
                         if !event.is_public() {
                             continue;
                         }
-                        if let Ok(json) = serde_json::to_string(&event) {
+                        if let Some(json) = encode_event(&event, simple, lang) {
                             use axum::extract::ws::Message;
                             if socket.send(Message::Text(json.into())).await.is_err() {
                                 break;

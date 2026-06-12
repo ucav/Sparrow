@@ -19,7 +19,7 @@ use sparrow::config::{ConfigStore, FsConfigStore, ProviderConfig};
 use sparrow::console::WebViewServer;
 use sparrow::memory::{Memory, SqliteMemory};
 use sparrow::runtime::recorder::{FsRecorder, Recorder, Replayer, RunInputs};
-use sparrow::runtime::scheduler::{MemoryScheduler, Scheduler};
+use sparrow::runtime::scheduler::MemoryScheduler;
 use sparrow::tui::Tui;
 // Cross-handler helpers still used directly by main's dispatcher.
 use sparrow::cmd_handlers::handle_agent_cmd::{
@@ -115,6 +115,7 @@ async fn async_main() -> anyhow::Result<()> {
             budget: Default::default(),
             providers: Default::default(),
             surfaces: Default::default(),
+            experience: Default::default(),
             skills: Default::default(),
             permissions: sparrow::permissions::PermissionConfig {
                 store: sparrow::permissions::store::PermissionStore::load(&active_config_dir),
@@ -232,30 +233,16 @@ async fn async_main() -> anyhow::Result<()> {
     // Initialize scheduler
     let scheduler = Arc::new(MemoryScheduler::new().with_memory(memory.clone()));
 
-    // ── First-launch detection (§16) ─────────────────────────────────
-    // If no config.toml exists yet, run the conversational Setup Agent
-    // before launching the TUI — so the user is greeted with onboarding,
-    // not a blank cockpit with no providers.
+    // ── First-launch detection (§16 / v0.9) ──────────────────────────
+    // Default path is now zero-question: create a free-first config and get to
+    // the user's prompt. The older setup agent remains behind `launch --pro`.
     let is_first_launch = !active_config_dir.join("config.toml").exists();
     if is_first_launch && cli.command.is_none() {
-        println!("First launch detected — running setup...\n");
-        let setup_result = sparrow::onboarding::setup_agent::run_setup_agent(
-            &config,
-            &config_store,
-            memory.clone(),
-            build_provider_brains,
-        )
-        .await;
-        if let Err(err) = setup_result {
-            eprintln!("Setup Agent: {} — falling back to interactive setup.", err);
-            sparrow::cmd_handlers::setup_cmd::handle_setup(&config, &config_store).await?;
-        }
-        // Reload config after setup wrote it
-        if let Ok(fresh) = config_store.load() {
-            config = fresh;
-            config.config_dir = active_config_dir.clone();
-            config.state_dir = active_state_dir.clone();
-        }
+        config = sparrow::onboarding::zero_question::prepare_default_launch(&config, &config_store)
+            .await?;
+        config.config_dir = active_config_dir.clone();
+        config.state_dir = active_state_dir.clone();
+        println!("{}", sparrow::onboarding::zero_question::ready_message());
     }
 
     match cli.command {
@@ -299,24 +286,36 @@ async fn async_main() -> anyhow::Result<()> {
             )
             .await?;
         }
-        Some(Commands::Launch { port, tui }) => {
+        Some(Commands::Launch { port, tui, pro }) => {
             if !active_config_dir.join("config.toml").exists() {
-                println!("First launch detected - running setup...\n");
-                let setup_result = sparrow::onboarding::setup_agent::run_setup_agent(
-                    &config,
-                    &config_store,
-                    memory.clone(),
-                    build_provider_brains,
-                )
-                .await;
-                if let Err(err) = setup_result {
-                    eprintln!("Setup Agent: {} - falling back to interactive setup.", err);
-                    sparrow::cmd_handlers::setup_cmd::handle_setup(&config, &config_store).await?;
-                }
-                if let Ok(fresh) = config_store.load() {
-                    config = fresh;
+                if pro {
+                    println!("Mode expert - configuration détaillée...\n");
+                    let setup_result = sparrow::onboarding::setup_agent::run_setup_agent(
+                        &config,
+                        &config_store,
+                        memory.clone(),
+                        build_provider_brains,
+                    )
+                    .await;
+                    if let Err(err) = setup_result {
+                        eprintln!("Setup Agent: {} - falling back to interactive setup.", err);
+                        sparrow::cmd_handlers::setup_cmd::handle_setup(&config, &config_store)
+                            .await?;
+                    }
+                    if let Ok(fresh) = config_store.load() {
+                        config = fresh;
+                        config.config_dir = active_config_dir.clone();
+                        config.state_dir = active_state_dir.clone();
+                    }
+                } else {
+                    config = sparrow::onboarding::zero_question::prepare_default_launch(
+                        &config,
+                        &config_store,
+                    )
+                    .await?;
                     config.config_dir = active_config_dir.clone();
                     config.state_dir = active_state_dir.clone();
+                    println!("{}", sparrow::onboarding::zero_question::ready_message());
                 }
             }
 
@@ -364,6 +363,86 @@ async fn async_main() -> anyhow::Result<()> {
                 skill_library.clone(),
             )
             .await?;
+        }
+        // v0.9 Pilier 1 — « entrée par le problème ». `fix` and `explique`
+        // are human-language front doors that frame the task for a diagnosis-
+        // first, jargon-free run, then reuse the exact same engine path as
+        // `run` (nothing is lost vs pro mode).
+        Some(Commands::Fix { ref problem }) => {
+            let joined = problem.join(" ");
+            let task = if joined.trim().is_empty() {
+                "Inspecte le dossier courant et trouve le problème le plus évident \
+                 (erreur de build, test cassé, conflit git, dépendances manquantes). \
+                 Explique en UNE phrase simple, sans jargon, ce qui ne va pas et \
+                 pourquoi. Propose la correction, et applique-la seulement après mon \
+                 accord. Réponds dans la langue de l'utilisateur."
+                    .to_string()
+            } else {
+                format!(
+                    "J'ai ce problème : « {joined} ». Diagnostique la cause réelle \
+                     en lisant les fichiers/erreurs concernés avant de conclure. \
+                     Explique en UNE phrase simple, sans jargon, ce qui ne va pas. \
+                     Propose la correction et applique-la seulement après mon accord. \
+                     Réponds dans la langue de l'utilisateur."
+                )
+            };
+            let flags = RunFlags {
+                session_mode: if cli.fresh {
+                    SessionMode::Fresh
+                } else if cli.continue_last {
+                    SessionMode::ContinueLast
+                } else {
+                    SessionMode::Auto
+                },
+                assume_yes: cli.yes,
+            };
+            sparrow::cmd_handlers::handle_run_task_cmd::run_task(
+                &task,
+                &config,
+                memory.clone(),
+                skill_library.clone(),
+                recorder.clone(),
+                None,
+                flags,
+            )
+            .await?;
+        }
+        Some(Commands::Explique { ref target }) => {
+            let joined = target.join(" ");
+            if joined.trim().is_empty() {
+                eprintln!(
+                    "Dis-moi quoi expliquer : un fichier, une erreur, ou un mot.\n\
+                     Exemple : sparrow explique src/main.rs"
+                );
+            } else {
+                let task = format!(
+                    "Explique « {joined} » en langage simple, comme à quelqu'un qui \
+                     débute. Si c'est un chemin de fichier, lis-le d'abord. Si c'est \
+                     une erreur, explique ce qu'elle signifie et d'où elle vient. \
+                     Sois bref, concret, sans jargon inutile. Ne modifie aucun \
+                     fichier. Réponds dans la langue de l'utilisateur."
+                );
+                let flags = RunFlags {
+                    session_mode: if cli.fresh {
+                        SessionMode::Fresh
+                    } else if cli.continue_last {
+                        SessionMode::ContinueLast
+                    } else {
+                        SessionMode::Auto
+                    },
+                    assume_yes: cli.yes,
+                };
+                sparrow::cmd_handlers::handle_run_task_cmd::run_task(
+                    &task,
+                    &config,
+                    memory.clone(),
+                    skill_library.clone(),
+                    recorder.clone(),
+                    None,
+                    flags,
+                )
+                .await?;
+            }
         }
         Some(Commands::Run {
             ref task,
@@ -728,15 +807,12 @@ async fn async_main() -> anyhow::Result<()> {
                     let mut updated = config.clone();
                     updated.routing.routing_mode = "manual".into();
                     config_store.save(&updated)?;
-                    if updated.routing.preferred_provider.is_none() {
+                    if let Some(pin) = &updated.routing.preferred_provider {
+                        println!("🔒 Manual mode active. Current pin: {}", pin);
+                    } else {
                         println!("🔒 Manual mode active. Choose a provider/model with:");
                         println!("  sparrow route set <provider>");
                         println!("  sparrow route set <provider>/<model>");
-                    } else {
-                        println!(
-                            "🔒 Manual mode active. Current pin: {}",
-                            updated.routing.preferred_provider.as_ref().unwrap()
-                        );
                     }
                 }
                 sparrow::cli::RouteAction::Auto => {
@@ -910,104 +986,327 @@ async fn async_main() -> anyhow::Result<()> {
                 println!("Rewind cancelled.");
             }
         }
-        Some(Commands::Doctor) => {
-            // Show boot logo
-            for line in sparrow::tui::theme::boot_sequence() {
-                println!("{}", line);
+        // v0.9 Pilier 1 — l'accueil chaleureux + détection de contexte.
+        Some(Commands::Bonjour) => {
+            let lang = config.experience.lang();
+            let cwd = std::env::current_dir().unwrap_or_default();
+            println!("{}", sparrow::welcome::welcome_text(&cwd, lang));
+        }
+        // v0.9 Pilier 4 — budget en langage humain. Show or set the per-session
+        // spend cap; accepts "2€", "$0.50" or a bare number.
+        Some(Commands::Budget { amount }) => {
+            match amount {
+                None => {
+                    println!(
+                        "Plafond actuel : {:.2} par session, {:.2} par jour.",
+                        config.budget.session_usd, config.budget.daily_usd
+                    );
+                    println!(
+                        "Je m'arrête tout seul avant de dépasser. Pour changer : sparrow budget 2€"
+                    );
+                }
+                Some(raw) => {
+                    // Strip currency symbols/spaces, accept comma decimals.
+                    let cleaned: String = raw
+                        .chars()
+                        .filter(|c| c.is_ascii_digit() || *c == '.' || *c == ',')
+                        .collect::<String>()
+                        .replace(',', ".");
+                    match cleaned.parse::<f64>() {
+                        Ok(value) if value > 0.0 => {
+                            let mut updated = config.clone();
+                            updated.budget.session_usd = value;
+                            match config_store.save(&updated) {
+                                Ok(()) => println!(
+                                    "C'est noté : je m'arrête tout seul à {:.2} par session.",
+                                    value
+                                ),
+                                Err(e) => eprintln!("Je n'ai pas pu enregistrer : {e}"),
+                            }
+                        }
+                        _ => eprintln!(
+                            "Je n'ai pas compris « {raw} ». Donne-moi un montant, par exemple : 2€ ou $0.50."
+                        ),
+                    }
+                }
             }
-            println!();
+        }
+        // v0.9 Pilier 6 — la galerie des possibles. Browse ready-to-run
+        // recipes by persona or keyword; each printed prompt is the tutorial.
+        Some(Commands::Idees { filter }) => {
+            let lang = config.experience.lang();
+            let raw = filter.join(" ");
+            let trimmed = raw.trim();
+            // A single word that matches a persona slug filters by persona;
+            // otherwise the whole input is a free-text query.
+            let known_personas = sparrow::gallery::personas();
+            let (persona, query): (Option<&str>, Option<&str>) = if !trimmed.is_empty()
+                && known_personas
+                    .iter()
+                    .any(|p| p.starts_with(&trimmed.to_lowercase()))
+            {
+                (Some(trimmed), None)
+            } else if trimmed.is_empty() {
+                (None, None)
+            } else {
+                (None, Some(trimmed))
+            };
+            let results = sparrow::gallery::search(persona, query);
+            if results.is_empty() {
+                println!("Aucune idée ne correspond à « {trimmed} ».");
+                println!("Profils disponibles : {}", known_personas.join(" · "));
+            } else {
+                if trimmed.is_empty() {
+                    println!("🐦  Voici ce que tu peux faire avec Sparrow :\n");
+                } else {
+                    println!("🐦  Idées pour « {trimmed} » :\n");
+                }
+                let mut current = "";
+                for r in results {
+                    let group = r.persona.label(lang);
+                    if group != current {
+                        println!("  {group}");
+                        current = group;
+                    }
+                    println!("    · {}  ({})", r.title(lang), r.est);
+                    println!("      → {}", r.prompt(lang));
+                }
+                println!(
+                    "\nCopie une de ces phrases après « sparrow run », ou tape\n\
+                     « sparrow fix » / « sparrow explique » pour ton propre besoin."
+                );
+            }
+        }
+        // v0.9 Pilier 2 — le glossaire vivant. Instant, offline definition of
+        // Sparrow's own jargon; unknown terms point at `sparrow explique`.
+        Some(Commands::Whatis { term }) => {
+            let lang = config.experience.lang();
+            let joined = term.join(" ");
+            if joined.trim().is_empty() {
+                println!("Les mots que je peux définir tout de suite :");
+                let mut terms = sparrow::glossary::terms();
+                terms.sort_unstable();
+                println!("  {}", terms.join(" · "));
+                println!("\nExemple : sparrow whatis checkpoint");
+                println!("Pour autre chose : sparrow explique « ton sujet »");
+            } else if let Some(def) = sparrow::glossary::lookup(&joined, lang) {
+                println!("{def}");
+            } else {
+                println!(
+                    "Je n'ai pas « {joined} » dans mon glossaire.\n\
+                     Essaie : sparrow explique « {joined} » — je te l'explique pour de vrai."
+                );
+            }
+        }
+        // v0.9 Pilier 2 — the depth switch. `sparrow mode simple|pro|auto`
+        // sets how Sparrow talks to you; no argument prints the current mode.
+        Some(Commands::Mode { mode }) => match mode {
+            None => {
+                let m = config.experience.mode.to_lowercase();
+                let human = match m.as_str() {
+                    "pro" => "détaillé (pro) — sortie technique complète",
+                    "simple" => "simple — langage clair, sans jargon",
+                    _ => "auto — simple par défaut, bascule possible",
+                };
+                println!("Mode actuel : {human}.");
+                println!("Pour changer : sparrow mode simple · sparrow mode pro");
+            }
+            Some(requested) => {
+                let normalized = requested.trim().to_lowercase();
+                if !matches!(normalized.as_str(), "simple" | "pro" | "auto") {
+                    eprintln!("Mode inconnu : « {requested} ». Choisis : simple, pro ou auto.");
+                } else {
+                    let mut updated = config.clone();
+                    updated.experience.mode = normalized.clone();
+                    match config_store.save(&updated) {
+                        Ok(()) => {
+                            let confirm = match normalized.as_str() {
+                                "pro" => {
+                                    "Mode détaillé activé — tu verras tout (route, tokens, coût)."
+                                }
+                                "simple" => {
+                                    "Mode simple activé — je te parle en clair, sans jargon."
+                                }
+                                _ => "Mode auto activé — simple par défaut.",
+                            };
+                            println!("{confirm}");
+                        }
+                        Err(e) => eprintln!("Je n'ai pas pu enregistrer ce réglage : {e}"),
+                    }
+                }
+            }
+        },
+        // v0.9 Pilier 4 — « le filet de sécurité ». `annule` is the one-word
+        // undo: with no id it resolves the most recent checkpoint (or the
+        // oldest with --tout), confirms, and reports what was restored in
+        // plain language. It reuses the same git-backed rewind as `rewind`.
+        Some(Commands::Annule { id, tout }) => {
+            let cwd = std::env::current_dir().unwrap_or_default();
+            // Resolve the target checkpoint. Explicit id wins; otherwise pick
+            // the newest (default) or oldest (--tout) by creation date.
+            let resolve = |sort: &str| -> Option<(String, String)> {
+                let out = std::process::Command::new("git")
+                    .args([
+                        "for-each-ref",
+                        "--sort",
+                        sort,
+                        "--count=1",
+                        "refs/sparrow/checkpoints",
+                        "--format=%(refname:short)|%(creatordate:format:%H:%M)",
+                    ])
+                    .current_dir(&cwd)
+                    .output()
+                    .ok()?;
+                let text = String::from_utf8_lossy(&out.stdout);
+                let line = text.lines().next()?.trim();
+                if line.is_empty() {
+                    return None;
+                }
+                let (refname, when) = line.split_once('|').unwrap_or((line, ""));
+                let short = refname.rsplit('/').next().unwrap_or(refname).to_string();
+                Some((short, when.to_string()))
+            };
 
-            println!("Sparrow Diagnostics");
-            println!("===================");
-            println!("Config dir : {:?}", config.config_dir);
-            println!("State dir  : {:?}", config.state_dir);
-            println!("Theme      : {}", config.theme);
-            println!("Autonomy   : {:?}", config.defaults.autonomy);
-            // Sandbox line is printed (platform-aware) further down.
+            let target = match id {
+                Some(explicit) => Some((explicit, String::new())),
+                None if tout => resolve("creatordate"),
+                None => resolve("-creatordate"),
+            };
+
+            let Some((target_id, when)) = target else {
+                println!(
+                    "Il n'y a encore aucun point de sauvegarde à annuler.\n\
+                     Sparrow en crée un automatiquement avant chaque modification de fichier."
+                );
+                return Ok(());
+            };
+
+            if !cli.yes {
+                let what = if tout {
+                    "tout remettre comme au début de la session".to_string()
+                } else {
+                    "annuler la dernière modification".to_string()
+                };
+                eprint!(
+                    "Je vais {} (point de sauvegarde {}{}). \
+                     Les fichiers actuels non sauvegardés seront perdus. On y va ? [o/N] ",
+                    what,
+                    target_id,
+                    if when.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" · {}", when)
+                    }
+                );
+                let _ = std::io::stdout().flush();
+                let mut input = String::new();
+                let ok = std::io::stdin().read_line(&mut input).is_ok()
+                    && matches!(
+                        input.trim().to_lowercase().as_str(),
+                        "o" | "oui" | "y" | "yes"
+                    );
+                if !ok {
+                    println!("Annulation abandonnée — rien n'a changé.");
+                    return Ok(());
+                }
+            }
+
+            let checkpoints = GitCheckpoints::new(cwd);
+            match checkpoints.rewind(sparrow::event::CheckpointId(target_id.clone())) {
+                Ok(()) => {
+                    if when.is_empty() {
+                        println!(
+                            "C'est fait — tes fichiers sont revenus au point {}.",
+                            target_id
+                        );
+                    } else {
+                        println!(
+                            "C'est fait — tes fichiers sont revenus comme ils étaient à {}.",
+                            when
+                        );
+                    }
+                }
+                Err(e) => eprintln!(
+                    "Je n'ai pas réussi à revenir en arrière : {}.\n\
+                     Tape `sparrow doctor` si le problème persiste.",
+                    e
+                ),
+            }
+        }
+        Some(Commands::Doctor) => {
+            println!("Diagnostic Sparrow");
+            println!("==================");
             println!(
-                "Budget     : ${}/day, ${}/session",
-                config.budget.daily_usd, config.budget.session_usd
+                "✅ Configuration : prête. Budget ${:.2}/session, ${:.2}/jour.",
+                config.budget.session_usd, config.budget.daily_usd
             );
-            println!();
 
             let auth = sparrow::auth::store::ChainedAuthStore::new(config.config_dir.clone());
             let stored = auth.list();
-            println!("Credentials: {} stored", stored.len());
-            for p in &stored {
-                println!("  - {}", p);
-            }
+            let providers = sparrow::config::effective_provider_configs(&config);
+            let has_local = providers.contains_key("ollama") || providers.contains_key("local");
+            let provider_icon = if providers.is_empty() { "❌" } else { "✅" };
+            let provider_phrase = if providers.is_empty() {
+                "aucun moteur détecté. Lance `sparrow launch` pour préparer le secours local."
+                    .to_string()
+            } else if has_local {
+                format!(
+                    "{} moteur(s) détecté(s), avec secours local gratuit.",
+                    providers.len()
+                )
+            } else {
+                format!(
+                    "{} moteur(s) détecté(s). Ajoute Ollama pour un secours gratuit.",
+                    providers.len()
+                )
+            };
+            println!("{provider_icon} Moteurs : {provider_phrase}");
+            println!(
+                "✅ Clés : {} entrée(s) dans le coffre Sparrow.",
+                stored.len()
+            );
 
             let git_ok = std::process::Command::new("git")
                 .arg("--version")
                 .output()
                 .is_ok();
             println!(
-                "Git        : {}",
-                if git_ok { "available" } else { "not found" }
-            );
-
-            // Sandbox reality check
-            {
-                let sandbox = &config.defaults.sandbox;
-                #[cfg(not(target_os = "linux"))]
-                {
-                    if sandbox == "local-hardened" {
-                        println!(
-                            "Sandbox    : {} (note: namespace/seccomp isolation is Linux-only; \
-                             running with path-boundary enforcement only on this platform)",
-                            sandbox
-                        );
-                    } else {
-                        println!("Sandbox    : {}", sandbox);
-                    }
+                "{} Git : {}",
+                if git_ok { "✅" } else { "⚠️" },
+                if git_ok {
+                    "disponible pour les points de sauvegarde."
+                } else {
+                    "absent. Installe Git pour mieux annuler les changements."
                 }
-                #[cfg(target_os = "linux")]
-                println!("Sandbox    : {} (firejail/bwrap/unshare)", sandbox);
-            }
-
-            let facts = memory.all_facts();
-            println!("Memory     : {} facts stored", facts.len());
-            let agents = agent_store.list();
-            println!("Agents     : {} defined", agents.len());
-            for a in &agents {
-                println!("  - {} ({})", a.name, a.role);
-            }
-            let skills = skill_library.all();
-            println!("Skills     : {} in library", skills.len());
-            let static_models: usize = sparrow::config::providers::provider_registry()
-                .iter()
-                .map(|provider| provider.models.len())
-                .sum();
-            let total_discovered: usize = sparrow::config::providers::provider_registry()
-                .iter()
-                .map(|provider| {
-                    memory
-                        .get_discovered_models(&provider.id)
-                        .into_iter()
-                        .filter(|model| sparrow::provider::discovery::is_chat_model_id(model))
-                        .count()
-                })
-                .sum();
-            println!(
-                "Models     : {} static + {} discovered (cached 24h)",
-                static_models, total_discovered
             );
-            let transcripts = recorder.list_transcripts();
-            println!("Transcripts: {} recorded", transcripts.len());
-            let jobs = scheduler.list();
-            println!("Sched. jobs: {} scheduled", jobs.len());
 
-            // Check for updates
+            #[cfg(not(target_os = "linux"))]
+            let sandbox_phrase = if config.defaults.sandbox == "local-hardened" {
+                "actif avec les protections disponibles sur cette plateforme."
+            } else {
+                "réglé dans la configuration."
+            };
+            #[cfg(target_os = "linux")]
+            let sandbox_phrase = "actif avec isolation Linux quand disponible.";
+            println!("✅ Sécurité : {sandbox_phrase}");
+
+            println!(
+                "✅ Mémoire : {} souvenir(s), {} agent(s), {} compétence(s).",
+                memory.all_facts().len(),
+                agent_store.list().len(),
+                skill_library.all().len()
+            );
+
             if let Ok(Some(update)) =
                 tokio::task::spawn_blocking(sparrow::update::check_update).await
             {
-                println!("\nUpdate    : {} (run 'sparrow update')", update);
+                println!("⚠️ Mise à jour : {update}. Lance `sparrow update` quand tu veux.");
+            } else {
+                println!("✅ Mise à jour : rien d'urgent détecté.");
             }
 
             println!();
-            println!(
-                "All checks done. If something looks wrong: https://github.com/ucav/Sparrow/issues"
-            );
+            println!("Réparer automatiquement : `sparrow fix \"ce qui bloque\"`.");
         }
         Some(Commands::Update) => {
             println!("Checking for updates...");

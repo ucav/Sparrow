@@ -773,6 +773,7 @@ impl Profile {
                     budget: Default::default(),
                     providers: Default::default(),
                     surfaces: Default::default(),
+                    experience: Default::default(),
                     skills: Default::default(),
                     permissions: Default::default(),
                     hooks: Default::default(),

@@ -2,6 +2,170 @@
 
 All notable changes to Sparrow will be documented in this file.
 
+## [0.9.0] — 2026-06-11 « Anyone »
+
+> Accessibilité radicale : n'importe qui doit pouvoir comprendre et utiliser
+> Sparrow. Couche humaine au-dessus du moteur — le mode pro ne perd rien.
+> Plan : `PLAN_v0.9.0.md`.
+
+### Ajouté — Pilier 1 « l'entrée par le problème »
+- **`sparrow fix` / `sparrow repare`** — le réparateur universel : décris ton
+  problème (ou colle une erreur), Sparrow lit les fichiers concernés,
+  diagnostique la cause en une phrase simple, propose la correction et
+  l'applique après ton accord. Sans argument, il inspecte le dossier courant.
+- **`sparrow explique` / `sparrow explain`** — explique un fichier, une erreur
+  ou un concept en langage simple, sans rien modifier.
+- **Alias en langage humain** (additifs, les commandes d'origine ne bougent
+  pas) : `sparrow montre` / `show` → `console`.
+
+### Ajouté — Pilier 1 « l'entrée par le problème » (accueil)
+- **`sparrow bonjour` / `hello` / `salut`** — l'accueil chaleureux : Sparrow
+  regarde le dossier courant et propose l'action la plus pertinente (conflit
+  git → `fix`, projet Node non installé → `fix`, dossier de photos → idée de
+  tri), puis liste `fix` / `explique` / `idees` / `whatis` et rappelle
+  `annule`. Détection de contexte hors-ligne, FR/EN.
+
+### Ajouté — Pilier 6 « la galerie des possibles »
+- **`sparrow idees` / `ideas`** — une galerie de recettes concrètes classées
+  par profil (enseignant, grand-mère, artisan, enfant, créateur, développeur,
+  expert…), avec le prompt prêt à coller. `sparrow idees enseignant` filtre par
+  profil, `sparrow idees "factures"` cherche par mot-clé. La recette EST le
+  tutoriel.
+
+### Ajouté — Pilier 3 « installation en un geste »
+- **`sparrow launch` zéro question** — le premier lancement prépare une config
+  simple, free-first, avec secours local Ollama et détection des clés déjà en
+  environnement. Message final : « Sparrow est prêt. Qu’est-ce qu’on règle
+  aujourd’hui ? ». L'ancien setup détaillé reste disponible via
+  `sparrow launch --pro`.
+- **Config lisible par humain** — les fichiers `config.toml` écrits par Sparrow
+  commencent par des commentaires clairs : mode simple, clés hors fichier,
+  retour au mode expert.
+- **`sparrow doctor` humain** — diagnostics en ✅/⚠️/❌ avec phrases et sortie
+  de réparation, au lieu d'un dump interne.
+- **Packaging v0.9** — scripts one-click avec raccourcis bureau opt-out
+  (`--no-shortcut` / `-NoShortcut`) et gabarits `Sparrow-Setup.exe` NSIS +
+  `.dmg` macOS.
+
+### Ajouté — Pilier 5 « cockpit pour humains »
+- **Panneau d'outils latéral droit** dans la console WebView : Preview, Diff,
+  Terminal, Files, Background tasks et Plan, alimentés par le flux d'événements
+  réel (diffs `DiffProposed/Applied`, commandes `exec`, tests, URLs locales
+  détectées, liste `todo` via le nouvel endpoint `GET /todos`). Ouverture
+  manuelle (bouton « ⧉ tools », `Ctrl+Shift+S`) ou automatique avec priorités :
+  un échec rouvre le panneau même fermé à la main, un événement mineur jamais.
+  Préférence `auto-open` persistée, overlay propre sous 980 px, états vides
+  honnêtes (« No changes yet. », « No background tasks running. »).
+- **Raccourcis panneau** : `Ctrl/⌘+P` preview, `Ctrl/⌘+Shift+D` diff,
+  ``Ctrl+` `` terminal, `Ctrl/⌘+Shift+F` fichiers, `Ctrl/⌘+Shift+P` plan.
+- **Preview réelle** : `GET /preview/scan` sonde les ports dev usuels
+  (3000, 4200, 5173, 8080…) sur loopback et liste les serveurs vivants ;
+  champ URL manuel + intégration iframe dans le panneau.
+- **Échec de commande fiable** : l'événement `ToolOutput` porte désormais
+  `is_error` (depuis `ToolResult::is_error`, champ additif rétro-compatible) —
+  une commande échouée passe la tâche en `failed`, marque la ligne terminal en
+  rouge et rouvre le panneau en priorité haute.
+- **Demande en langage naturel** : « montre le diff », « ouvre le terminal »,
+  « show files »… dans le chat ouvrent directement l'outil correspondant
+  (verbe d'affichage + mot-clé, FR/EN).
+- **Thème « white »** : interface claire et nette (fond blanc, contrastes
+  lisibles, bordures visibles), sélectionnable dans config → appearance ; le
+  bouton thème alterne désormais captain → paper → white.
+- **Mockup v0.9** : `sparrow-cockpit-v0.9.0-mockup.html`.
+- **Focus/Cockpit** dans la console : Focus par défaut, une colonne lisible,
+  toggle persistant, raccourci `Alt+F`; Cockpit garde les métriques avancées.
+- **Actions persistantes Focus** : `OK`, `Undo`, `Explain`, câblées
+  aux approbations, à `/annule` et à une demande d'explication simple.
+- **Accessibilité** : A-/A+ conservés, contraste vérifié par script, ARIA sur
+  les contrôles clés, raccourcis clavier Focus (`Alt+A/U/E`), onboarding 4
+  bulles maximum stocké en `localStorage`.
+- **Micro Focus** : dictée via Web Speech API quand disponible, fallback clair
+  vers `sparrow voice transcribe`.
+
+### Ajouté — Phase 7 « GO »
+- **Fiche GO v0.9** : `docs/v0.9-go.md` avec métriques, protocole cinq
+  personas et commandes de vérification.
+- **Garde-fous automatisés** : `tests/v0_9_anyone.rs` verrouille launch
+  `--pro`, config commentée, Focus UI, mockup et audit ; `npm run
+  a11y:console` lance l'audit Playwright déterministe.
+
+### Ajouté — Pilier 4 « le filet de sécurité »
+- **`sparrow budget` / `sparrow budget 2€`** — voir ou changer le plafond de
+  dépense par session en langage humain (accepte `2€`, `$0.50`, un nombre nu) ;
+  « je m'arrête tout seul avant de dépasser ».
+- **`sparrow annule` / `sparrow undo`** — l'annulation à un mot : sans
+  argument, revient au dernier point de sauvegarde ; `--tout` revient au début
+  de la session. Confirme avant d'agir et dit en clair ce qui a été restauré
+  (« tes fichiers sont revenus comme ils étaient à 14h32 »). Réutilise le même
+  rewind git-backed que `sparrow rewind`.
+
+### Ajouté — Pilier 2 « zéro jargon » (fondation)
+- **Table de traduction `humanize`** (`src/humanize.rs`) : chaque `Event` du
+  moteur a une phrase en langage humain (FR/EN) pour le mode simple. Le `match`
+  est **exhaustif sans wildcard** — ajouter un nouvel event ne compile plus
+  tant qu'il n'a pas sa phrase humaine (verrou anti-régression au compilateur).
+  La télémétrie (tokens, coût, route, reasoning) reste muette : elle appartient
+  au HUD, pas à la conversation.
+- **Réglage `[experience]`** dans la config : `mode` (simple / pro / auto) et
+  `language` (fr / en / auto, suit la locale système). Rétro-compatible
+  (section optionnelle, défauts auto/auto = simple).
+- **`sparrow mode simple|pro|auto`** — choisis comment Sparrow te parle ; sans
+  argument, affiche le mode courant. Persisté dans la config.
+- **Renderer CLI branché** : en mode simple, `sparrow run`/`fix`/`explique`
+  affichent les phrases humaines (« Je crée poeme.txt… », « Je change de
+  modèle pour continuer. », « Rien n'a été modifié. ») au lieu des étiquettes
+  techniques (`[Tool: …]`, `[Routing] … → …`, `Tokens: X in / Y out`), et un
+  coût en centimes (« C'était gratuit. ») suivi du rappel « sparrow annule ».
+  Le mode pro garde la sortie technique intégrale, à l'identique.
+- **Console WebView branchée** : en mode simple, le serveur attache une phrase
+  `human` (issue de la même table, côté serveur — zéro duplication) à chaque
+  event ; la console affiche les lignes humaines (« Je change de modèle pour
+  continuer. », « ✓ Rien n'a été modifié. », « C'était gratuit. ») au lieu du
+  `X → Y (reason)` et de la ligne `$0.0000 · N tok`. Vérifié en live (frames WS
+  porteuses de `human`/`simple`, zéro erreur console).
+- **TUI branché** : le feed du TUI (`push_event`) affiche les lignes humaines
+  en mode simple (`ModelSwitched`, `RunFinished` + coût en centimes) au lieu de
+  `fallback: X → Y` et `status: … cost: $…` ; mode pro inchangé. Réglé depuis
+  la config (`with_experience`). 3 tests. → CLI + console + TUI partagent
+  désormais **la même table humanize**.
+- **Accessibilité console (Pilier 5)** : boutons **A− / A+** (et `Ctrl/Cmd ±`)
+  règlent la taille du transcript de 0.85× à 1.6×, persistée et restaurée au
+  rechargement. La taille effective = base responsive × préférence, donc un
+  redimensionnement n'écrase plus le choix. Vérifié live (resize + reload).
+- **Erreurs qui rassurent** (Pilier 2.3) : en mode simple, une erreur API/400
+  ou réseau ne recrache plus de blob JSON brut — elle devient une phrase calme
+  avec une porte de sortie (« je réessaie autrement — si ça persiste, tape
+  sparrow doctor »).
+- **Glossaire vivant** (`src/glossary.rs`) : `sparrow whatis <mot>` (alias
+  `c-est-quoi`, `glossaire`) donne une définition instantanée et hors-ligne,
+  en deux phrases simples, du vocabulaire propre à Sparrow (checkpoint, token,
+  swarm, MCP, provider, routing, autonomie, tier, agent, skill, budget…).
+  Sans argument : liste les mots connus. Terme inconnu : renvoie vers
+  `sparrow explique`. FR/EN selon `[experience] language`.
+
+### Corrigé
+- **Plafonds de run non appliqués** : `--max-wall-secs`, `--max-tokens` et
+  `--max-cost-usd` étaient parsés par clap mais **jamais câblés** (comme
+  `--bind` avant v0.8.1). `apply_cli_overrides` les pousse maintenant dans
+  `config.budget`, et l'engine les fait respecter : arrêt net au plafond de
+  temps (check par tour **et** `tokio::timeout` sur l'attente de chaque event
+  d'un stream, pour qu'une complétion lente/bloquée soit interrompue), de
+  tokens, et de coût (déjà géré). `--max-cost-usd` prime sur `--budget`. Avant,
+  un `sparrow run --max-wall-secs 20` pouvait tourner > 9 minutes. Tests :
+  `tests/budget_caps.rs`.
+- **400 « Unsupported parameter prompt_cache_key » sur les providers
+  OpenAI-compatibles** : `build_chat_body` (`src/provider/openai_compat.rs`)
+  n'émet plus jamais `prompt_cache_key` / `prompt_cache_retention`. L'engine
+  active le cache pour le run, mais cet adaptateur fronte des dizaines de
+  proxys (opencode-go, NVIDIA, Groq, stepfun, Ollama…) dont beaucoup rejettent
+  ces champs en HTTP 400 — ce qui faisait échouer le 1er modèle de chaque
+  chaîne de routing et gâchait un tour. Le prompt-caching reste une
+  fonctionnalité Anthropic (gérée dans `anthropic.rs`). Test :
+  `openai_chat_body_never_sends_prompt_cache_params`.
+- Deux lints clippy pré-existants sur master (router `for_kv_map`, route
+  `unnecessary_unwrap`) qui cassaient `cargo clippy --all-targets -D warnings`.
+
+
 ## [0.8.1] — 2026-06-10 « Honesty »
 
 > Patch release tracking the v0.8.0 audit. No new features.

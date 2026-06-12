@@ -140,13 +140,90 @@ pub enum Commands {
         /// Launch the terminal TUI instead of the WebView cockpit
         #[arg(long)]
         tui: bool,
+
+        /// Use the older expert setup wizard before opening the surface
+        #[arg(long)]
+        pro: bool,
     },
 
     /// Launch webview console (HTTP + WebSocket)
+    #[command(visible_aliases = ["montre", "show"])]
     Console {
         /// TCP port for the webview HTTP/WS server
         #[arg(long, default_value = "9339")]
         port: u16,
+    },
+
+    /// Réparer un problème — décris ce qui ne va pas, Sparrow diagnostique
+    /// puis corrige (avec ton accord). « sparrow fix "message d'erreur" »,
+    /// ou sans argument pour scanner le dossier courant.
+    #[command(visible_aliases = ["repare", "répare"])]
+    Fix {
+        /// Le problème, avec tes mots, ou une erreur collée (entre guillemets
+        /// si elle contient des espaces). Optionnel : sans argument, Sparrow
+        /// inspecte le dossier courant.
+        problem: Vec<String>,
+    },
+
+    /// Expliquer un fichier, une erreur ou un concept en langage simple.
+    /// « sparrow explique src/main.rs » · « sparrow explique "borrow checker" »
+    #[command(visible_aliases = ["explain"])]
+    Explique {
+        /// Ce qu'il faut expliquer : un chemin de fichier, une erreur, ou un
+        /// mot (entre guillemets si plusieurs mots).
+        target: Vec<String>,
+    },
+
+    /// Annuler la dernière action de Sparrow — revient au dernier point de
+    /// sauvegarde, rien n'est perdu. « sparrow annule » · « sparrow annule
+    /// --tout » pour revenir au début de la session.
+    #[command(visible_aliases = ["undo"])]
+    Annule {
+        /// Point de sauvegarde précis (sinon : le tout dernier).
+        id: Option<String>,
+
+        /// Revenir au tout premier point de sauvegarde de la session.
+        #[arg(long, visible_alias = "all")]
+        tout: bool,
+    },
+
+    /// Dire bonjour — l'accueil chaleureux : Sparrow regarde ton dossier et
+    /// te propose quoi faire. Parfait pour un premier contact.
+    #[command(visible_aliases = ["hello", "salut"])]
+    Bonjour,
+
+    /// Voir ou changer le plafond de dépense par session. « sparrow budget »
+    /// affiche le réglage actuel ; « sparrow budget 2€ » le change.
+    Budget {
+        /// Le montant max par session (ex. « 2€ », « $0.50 », « 1.5 »).
+        /// Vide : affiche le réglage actuel.
+        amount: Option<String>,
+    },
+
+    /// Des idées de ce que tu peux faire avec Sparrow, classées par profil.
+    /// « sparrow idees » · « sparrow idees enseignant » · « sparrow idees
+    /// "factures" ».
+    #[command(visible_aliases = ["ideas", "idées"])]
+    Idees {
+        /// Filtre : un profil (enseignant, developpeur, …) ou un mot-clé.
+        filter: Vec<String>,
+    },
+
+    /// C'est quoi ce mot ? — définition instantanée d'un terme de Sparrow,
+    /// en deux phrases simples, sans appel modèle. « sparrow whatis token ».
+    #[command(name = "whatis", visible_aliases = ["c-est-quoi", "cest-quoi", "glossaire"])]
+    Whatis {
+        /// Le terme à définir (ex. checkpoint, token, swarm). Vide : liste les
+        /// mots connus.
+        term: Vec<String>,
+    },
+
+    /// Choisir comment Sparrow te parle : simple (langage clair, zéro jargon),
+    /// pro (sortie technique complète) ou auto. Sans argument : affiche le
+    /// mode actuel.
+    Mode {
+        /// « simple », « pro » ou « auto ».
+        mode: Option<String>,
     },
 
     /// Run headless Sparrow runtime daemon
@@ -719,4 +796,127 @@ pub enum VoiceAction {
     Transcribe { file: String },
     /// List available voice providers
     Providers,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    // v0.9 Pilier 1: the human front-door commands must collect their
+    // free-text argument WITHOUT swallowing global flags like --yes. A first
+    // implementation used `trailing_var_arg` and captured "--yes" into the
+    // problem text — the model then complained about the stray flags.
+    #[test]
+    fn explique_does_not_swallow_global_flags() {
+        let cli = Cli::parse_from(["sparrow", "explique", "borrow checker", "--yes"]);
+        assert!(cli.yes, "--yes must be parsed as a flag, not text");
+        match cli.command {
+            Some(Commands::Explique { target }) => {
+                assert_eq!(target, vec!["borrow checker".to_string()]);
+            }
+            _ => panic!("expected Explique"),
+        }
+    }
+
+    #[test]
+    fn fix_collects_words_and_respects_flags() {
+        let cli = Cli::parse_from(["sparrow", "fix", "le", "build", "casse", "--yes"]);
+        assert!(cli.yes);
+        match cli.command {
+            Some(Commands::Fix { problem }) => {
+                assert_eq!(problem, vec!["le", "build", "casse"]);
+            }
+            _ => panic!("expected Fix"),
+        }
+    }
+
+    #[test]
+    fn fix_accepts_no_argument() {
+        let cli = Cli::parse_from(["sparrow", "fix"]);
+        match cli.command {
+            Some(Commands::Fix { problem }) => assert!(problem.is_empty()),
+            _ => panic!("expected Fix"),
+        }
+    }
+
+    #[test]
+    fn human_aliases_resolve() {
+        // repare → Fix, explain → Explique, montre → Console, undo → Annule.
+        assert!(matches!(
+            Cli::parse_from(["sparrow", "repare", "x"]).command,
+            Some(Commands::Fix { .. })
+        ));
+        assert!(matches!(
+            Cli::parse_from(["sparrow", "explain", "x"]).command,
+            Some(Commands::Explique { .. })
+        ));
+        assert!(matches!(
+            Cli::parse_from(["sparrow", "montre"]).command,
+            Some(Commands::Console { .. })
+        ));
+        assert!(matches!(
+            Cli::parse_from(["sparrow", "undo"]).command,
+            Some(Commands::Annule { .. })
+        ));
+    }
+
+    #[test]
+    fn v09_human_commands_parse() {
+        assert!(matches!(
+            Cli::parse_from(["sparrow", "idees", "enseignant"]).command,
+            Some(Commands::Idees { .. })
+        ));
+        assert!(matches!(
+            Cli::parse_from(["sparrow", "ideas"]).command,
+            Some(Commands::Idees { .. })
+        ));
+        assert!(matches!(
+            Cli::parse_from(["sparrow", "whatis", "token"]).command,
+            Some(Commands::Whatis { .. })
+        ));
+        assert!(matches!(
+            Cli::parse_from(["sparrow", "c-est-quoi", "checkpoint"]).command,
+            Some(Commands::Whatis { .. })
+        ));
+        match Cli::parse_from(["sparrow", "budget", "2€"]).command {
+            Some(Commands::Budget { amount }) => assert_eq!(amount.as_deref(), Some("2€")),
+            _ => panic!("expected Budget"),
+        }
+    }
+
+    #[test]
+    fn mode_command_parses_optional_argument() {
+        match Cli::parse_from(["sparrow", "mode"]).command {
+            Some(Commands::Mode { mode }) => assert!(mode.is_none()),
+            _ => panic!("expected Mode"),
+        }
+        match Cli::parse_from(["sparrow", "mode", "pro"]).command {
+            Some(Commands::Mode { mode }) => assert_eq!(mode.as_deref(), Some("pro")),
+            _ => panic!("expected Mode"),
+        }
+    }
+
+    #[test]
+    fn annule_defaults_and_flags() {
+        // No id → latest (None); --tout → whole session.
+        match Cli::parse_from(["sparrow", "annule"]).command {
+            Some(Commands::Annule { id, tout }) => {
+                assert!(id.is_none());
+                assert!(!tout);
+            }
+            _ => panic!("expected Annule"),
+        }
+        match Cli::parse_from(["sparrow", "annule", "--tout"]).command {
+            Some(Commands::Annule { id, tout }) => {
+                assert!(id.is_none());
+                assert!(tout);
+            }
+            _ => panic!("expected Annule"),
+        }
+        match Cli::parse_from(["sparrow", "annule", "cp-123"]).command {
+            Some(Commands::Annule { id, .. }) => assert_eq!(id.as_deref(), Some("cp-123")),
+            _ => panic!("expected Annule"),
+        }
+    }
 }

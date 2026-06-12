@@ -14,6 +14,70 @@ use tokio::sync::mpsc;
 
 static CURRENT_DIR_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
+/// A brain whose `complete()` blocks far longer than any sane wall cap, to
+/// prove the engine bounds the model call itself (not just the stream).
+#[derive(Clone)]
+struct SlowBrain {
+    id: String,
+}
+
+#[async_trait]
+impl Brain for SlowBrain {
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn caps(&self) -> ModelCaps {
+        ModelCaps {
+            context_window: 32_768,
+            max_output: 4096,
+            tools: true,
+            vision: false,
+            cost_input_per_mtok: 0.0,
+            cost_output_per_mtok: 0.0,
+            latency: LatencyClass::Fast,
+        }
+    }
+    async fn complete(&self, _req: BrainRequest) -> anyhow::Result<BrainStream> {
+        // Simulate a slow/hung provider that never starts streaming.
+        tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        Ok(Box::pin(stream::iter(vec![BrainEvent::Done(
+            StopReason::EndTurn,
+        )])))
+    }
+}
+
+#[tokio::test]
+async fn wall_clock_cap_stops_a_slow_model_call() {
+    // Regression: --max-wall-secs was parsed but never enforced. A hung/slow
+    // completion must be interrupted near the cap, not run unbounded.
+    let mut config = Config::default();
+    config.budget.max_wall_secs = Some(1);
+    let mut providers: HashMap<String, Vec<Arc<dyn Brain>>> = HashMap::new();
+    providers.insert(
+        "local".into(),
+        vec![Arc::new(SlowBrain {
+            id: "local:slow".into(),
+        })],
+    );
+    let router = Arc::new(BasicRouter::new(&config, providers));
+    let engine = Engine::new(router, config);
+
+    let started = std::time::Instant::now();
+    let (outcome, _events) = drive_and_collect(engine, "do something slow").await;
+    let elapsed = started.elapsed();
+
+    assert!(
+        outcome.status.contains("wall-clock") || outcome.status.starts_with("error"),
+        "expected a wall-clock stop, got {:?}",
+        outcome.status
+    );
+    assert!(
+        elapsed < std::time::Duration::from_secs(10),
+        "run should stop near the 1s cap, took {:?}",
+        elapsed
+    );
+}
+
 #[derive(Clone)]
 struct ScriptedBrain {
     id: String,
@@ -142,7 +206,15 @@ async fn anti_simulation_rejects_fabricated_result_claim_and_reasks() {
     let (outcome, events) =
         drive_and_collect(engine, "run cargo test and report the real result").await;
 
-    assert_eq!(outcome.status, "completed");
+    // The run finishes without error. Both turns are text-only (no tools, no
+    // diffs), so the honest status is "no actions taken" — not "completed",
+    // which is now reserved for runs that actually changed something.
+    assert!(
+        !outcome.status.starts_with("error"),
+        "run should not error, got {:?}",
+        outcome.status
+    );
+    // The guard must have re-asked, so the model was called a second time.
     assert_eq!(calls.call_count(), 2);
     assert!(events.iter().any(|event| matches!(
         event,
@@ -215,6 +287,77 @@ async fn checkpoint_is_created_before_mutating_edit_tool_runs() {
         Event::Message { role, text, .. }
             if role == "autonomy" && text.contains("trusted autonomy")
     )));
+
+    let _ = std::fs::remove_dir_all(workspace);
+}
+
+#[tokio::test]
+async fn no_checkpoint_setting_skips_checkpoint_creation() {
+    // Regression: `--no-checkpoint` (config.defaults.checkpointing = false) was
+    // parsed but never enforced. With it off, no CheckpointCreated event fires
+    // — yet the edit still applies.
+    let _guard = CURRENT_DIR_LOCK.lock().await;
+    let workspace = temp_workspace("no-checkpoint");
+    init_git_repo(&workspace);
+    std::fs::write(workspace.join("note.txt"), "original").unwrap();
+    std::process::Command::new("git")
+        .args(["add", "note.txt"])
+        .current_dir(&workspace)
+        .output()
+        .unwrap();
+    std::process::Command::new("git")
+        .args(["commit", "-m", "init"])
+        .current_dir(&workspace)
+        .output()
+        .unwrap();
+
+    let previous_dir = std::env::current_dir().unwrap();
+    std::env::set_current_dir(&workspace).unwrap();
+
+    let brain = ScriptedBrain::new(vec![
+        vec![
+            BrainEvent::ToolUseStart {
+                id: "edit-1".into(),
+                name: "edit".into(),
+            },
+            BrainEvent::ToolUseDelta {
+                id: "edit-1".into(),
+                json: r#"{"path":"note.txt","old":"original","new":"changed"}"#.into(),
+            },
+            BrainEvent::ToolUseEnd {
+                id: "edit-1".into(),
+            },
+            BrainEvent::Done(StopReason::ToolUse),
+        ],
+        vec![
+            BrainEvent::TextDelta("done.".into()),
+            BrainEvent::Done(StopReason::EndTurn),
+        ],
+    ]);
+
+    let mut config = Config::default();
+    config.defaults.checkpointing = false;
+    let mut providers: HashMap<String, Vec<Arc<dyn Brain>>> = HashMap::new();
+    providers.insert("local".into(), vec![Arc::new(brain)]);
+    let router = Arc::new(BasicRouter::new(&config, providers));
+    let engine = Engine::new(router, config);
+
+    let (outcome, events) = drive_and_collect(engine, "edit note.txt").await;
+    std::env::set_current_dir(previous_dir).unwrap();
+
+    assert_eq!(outcome.status, "completed");
+    // The edit still applied…
+    assert_eq!(
+        std::fs::read_to_string(workspace.join("note.txt")).unwrap(),
+        "changed"
+    );
+    // …but no checkpoint was created.
+    assert!(
+        !events
+            .iter()
+            .any(|event| matches!(event, Event::CheckpointCreated { .. })),
+        "no checkpoint should be created when checkpointing is disabled"
+    );
 
     let _ = std::fs::remove_dir_all(workspace);
 }

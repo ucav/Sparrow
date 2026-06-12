@@ -16,6 +16,10 @@ fn one_click_scripts_target_the_real_release_artifacts() {
             script.contains("sparrow launch"),
             "one-click scripts must guide users to the simplified launch command"
         );
+        assert!(
+            script.contains("Shortcut") || script.contains(".desktop"),
+            "one-click scripts must create a user-visible shortcut unless disabled"
+        );
     }
 
     for artifact in [
@@ -28,6 +32,19 @@ fn one_click_scripts_target_the_real_release_artifacts() {
             "one-click scripts must reference release artifact `{artifact}`"
         );
     }
+}
+
+#[test]
+fn packaging_assets_expose_one_gesture_installers() {
+    let nsi = std::fs::read_to_string("packaging/windows/Sparrow.nsi")
+        .expect("Windows setup template must exist");
+    assert!(nsi.contains("Sparrow-Setup.exe"));
+    assert!(nsi.contains("CreateShortcut"));
+
+    let dmg = std::fs::read_to_string("packaging/macos/create-dmg.sh")
+        .expect("macOS DMG script must exist");
+    assert!(dmg.contains("Sparrow.app"));
+    assert!(dmg.contains("hdiutil create"));
 }
 
 #[test]

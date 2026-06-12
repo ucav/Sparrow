@@ -32,7 +32,36 @@ fn console_html_declares_captain_and_paper_theme_tokens() {
         html.contains("prefers-color-scheme: light")
             && html.contains("'sparrow-theme'")
             && html.contains("location.search")
-            && html.contains("queryTheme==='paper'"),
+            && html.contains("THEMES.includes(queryTheme)"),
         "paper theme should auto-detect light mode, persist user override, and support query-forced screenshots"
+    );
+}
+
+#[test]
+fn console_html_declares_white_theme_tokens() {
+    let html =
+        std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");
+    assert!(
+        html.contains(":root[data-theme=\"white\"]"),
+        "white theme block must exist"
+    );
+    for token in [
+        "--bg:#ffffff",
+        "--panel2:#f7f7f8",
+        "--line:#e5e7eb",
+        "--fg:#111827",
+        "--dim:#6b7280",
+    ] {
+        assert!(
+            html.contains(token),
+            "white theme must declare CSS token `{}`",
+            token
+        );
+    }
+    // The theme cycle + appearance dropdown must expose all three themes.
+    assert!(
+        html.contains("const THEMES=['captain','paper','white']")
+            && html.contains("<option value=\"white\">"),
+        "white must be selectable via the theme cycle and the appearance dropdown"
     );
 }

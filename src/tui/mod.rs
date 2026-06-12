@@ -396,6 +396,10 @@ pub struct Tui {
     agent_souls: std::collections::HashMap<String, (String, String)>,
     /// Rich terminal renderer (syntax highlighting, markdown, diffs).
     term_renderer: crate::tui::renderer::TermRenderer,
+    /// v0.9 Pilier 2: when true, status events render as plain-language lines
+    /// via the humanize table instead of technical labels.
+    simple: bool,
+    lang: crate::humanize::Lang,
 }
 
 impl Tui {
@@ -458,9 +462,19 @@ impl Tui {
             term_renderer: crate::tui::renderer::TermRenderer::new(
                 crate::tui::renderer::RenderConfig::default(),
             ),
+            // Default to the human-first experience; run_tui overrides from config.
+            simple: true,
+            lang: crate::humanize::Lang::Fr,
         };
         tui.show_splash();
         tui
+    }
+
+    /// Apply the resolved experience (simple/pro + language) from config.
+    pub fn with_experience(mut self, simple: bool, lang: crate::humanize::Lang) -> Self {
+        self.simple = simple;
+        self.lang = lang;
+        self
     }
 
     /// Show a rich-formatted splash screen demonstrating TUI capabilities.
@@ -823,16 +837,24 @@ impl Tui {
                 from, to, reason, ..
             } => {
                 self.route = to.clone();
-                let clean = crate::event::friendly_model_switch_reason(reason);
-                let label = if crate::event::is_local_model_unavailable(reason) {
-                    format!(
-                        "↳ modèle local indisponible → routage modèle cloud ({})",
-                        to
-                    )
+                // v0.9 simple mode: one plain-language line instead of the
+                // technical "fallback: X → Y (reason)".
+                if self.simple {
+                    if let Some(line) = crate::humanize::humanize(&event, self.lang) {
+                        self.add_line(&line, LogStyle::Warn, 1);
+                    }
                 } else {
-                    format!("↳ fallback: {} → {} ({})", from, to, clean)
-                };
-                self.add_line(&label, LogStyle::Warn, 1);
+                    let clean = crate::event::friendly_model_switch_reason(reason);
+                    let label = if crate::event::is_local_model_unavailable(reason) {
+                        format!(
+                            "↳ modèle local indisponible → routage modèle cloud ({})",
+                            to
+                        )
+                    } else {
+                        format!("↳ fallback: {} → {} ({})", from, to, clean)
+                    };
+                    self.add_line(&label, LogStyle::Warn, 1);
+                }
             }
             Event::ThinkingDelta { text, .. } => {
                 let visible = self.think.feed(text);
@@ -1005,29 +1027,46 @@ impl Tui {
                     self.add_line(&tail, LogStyle::Cmd, 1);
                 }
                 self.close_group();
-                self.add_line(
-                    &format!(
-                        "✓ done  status: {}  cost: ${:.4}",
-                        outcome.status, outcome.cost_usd
-                    ),
-                    LogStyle::Ok,
-                    0,
-                );
-                // Cost comparison — Sparrow's moat
-                if outcome.tokens.input > 0 || outcome.tokens.output > 0 {
-                    let comparison =
-                        crate::cost::format_comparison(outcome.cost_usd, &outcome.tokens);
-                    for line in comparison.lines().skip(1) {
-                        // skip the "── Cost ──" header, show data lines
-                        if !line.is_empty() && !line.starts_with("──") {
-                            let style = if line.contains("Sparrow") {
-                                LogStyle::Ok
-                            } else if line.contains("💡") {
-                                LogStyle::Warn
-                            } else {
-                                LogStyle::Rem
-                            };
-                            self.add_line(line, style, 1);
+                if self.simple {
+                    // Human sentence + one cost line in centimes, no token
+                    // jargon, no competitor table.
+                    if let Some(line) = crate::humanize::humanize(&event, self.lang) {
+                        self.add_line(&line, LogStyle::Ok, 0);
+                    }
+                    let usd = outcome.cost_usd;
+                    let cost_line = if usd <= 0.0 {
+                        "C'était gratuit.".to_string()
+                    } else if usd < 0.01 {
+                        "Coût : moins d'un centime.".to_string()
+                    } else {
+                        format!("Coût : environ {:.0} centimes.", usd * 100.0)
+                    };
+                    self.add_line(&cost_line, LogStyle::Dim, 1);
+                } else {
+                    self.add_line(
+                        &format!(
+                            "✓ done  status: {}  cost: ${:.4}",
+                            outcome.status, outcome.cost_usd
+                        ),
+                        LogStyle::Ok,
+                        0,
+                    );
+                    // Cost comparison — Sparrow's moat
+                    if outcome.tokens.input > 0 || outcome.tokens.output > 0 {
+                        let comparison =
+                            crate::cost::format_comparison(outcome.cost_usd, &outcome.tokens);
+                        for line in comparison.lines().skip(1) {
+                            // skip the "── Cost ──" header, show data lines
+                            if !line.is_empty() && !line.starts_with("──") {
+                                let style = if line.contains("Sparrow") {
+                                    LogStyle::Ok
+                                } else if line.contains("💡") {
+                                    LogStyle::Warn
+                                } else {
+                                    LogStyle::Rem
+                                };
+                                self.add_line(line, style, 1);
+                            }
                         }
                     }
                 }
@@ -2187,5 +2226,86 @@ impl Tui {
 impl Default for Tui {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod v09_tests {
+    use super::*;
+    use crate::event::{Event, OutcomeSummary, RunId, TokenUsage};
+
+    fn run() -> RunId {
+        RunId("t".into())
+    }
+
+    #[test]
+    fn simple_mode_renders_human_model_switch() {
+        let mut tui = Tui::new().with_experience(true, crate::humanize::Lang::Fr);
+        let before = tui.lines.len();
+        tui.push_event(Event::ModelSwitched {
+            run: run(),
+            from: "a".into(),
+            to: "b".into(),
+            reason: "escalation".into(),
+        });
+        let added: Vec<String> = tui.lines[before..].iter().map(|l| l.text.clone()).collect();
+        let joined = added.join("\n");
+        assert!(
+            joined.contains("vitesse supérieure") || joined.contains("Je change de modèle"),
+            "simple mode should show a human switch line, got: {joined}"
+        );
+        // No technical "fallback: a → b" jargon.
+        assert!(!joined.contains("fallback:"), "jargon leaked: {joined}");
+    }
+
+    #[test]
+    fn pro_mode_keeps_technical_model_switch() {
+        let mut tui = Tui::new().with_experience(false, crate::humanize::Lang::Fr);
+        let before = tui.lines.len();
+        tui.push_event(Event::ModelSwitched {
+            run: run(),
+            from: "a".into(),
+            to: "b".into(),
+            reason: "x".into(),
+        });
+        let joined: String = tui.lines[before..]
+            .iter()
+            .map(|l| l.text.clone())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(joined.contains("a") && joined.contains("b"));
+    }
+
+    #[test]
+    fn simple_mode_run_finished_has_no_dollar_jargon() {
+        let mut tui = Tui::new().with_experience(true, crate::humanize::Lang::Fr);
+        let before = tui.lines.len();
+        tui.push_event(Event::RunFinished {
+            run: run(),
+            outcome: OutcomeSummary {
+                status: "completed".into(),
+                diffs: vec![],
+                cost_usd: 0.0,
+                tokens: TokenUsage {
+                    input: 0,
+                    output: 0,
+                },
+                cost_comparison: String::new(),
+                duration_ms: None,
+            },
+        });
+        let joined: String = tui.lines[before..]
+            .iter()
+            .map(|l| l.text.clone())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            joined.contains("Terminé") || joined.contains("gratuit"),
+            "got: {joined}"
+        );
+        assert!(
+            !joined.contains("status:"),
+            "technical status leaked: {joined}"
+        );
     }
 }

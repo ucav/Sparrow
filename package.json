@@ -5,7 +5,8 @@
   "description": "Optional Playwright runtime for Sparrow browser/computer-use tools",
   "scripts": {
     "browser:install": "playwright install chromium",
-    "browser:smoke": "node scripts/playwright-driver.mjs"
+    "browser:smoke": "node scripts/playwright-driver.mjs",
+    "a11y:console": "node scripts/audit-a11y.mjs"
   },
   "dependencies": {
     "playwright": "^1.52.0"

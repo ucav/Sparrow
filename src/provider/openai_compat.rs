@@ -223,12 +223,16 @@ fn build_chat_body(model: &str, req: &BrainRequest, echo_reasoning: bool) -> ser
     if !req.stop.is_empty() {
         body["stop"] = json!(req.stop);
     }
-    if req.cache.enabled {
-        if let Some(key) = &req.cache.key {
-            body["prompt_cache_key"] = json!(key);
-        }
-        body["prompt_cache_retention"] = json!(req.cache.ttl.openai_retention());
-    }
+    // NOTE: we deliberately never emit `prompt_cache_key` / `prompt_cache_retention`
+    // here. This one adapter fronts dozens of OpenAI-compatible endpoints and
+    // proxies (opencode-go, NVIDIA NIM, Groq, stepfun, Ollama, …). Many reject
+    // unknown parameters with HTTP 400 — e.g. opencode-go:
+    //   "Validation: Unsupported parameter(s): prompt_cache_retention,
+    //    prompt_cache_key"
+    // which made the first model in every routing chain fail and waste a turn.
+    // Prompt caching stays an Anthropic-only feature (handled in anthropic.rs,
+    // which keys off `req.cache.enabled` independently). The engine may still
+    // set `req.cache.enabled` for the run; this adapter simply ignores it.
 
     body
 }
@@ -657,7 +661,12 @@ mod tests {
     use tokio::net::TcpListener;
 
     #[test]
-    fn openai_chat_body_adds_prompt_cache_controls() {
+    fn openai_chat_body_never_sends_prompt_cache_params() {
+        // Regression for the v0.8.x 400: many OpenAI-compatible proxies
+        // (opencode-go, …) reject `prompt_cache_key`/`prompt_cache_retention`
+        // with HTTP 400, which made the first routed model fail every run.
+        // These params are Anthropic-only (see anthropic.rs); this adapter
+        // must never emit them — even when the run enabled caching.
         let req = BrainRequest {
             system: Some("stable sparrow system".into()),
             messages: vec![Msg {
@@ -675,8 +684,14 @@ mod tests {
         };
 
         let body = build_chat_body("gpt-test", &req, true);
-        assert_eq!(body["prompt_cache_key"], "sparrow-repo-abc");
-        assert_eq!(body["prompt_cache_retention"], "in_memory");
+        assert!(
+            body.get("prompt_cache_key").is_none(),
+            "prompt_cache_key must never be sent to an OpenAI-compatible endpoint"
+        );
+        assert!(
+            body.get("prompt_cache_retention").is_none(),
+            "prompt_cache_retention must never be sent to an OpenAI-compatible endpoint"
+        );
     }
 
     #[test]

@@ -11,6 +11,7 @@ INSTALL_DIR="${SPARROW_INSTALL_DIR:-$HOME/.local/bin}"
 BIN_PATH="$INSTALL_DIR/sparrow"
 LAUNCH=1
 FROM_SOURCE=0
+SHORTCUT=1
 
 while [ "${1:-}" ]; do
     case "$1" in
@@ -29,8 +30,11 @@ while [ "${1:-}" ]; do
         --no-launch)
             LAUNCH=0
             ;;
+        --no-shortcut)
+            SHORTCUT=0
+            ;;
         -h|--help)
-            echo "Usage: install.sh [--dir PATH] [--from-source] [--no-launch]"
+            echo "Usage: install.sh [--dir PATH] [--from-source] [--no-launch] [--no-shortcut]"
             exit 0
             ;;
         *)
@@ -112,6 +116,26 @@ install_from_release() {
     install_from_source
 }
 
+install_desktop_shortcut() {
+    [ "$SHORTCUT" -eq 1 ] || return 0
+    desktop_dir="${XDG_DESKTOP_DIR:-$HOME/Desktop}"
+    if [ ! -d "$desktop_dir" ]; then
+        return 0
+    fi
+    file="$desktop_dir/Sparrow.desktop"
+    cat > "$file" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Sparrow
+Comment=Open Sparrow
+Exec=$BIN_PATH
+Terminal=true
+Categories=Development;Utility;
+EOF
+    chmod +x "$file" 2>/dev/null || true
+    echo "Desktop shortcut created: $file"
+}
+
 echo "Installing Sparrow into $INSTALL_DIR"
 if [ "$FROM_SOURCE" -eq 1 ]; then
     install_from_source
@@ -120,6 +144,7 @@ else
 fi
 
 echo "Sparrow installed: $BIN_PATH"
+install_desktop_shortcut
 if ! printf '%s' ":$PATH:" | grep -q ":$INSTALL_DIR:"; then
     echo ""
     echo "Add Sparrow to your PATH:"

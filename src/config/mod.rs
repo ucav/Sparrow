@@ -22,6 +22,8 @@ pub struct Config {
     #[serde(default)]
     pub surfaces: SurfaceConfig,
     #[serde(default)]
+    pub experience: ExperienceConfig,
+    #[serde(default)]
     pub skills: SkillsConfig,
     #[serde(default)]
     pub permissions: PermissionConfig,
@@ -61,6 +63,11 @@ pub struct Defaults {
     /// On non-zero exit, the failure is re-injected so the agent fixes it.
     #[serde(default)]
     pub verify_command: Option<String>,
+    /// Whether to create Git-backed checkpoints before mutating tools. Default
+    /// true. Disabled by the `--no-checkpoint` CLI flag (which was parsed but
+    /// never enforced).
+    #[serde(default = "default_true")]
+    pub checkpointing: bool,
 }
 
 impl Default for Defaults {
@@ -70,6 +77,7 @@ impl Default for Defaults {
             sandbox: default_sandbox(),
             theme: default_theme(),
             verify_command: None,
+            checkpointing: true,
         }
     }
 }
@@ -154,6 +162,14 @@ pub struct Budget {
     pub daily_usd: f64,
     #[serde(default = "default_one")]
     pub session_usd: f64,
+    /// Hard wall-clock cap for a single run, in seconds. `None` = no time cap.
+    /// Set by the `--max-wall-secs` CLI flag (was parsed but never enforced).
+    #[serde(default)]
+    pub max_wall_secs: Option<u64>,
+    /// Hard cap on total tokens (input + output) for a single run. `None` =
+    /// no token cap. Set by `--max-tokens`.
+    #[serde(default)]
+    pub max_tokens: Option<u64>,
 }
 
 impl Default for Budget {
@@ -161,6 +177,8 @@ impl Default for Budget {
         Self {
             daily_usd: default_five(),
             session_usd: default_one(),
+            max_wall_secs: None,
+            max_tokens: None,
         }
     }
 }
@@ -181,6 +199,68 @@ pub struct ProviderConfig {
     pub models: Vec<String>,
     #[serde(default)]
     pub api_key_env: Option<String>,
+}
+
+/// v0.9 Pilier 2 — how Sparrow talks to the user. Stored separately from the
+/// messaging `surfaces` (telegram/discord/…) which are a different concept.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExperienceConfig {
+    /// "simple" (plain language, no jargon) · "pro" (full technical output) ·
+    /// "auto" (start simple, the user can switch). Default: auto.
+    #[serde(default = "default_experience_mode")]
+    pub mode: String,
+    /// "fr" · "en" · "auto" (follow the system locale, fall back to French).
+    #[serde(default = "default_experience_language")]
+    pub language: String,
+}
+
+fn default_experience_mode() -> String {
+    "auto".into()
+}
+
+fn default_experience_language() -> String {
+    "auto".into()
+}
+
+impl Default for ExperienceConfig {
+    fn default() -> Self {
+        Self {
+            mode: default_experience_mode(),
+            language: default_experience_language(),
+        }
+    }
+}
+
+impl ExperienceConfig {
+    /// True when output should use the plain-language (simple) layer. `auto`
+    /// resolves to simple — v0.9's default is human-first; pro users opt in
+    /// with `mode = "pro"` (or `sparrow mode pro`).
+    pub fn is_simple(&self) -> bool {
+        !self.mode.eq_ignore_ascii_case("pro")
+    }
+
+    /// Resolved display language for the human layer.
+    pub fn lang(&self) -> crate::humanize::Lang {
+        let code = self.language.trim().to_lowercase();
+        if code == "auto" || code.is_empty() {
+            crate::humanize::Lang::from_code(&detect_locale())
+        } else {
+            crate::humanize::Lang::from_code(&code)
+        }
+    }
+}
+
+/// Best-effort system locale, used only when language = "auto".
+fn detect_locale() -> String {
+    for key in ["LC_ALL", "LC_MESSAGES", "LANG", "LANGUAGE"] {
+        if let Ok(val) = std::env::var(key) {
+            if !val.trim().is_empty() {
+                return val;
+            }
+        }
+    }
+    // Windows: no standard env locale; default to French (Sparrow's primary).
+    String::new()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -266,6 +346,7 @@ impl Default for Config {
             budget: Budget::default(),
             providers: std::collections::HashMap::new(),
             surfaces: SurfaceConfig::default(),
+            experience: ExperienceConfig::default(),
             skills: SkillsConfig::default(),
             permissions: PermissionConfig::default(),
             hooks: Vec::new(),
@@ -346,6 +427,7 @@ impl ConfigStore for FsConfigStore {
                 budget: Budget::default(),
                 providers: HashMap::new(),
                 surfaces: SurfaceConfig::default(),
+                experience: ExperienceConfig::default(),
                 skills: SkillsConfig::default(),
                 permissions: PermissionConfig::default(),
                 hooks: Vec::new(),
@@ -381,9 +463,16 @@ impl ConfigStore for FsConfigStore {
             std::fs::create_dir_all(parent)?;
         }
         let content = toml::to_string_pretty(c)?;
-        std::fs::write(&path, content)?;
+        std::fs::write(&path, human_config_header().to_string() + &content)?;
         Ok(())
     }
+}
+
+pub fn human_config_header() -> &'static str {
+    "# Configuration Sparrow\n\
+     # Mode simple par défaut : tu peux changer ce fichier à la main, puis relancer Sparrow.\n\
+     # Les clés API restent dans tes variables d'environnement ou le coffre Sparrow, pas ici.\n\
+     # Pour revenir au mode expert : `sparrow mode pro` ou `sparrow launch --pro`.\n\n"
 }
 
 /// Merge configured providers with auto-detected ones (env vars, stored credentials).

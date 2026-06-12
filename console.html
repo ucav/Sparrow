@@ -182,6 +182,15 @@
   .input-bar textarea{width:100%;min-height:32px;max-height:190px;background:var(--panel);border:1px solid var(--line);border-radius:7px;color:var(--fg);
     font-family:inherit;font-size:12px;line-height:1.45;padding:7px 10px;outline:none;resize:none;overflow-y:auto}
   .input-bar textarea:focus{border-color:var(--brand)}
+  /* Ghost-text autocomplete: history suggestion rendered behind the textarea. */
+  .composer-wrap{position:relative;min-width:0}
+  .composer-wrap textarea{position:relative;z-index:1;background:transparent}
+  .composer-wrap::before{content:"";position:absolute;inset:0;border-radius:7px;background:var(--panel)}
+  .composer-ghost{position:absolute;inset:0;z-index:0;padding:7px 10px;border:1px solid transparent;border-radius:7px;
+    font-family:inherit;font-size:12px;line-height:1.45;white-space:pre-wrap;word-break:break-word;
+    overflow:hidden;pointer-events:none;color:transparent}
+  .composer-ghost .g-rest{color:var(--dimmer);opacity:.85}
+  html[data-view="focus"] .composer-ghost{font-size:15px;padding:11px 13px;border-radius:8px}
   .input-bar button{font-family:inherit;font-size:11px;padding:6px 14px;cursor:pointer}
   .attach-btn{display:inline-flex;align-items:center;justify-content:center;width:34px;height:31px;border-radius:7px;color:var(--steel);
     border:1px solid var(--line);background:var(--panel);cursor:pointer;transition:.15s}
@@ -212,7 +221,7 @@
      drawer collapses to icon-only width, then to overlay below 720 px. */
   .win{
     display:grid;
-    grid-template-columns:48px 280px minmax(0,1fr);
+    grid-template-columns:48px 280px minmax(0,1fr) auto;
     grid-template-rows:auto 1fr;
     height:100dvh;width:100vw;
     margin:0;border-radius:0;border:none;
@@ -221,6 +230,7 @@
   .win .rail{grid-column:1;grid-row:2}
   .win .drawer{grid-column:2;grid-row:2}
   .win .main{grid-column:3;grid-row:2;display:grid;grid-template-rows:auto auto minmax(0,1fr) auto auto;min-width:0;min-height:0}
+  .win .rightbar{grid-column:4;grid-row:2}
   .rail{
     background:#0c0907;border-right:1px solid var(--line);
     display:flex;flex-direction:column;align-items:center;gap:3px;
@@ -296,21 +306,169 @@
   .sec-finding .msg{color:var(--fg);margin-top:2px;overflow-wrap:anywhere}
   /* Responsive grid breakpoints */
   @media(max-width:1100px){
-    .win{grid-template-columns:48px 240px minmax(0,1fr)}
+    .win{grid-template-columns:48px 240px minmax(0,1fr) auto}
   }
   @media(max-width:980px){
-    .win{grid-template-columns:48px 0 minmax(0,1fr)}
+    .win{grid-template-columns:48px 0 minmax(0,1fr) auto}
     .drawer{position:fixed;top:42px;left:48px;bottom:0;width:280px;z-index:25;
       transform:translateX(-100%);transition:transform .25s cubic-bezier(.2,.8,.2,1);
       border-right:1px solid var(--line-hot)}
     body.drawer-open .drawer{transform:translateX(0);box-shadow:0 12px 40px -8px rgba(0,0,0,.6)}
   }
   @media(max-width:720px){
-    .win{grid-template-columns:42px 0 minmax(0,1fr)}
+    .win{grid-template-columns:42px 0 minmax(0,1fr) auto}
     .rail{width:42px}.rail .ico{width:32px;height:32px;font-size:13px}
     .rail-logo{width:28px;height:28px}
     body.drawer-open .drawer{width:min(280px,calc(100vw - 42px))}
   }
+
+  /* ─── v0.9 : right tools sidebar (Preview · Diff · Terminal · Files · Tasks · Plan) ── */
+  .rightbar{
+    width:0;overflow:hidden;min-height:0;
+    background:linear-gradient(180deg,var(--panel),color-mix(in srgb,var(--bg) 80%,var(--panel)));
+    border-left:1px solid var(--line);
+    transition:width .28s cubic-bezier(.2,.8,.2,1);
+  }
+  body.rightbar-open .rightbar{width:clamp(300px,26vw,380px)}
+  /* Fixed-width inner shell so the content doesn't reflow while the column animates. */
+  .rb-inner{width:clamp(300px,26vw,380px);height:100%;display:flex;flex-direction:column;min-height:0}
+  .rb-head{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line);flex:0 0 auto}
+  .rb-head .rb-title{flex:1;font-size:11px;letter-spacing:1.6px;text-transform:uppercase;color:var(--dim);font-weight:700;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rb-head button{border:none;background:transparent;color:var(--dimmer);cursor:pointer;font-size:14px;
+    padding:3px 7px;border-radius:6px;font-family:inherit;transition:.12s;line-height:1}
+  .rb-head button:hover{color:var(--fg);background:var(--panel2)}
+  .rb-head .rb-pin.on{color:var(--brand)}
+  .rb-body{flex:1;overflow-y:auto;min-height:0;padding:10px 12px}
+  .rb-body::-webkit-scrollbar{width:6px}
+  .rb-body::-webkit-scrollbar-thumb{background:color-mix(in srgb,var(--line-hot) 70%,var(--bg));border-radius:6px}
+  .rb-foot{display:flex;align-items:center;gap:8px;padding:7px 12px;border-top:1px solid var(--line);
+    font-size:10px;color:var(--dimmer);flex:0 0 auto}
+  .rb-foot .rb-led{width:6px;height:6px;border-radius:50%;background:var(--dimmer);flex:0 0 auto}
+  .rb-foot.running .rb-led{background:var(--agent);box-shadow:0 0 7px var(--agent);animation:pulse 1.3s ease-in-out infinite}
+  .rb-foot .rb-time{margin-left:auto;font-variant-numeric:tabular-nums}
+  /* menu (default view) */
+  .rb-menu-item{display:flex;align-items:center;gap:10px;width:100%;padding:9px 11px;margin-bottom:4px;
+    border:1px solid transparent;border-radius:8px;background:transparent;color:var(--fg);
+    font-family:inherit;font-size:12.5px;cursor:pointer;text-align:left;transition:.13s}
+  .rb-menu-item:hover{background:var(--panel2);border-color:var(--line)}
+  .rb-menu-item .mi-ico{width:18px;text-align:center;color:var(--dim);font-size:13px;flex:0 0 auto}
+  .rb-menu-item .mi-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rb-menu-item .mi-badge{min-width:16px;height:16px;border-radius:8px;padding:0 5px;display:none;
+    align-items:center;justify-content:center;font-size:9px;font-weight:700;
+    background:color-mix(in srgb,var(--brand) 16%,transparent);color:var(--brand)}
+  .rb-menu-item .mi-badge.show{display:inline-flex}
+  .rb-menu-item .mi-badge.err{background:color-mix(in srgb,var(--rem) 16%,transparent);color:var(--rem)}
+  .rb-menu-item kbd{background:var(--panel2);border:1px solid var(--line);border-radius:4px;
+    padding:1px 6px;font-family:inherit;font-size:9.5px;color:var(--dimmer);white-space:nowrap}
+  /* shared panel rows */
+  .rb-empty{color:var(--dimmer);font-size:11.5px;font-style:italic;padding:18px 8px;text-align:center;line-height:1.6}
+  .rb-row{display:flex;flex-direction:column;gap:3px;padding:8px 10px;border-radius:7px;
+    background:var(--panel2);border:1px solid transparent;margin-bottom:5px;transition:.13s}
+  .rb-row.click{cursor:pointer}
+  .rb-row.click:hover{border-color:var(--line-hot)}
+  .rb-row .r-top{display:flex;align-items:center;gap:8px;min-width:0}
+  .rb-row .r-name{flex:1;font-size:11.5px;color:var(--fg);font-weight:500;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rb-row .r-meta{font-size:10px;color:var(--dim);display:flex;gap:8px;flex-wrap:wrap;overflow-wrap:anywhere}
+  .rb-row .r-meta b{color:var(--fg);font-weight:500}
+  .rb-st{display:inline-flex;align-items:center;gap:5px;font-size:9.5px;font-weight:600;
+    letter-spacing:.6px;text-transform:uppercase;white-space:nowrap}
+  .rb-st::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+  .rb-st.running{color:var(--agent)}.rb-st.running::before{box-shadow:0 0 7px currentColor;animation:pulse 1.3s ease-in-out infinite}
+  .rb-st.completed{color:var(--add)}
+  .rb-st.failed{color:var(--rem)}
+  .rb-st.waiting{color:var(--gold)}
+  .rb-sec{font-size:9.5px;letter-spacing:1.6px;text-transform:uppercase;color:var(--dimmer);
+    font-weight:700;margin:12px 2px 7px}
+  .rb-sec:first-child{margin-top:0}
+  .rb-term-line{font-family:var(--mono-font);font-size:10.5px;line-height:1.5;padding:6px 9px;border-radius:6px;
+    background:var(--panel2);margin-bottom:5px;overflow-wrap:anywhere}
+  .rb-term-line .cmdline{color:var(--brand);font-weight:600}
+  .rb-term-line.err{border-left:2px solid var(--rem)}
+  .rb-term-line.err .cmdline{color:var(--rem)}
+  .rb-term-line .out{color:var(--dim);white-space:pre-wrap;display:block;max-height:130px;overflow-y:auto;margin-top:3px}
+  .rb-plan-step{display:flex;align-items:flex-start;gap:8px;padding:6px 9px;border-radius:6px;
+    background:var(--panel2);margin-bottom:4px;font-size:11.5px;line-height:1.45}
+  .rb-plan-step .ps-mark{flex:0 0 auto;width:15px;text-align:center}
+  .rb-plan-step.completed .ps-mark{color:var(--add)}
+  .rb-plan-step.in_progress .ps-mark{color:var(--agent)}
+  .rb-plan-step.pending .ps-mark{color:var(--dimmer)}
+  .rb-plan-step.cancelled{opacity:.5}.rb-plan-step.cancelled .ps-txt{text-decoration:line-through}
+  .rb-plan-step.completed .ps-txt{color:var(--dim)}
+  .rb-plan-step .ps-txt{color:var(--fg);overflow-wrap:anywhere}
+  .rb-objective{padding:9px 11px;border-radius:8px;margin-bottom:10px;font-size:11.5px;line-height:1.5;color:var(--fg);
+    background:color-mix(in srgb,var(--brand) 6%,var(--panel2));border:1px solid color-mix(in srgb,var(--brand) 25%,var(--line))}
+  .rb-objective .ob-label{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--dimmer);margin-bottom:3px}
+  .rb-preview-frame{width:100%;height:46vh;border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:8px}
+  .rb-btn{font-family:inherit;font-size:10.5px;padding:4px 10px;border-radius:6px;cursor:pointer;transition:.13s;
+    color:var(--brand);background:color-mix(in srgb,var(--brand) 9%,transparent);
+    border:1px solid color-mix(in srgb,var(--brand) 35%,transparent)}
+  .rb-btn:hover{background:color-mix(in srgb,var(--brand) 18%,transparent)}
+  /* narrow viewports: slide-in overlay from the right instead of a grid column */
+  @media(max-width:980px){
+    .rightbar{position:fixed;top:42px;right:0;bottom:0;width:min(340px,92vw);z-index:26;
+      transform:translateX(100%);transition:transform .25s cubic-bezier(.2,.8,.2,1);
+      border-left:1px solid var(--line-hot)}
+    body.rightbar-open .rightbar{width:min(340px,92vw);transform:translateX(0);
+      box-shadow:0 12px 40px -8px rgba(0,0,0,.6)}
+    .rb-inner{width:min(340px,92vw)}
+  }
+
+  /* ─── v0.9 : keyboard cheat-sheet overlay (Ctrl+/) ── */
+  .kbd-help{position:fixed;inset:0;z-index:4000;display:none;align-items:center;justify-content:center;
+    background:color-mix(in srgb,var(--bg) 70%,transparent);backdrop-filter:blur(6px);padding:20px}
+  .kbd-help.show{display:flex}
+  .kbd-help .kh-card{width:min(680px,94vw);max-height:84vh;overflow-y:auto;background:var(--panel);
+    border:1px solid var(--line-hot);border-radius:12px;box-shadow:0 30px 90px rgba(0,0,0,.5);padding:18px 22px}
+  .kbd-help h3{font-size:12px;letter-spacing:1.8px;text-transform:uppercase;color:var(--brand);margin-bottom:12px}
+  .kbd-help .kh-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 26px}
+  @media(max-width:640px){.kbd-help .kh-grid{grid-template-columns:1fr}}
+  .kbd-help .kh-sec{grid-column:1/-1;font-size:9.5px;letter-spacing:1.6px;text-transform:uppercase;
+    color:var(--dimmer);font-weight:700;margin:10px 0 4px}
+  .kbd-help .kh-row{display:flex;align-items:center;gap:10px;font-size:11.5px;color:var(--dim);padding:3px 0}
+  .kbd-help .kh-row .desc{flex:1}
+  .kbd-help kbd{background:var(--panel2);border:1px solid var(--line);border-radius:4px;
+    padding:1px 7px;font-family:inherit;font-size:10.5px;color:var(--fg);white-space:nowrap}
+  /* welcome quick-action chips */
+  .qa-chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  .qa-chips button{font-family:inherit;font-size:11.5px;padding:6px 12px;border-radius:999px;cursor:pointer;
+    color:var(--fg);background:color-mix(in srgb,var(--brand) 7%,transparent);
+    border:1px solid color-mix(in srgb,var(--brand) 30%,var(--line));transition:.15s}
+  .qa-chips button:hover{background:color-mix(in srgb,var(--brand) 16%,transparent);transform:translateY(-1px)}
+
+  /* ─── v0.9 : white interface theme — clean, high-contrast light UI ── */
+  :root[data-theme="white"]{
+    --bg:#ffffff;--panel:#ffffff;--panel2:#f7f7f8;
+    --line:#e5e7eb;--line-hot:#d1d5db;
+    --dim:#6b7280;--dimmer:#9ca3af;--fg:#111827;
+    --brand:#111827;--coral:#b91c1c;
+    --agent:#0f766e;--planner:#1d4ed8;--verifier:#92400e;
+    --add:#15803d;--rem:#b91c1c;--gold:#a16207;--steel:#4b5563;
+    --sup:#15803d;--tru:#a16207;--aut:#b91c1c;
+  }
+  :root[data-theme="white"] body{background:var(--bg)}
+  :root[data-theme="white"] body::after{opacity:.012}
+  :root[data-theme="white"] .ember{display:none!important}
+  :root[data-theme="white"] .win{background:#fff;box-shadow:none}
+  :root[data-theme="white"] .chrome,
+  :root[data-theme="white"] .cockpit{background:#fff}
+  :root[data-theme="white"] .swarm-cockpit{background:var(--panel2)}
+  :root[data-theme="white"] .input-bar,
+  :root[data-theme="white"] .focus-actions{background:#fff}
+  :root[data-theme="white"] .rail{background:#f9fafb}
+  :root[data-theme="white"] .drawer,
+  :root[data-theme="white"] .rightbar{background:#fff}
+  :root[data-theme="white"] .budget-track,
+  :root[data-theme="white"] .context-track{background:#f3f4f6}
+  :root[data-theme="white"] .hero .h-logo{filter:drop-shadow(0 0 8px rgba(17,24,39,.18))}
+  :root[data-theme="white"] .word,:root[data-theme="white"] .b-word{
+    background:linear-gradient(90deg,#111827,#4b5563,#111827);background-size:220% 100%;
+    -webkit-background-clip:text;background-clip:text}
+  :root[data-theme="white"] #term::-webkit-scrollbar-thumb,
+  :root[data-theme="white"] .swarm-cockpit::-webkit-scrollbar-thumb{background:#d1d5db}
+  :root[data-theme="white"] .ln code,:root[data-theme="white"] .code-block{color:#374151}
+  :root[data-theme="white"] .diff-panel{background:#fff}
 
   /* ─── Sprint 1 inc 4-5 : paper theme + chrome chips + hero + boot ── */
   :root[data-theme="paper"]{
@@ -718,6 +876,44 @@
   .error-banner a{color:var(--brand);text-decoration:none}
   .learn-toast{animation:learnpop 4.2s ease}
   @keyframes learnpop{0%{opacity:0;transform:translateY(5px)}10%{opacity:1;transform:none}82%{opacity:1}100%{opacity:0;transform:translateY(-5px)}}
+  /* v0.9 Focus mode: one-column, readable, no cockpit noise. */
+  .view-toggle{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:2px}
+  .view-toggle button{font-family:inherit;font-size:10.5px;border:0;border-radius:6px;background:transparent;color:var(--dim);padding:4px 9px;cursor:pointer}
+  .view-toggle button[aria-pressed="true"]{color:var(--brand);background:color-mix(in srgb,var(--brand) 16%,transparent)}
+  .focus-actions{display:none;align-items:center;justify-content:center;gap:10px;padding:10px clamp(16px,2vw,30px);border-top:1px solid var(--line);background:linear-gradient(180deg,#17120d,#120f0b)}
+  .focus-actions button{min-width:104px;font-size:12px;padding:7px 14px}
+  .focus-actions .ok-action{color:var(--add);background:color-mix(in srgb,var(--add) 12%,transparent);border-color:color-mix(in srgb,var(--add) 44%,var(--line))}
+  .focus-actions .undo-action{color:var(--rem);background:color-mix(in srgb,var(--rem) 10%,transparent);border-color:color-mix(in srgb,var(--rem) 44%,var(--line))}
+  .focus-actions .explain-action{color:var(--planner);background:color-mix(in srgb,var(--planner) 10%,transparent);border-color:color-mix(in srgb,var(--planner) 44%,var(--line))}
+  .mic-btn{display:inline-flex;align-items:center;justify-content:center;width:34px;height:31px;border-radius:7px;color:var(--steel);border:1px solid var(--line);background:var(--panel);cursor:pointer;transition:.15s}
+  .mic-btn:hover,.mic-btn.listening{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 45%,var(--line))}
+  .mic-btn.listening{animation:abort-pulse 1.4s ease-in-out infinite}
+  .tour-pop{position:fixed;z-index:10000;max-width:min(300px,calc(100vw - 28px));border:1px solid color-mix(in srgb,var(--brand) 48%,var(--line));border-radius:8px;background:var(--panel);box-shadow:0 18px 60px rgba(0,0,0,.55);padding:12px;color:var(--fg);font-size:12px;line-height:1.45}
+  .tour-pop b{display:block;color:var(--brand);margin-bottom:4px;font-size:11px;text-transform:uppercase;letter-spacing:.8px}
+  .tour-pop .tour-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
+  .tour-pop button{font-family:inherit;font-size:11px;border-radius:7px;border:1px solid var(--line);background:transparent;color:var(--dim);padding:5px 10px;cursor:pointer}
+  .tour-pop button.primary{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 40%,var(--line));background:color-mix(in srgb,var(--brand) 12%,transparent)}
+  html[data-view="focus"] .win{grid-template-columns:minmax(0,1fr)}
+  html[data-view="focus"] .rail,
+  html[data-view="focus"] .drawer,
+  html[data-view="focus"] .cockpit,
+  html[data-view="focus"] .swarm-cockpit,
+  html[data-view="focus"] #newConversation{display:none!important}
+  html[data-view="focus"] .win .main{grid-column:1;grid-row:2;grid-template-rows:minmax(0,1fr) auto auto auto}
+  html[data-view="focus"] .win .rightbar{grid-column:1;grid-row:2;justify-self:end;z-index:28}
+  html[data-view="focus"] #term{font-size:calc(16px * var(--read-scale,1));line-height:1.72;padding:28px max(22px,calc((100% - 860px)/2)) 24px}
+  html[data-view="focus"] .ln{max-width:860px;margin-left:auto;margin-right:auto}
+  html[data-view="focus"] .composer-hints{display:none}
+  html[data-view="focus"] .focus-actions{display:flex}
+  html[data-view="focus"] .input-bar{grid-template-columns:auto auto minmax(0,860px) auto;justify-content:center;padding:12px max(18px,calc((100% - 980px)/2)) 18px}
+  html[data-view="focus"] .context-side{display:none}
+  html[data-view="focus"] .input-bar textarea{min-height:46px;font-size:15px;padding:11px 13px;border-radius:8px}
+  @media(max-width:720px){
+    html[data-view="focus"] .chrome .right{gap:4px;overflow-x:auto}
+    html[data-view="focus"] .chrome .nm{display:none}
+    html[data-view="focus"] .input-bar{grid-template-columns:auto auto minmax(0,1fr) auto}
+    .focus-actions{gap:6px}.focus-actions button{min-width:0;flex:1;padding:7px 9px}
+  }
   .boot-line{opacity:0;animation:fin .35s ease forwards}
   @keyframes fin{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
 
@@ -1007,7 +1203,12 @@
       <select id="cfgThemeSelect" onchange="document.documentElement.setAttribute('data-theme',this.value);localStorage.setItem('sparrow-theme',this.value)">
         <option value="captain">captain (dark)</option>
         <option value="paper">paper (light)</option>
+        <option value="white">white (clean light)</option>
       </select>
+    </div>
+    <div class="row"><label>auto-open tools panel</label>
+      <input type="checkbox" id="cfgRightbarAuto" checked onchange="rbSetAutoOpen(this.checked)">
+      <span class="muted" style="font-size:10px">open the right panel automatically on diffs, tasks and plan updates</span>
     </div>
     <div class="row"><label>typography</label>
       <select id="cfgFontSelect" onchange="document.documentElement.style.setProperty('--font-size-base',this.value+'px');localStorage.setItem('sparrow-font',this.value)">
@@ -1062,15 +1263,15 @@
   <div data-cfg-pane="mcp" style="display:none">
     <div class="cfg-section">
       <h4>MCP connectors</h4>
-      <p style="font-size:10.5px;color:var(--dim);line-height:1.5;margin-bottom:6px">External servers exposing tools/resources. Edit <code>~/.sparrow/mcp.toml</code> to add stdio/sse/http connectors.</p>
-      <button class="btn sm" onclick="fetch('/mcp/list').then(r=>r.json()).then(j=>{const el=document.getElementById('mcpList');el.textContent=JSON.stringify(j,null,2)}).catch(_=>document.getElementById('mcpList').textContent='/mcp/list not exposed yet — edit mcp.toml directly')">refresh list</button>
-      <pre id="mcpList" style="margin-top:8px;font-size:10.5px;color:var(--dim);max-height:160px;overflow:auto;background:var(--panel2);padding:8px;border-radius:6px">click refresh</pre>
+      <p style="font-size:10.5px;color:var(--dim);line-height:1.5;margin-bottom:6px">External servers exposing tools/resources. Manage them with <code>sparrow mcp add</code> or edit <code>mcp_servers.json</code> in your config dir.</p>
+      <button class="btn sm" onclick="loadMcpList()">refresh list</button>
+      <div id="mcpList" style="margin-top:8px;font-size:10.5px;color:var(--dim);max-height:200px;overflow:auto">click refresh</div>
     </div>
     <div class="cfg-section">
       <h4>hooks</h4>
-      <p style="font-size:10.5px;color:var(--dim);line-height:1.5;margin-bottom:6px">Run shell commands on lifecycle events (PreToolUse, OnApprovalRequested, PostCompact…). Edit <code>~/.sparrow/hooks.toml</code> or your project's <code>.sparrow/hooks.toml</code>.</p>
-      <button class="btn sm" onclick="fetch('/hooks').then(r=>r.json()).then(j=>{document.getElementById('hooksList').textContent=JSON.stringify(j,null,2)}).catch(_=>document.getElementById('hooksList').textContent='/hooks not exposed yet — edit hooks.toml directly')">refresh hooks</button>
-      <pre id="hooksList" style="margin-top:8px;font-size:10.5px;color:var(--dim);max-height:160px;overflow:auto;background:var(--panel2);padding:8px;border-radius:6px">click refresh</pre>
+      <p style="font-size:10.5px;color:var(--dim);line-height:1.5;margin-bottom:6px">Run shell commands on lifecycle events (PreToolUse, OnApprovalRequested, PostCompact…). Configure them in your <code>config.toml</code> under <code>[[hooks]]</code>.</p>
+      <button class="btn sm" onclick="loadHooksList()">refresh hooks</button>
+      <div id="hooksList" style="margin-top:8px;font-size:10.5px;color:var(--dim);max-height:200px;overflow:auto">click refresh</div>
     </div>
   </div>
 
@@ -1095,12 +1296,19 @@
     <span class="dot r"></span><span class="dot y"></span><span class="dot g"></span>
     <span class="nm"><b>sparrow</b> · webview console <span class="live-tag" id="conn-tag">connecting…</span></span>
     <span class="right">
+      <span class="view-toggle" role="group" aria-label="View mode">
+        <button id="focusModeBtn" type="button" aria-pressed="true">Focus</button>
+        <button id="cockpitModeBtn" type="button" aria-pressed="false">Cockpit</button>
+      </span>
       <button class="chip-btn" id="cmdkBtn" title="Cmd+K commands">⌘K commands</button>
       <button class="chip-btn solid" id="replayBtn" title="Replay last run">▸ replay</button>
       <button class="chip-btn" id="abortChromeBtn" title="Abort the running task" style="display:none;color:var(--rem);background:color-mix(in srgb,var(--rem) 12%,transparent);border-color:color-mix(in srgb,var(--rem) 50%,transparent)">◼ abort</button>
       <button class="chip-btn" id="soundBtn" title="Cmd+M mute sounds">🔊</button>
       <button class="chip-btn" id="verboseBtn" title="Verbose mode — show tool args, token ticks, internal reasoning" aria-pressed="false">⊕ verbose</button>
+      <button class="chip-btn" id="fontDownBtn" title="Smaller text" aria-label="Decrease text size">A−</button>
+      <button class="chip-btn" id="fontUpBtn" title="Larger text" aria-label="Increase text size">A+</button>
       <button class="chip-btn" id="themeBtn" title="Cmd+Shift+L toggle theme">☾</button>
+      <button class="chip-btn" id="rightbarBtn" title="Open tools panel" aria-label="Open tools panel" aria-pressed="false" aria-controls="rightbar">⧉ tools</button>
       <button class="btn sm" id="cfgBtn">config</button>
       <span id="appVersion" style="font-size:11px;color:var(--dimmer)">v—</span>
     </span>
@@ -1258,9 +1466,16 @@
     <span class="kbds">
       <kbd>⌘K</kbd>commands
       <kbd>@</kbd>agent
+      <kbd>Alt+F</kbd>focus
       <kbd>⇧⏎</kbd>newline
       <kbd>⌘M</kbd>sound
     </span>
+  </div>
+
+  <div class="focus-actions" aria-label="Focus quick actions">
+    <button class="btn ok-action" id="focusOkBtn" type="button">OK</button>
+    <button class="btn undo-action" id="focusUndoBtn" type="button">Undo</button>
+    <button class="btn explain-action" id="focusExplainBtn" type="button">Explain</button>
   </div>
 
   <div class="input-bar">
@@ -1270,7 +1485,11 @@
       </svg>
     </label>
     <input type="file" id="fileInput" multiple>
-    <textarea id="taskInput" rows="1" placeholder="Type a task and press Enter…" autofocus></textarea>
+    <button class="mic-btn" id="micBtn" type="button" title="Dictate with microphone" aria-label="Dictate with microphone">●</button>
+    <div class="composer-wrap">
+      <div class="composer-ghost" id="composerGhost" aria-hidden="true"></div>
+      <textarea id="taskInput" rows="1" placeholder="Type a task and press Enter…" autofocus></textarea>
+    </div>
     <div class="context-side" aria-label="Context usage">
       <div class="context-label"><span>context</span><b id="contextText">0% · 0 / 32k tok</b></div><!-- limit updated by updateContextMeter() -->
       <div class="context-track"><span class="context-fill" id="contextFill"></span></div>
@@ -1280,6 +1499,24 @@
   </div>
 
   </section><!-- /.main -->
+
+  <!-- Right tools sidebar (col 4) — Preview · Diff · Terminal · Files · Tasks · Plan -->
+  <aside class="rightbar" id="rightbar" aria-label="Tools panel" aria-hidden="true">
+    <div class="rb-inner">
+      <div class="rb-head">
+        <button class="rb-back" id="rbBack" title="Back to menu" aria-label="Back to tools menu" style="display:none">‹</button>
+        <span class="rb-title" id="rbTitle">Tools</span>
+        <button class="rb-pin" id="rbPin" title="Auto-open: on" aria-label="Toggle auto-open" aria-pressed="true">◉</button>
+        <button class="rb-close" id="rbClose" title="Close tools panel" aria-label="Close tools panel">✕</button>
+      </div>
+      <div class="rb-body" id="rbBody"></div>
+      <div class="rb-foot" id="rbFoot">
+        <span class="rb-led" aria-hidden="true"></span>
+        <span id="rbFootState">idle</span>
+        <span class="rb-time" id="rbFootTime"></span>
+      </div>
+    </div>
+  </aside>
 </div><!-- /.win -->
 
 <!-- Side diff viewer panel -->
@@ -1769,17 +2006,42 @@ function runBootAnimation(){
   if(typeof chirp==='function'){chirp(880,.06);setTimeout(()=>chirp(1320,.06),140);setTimeout(()=>chirp(1760,.08),280);}
 }
 
-// ─── Sprint 1 inc 5 : theme toggle (captain ↔ paper) ────────────────
+// ─── v0.9 a11y : taille du texte (A− / A+) ──────────────────────────
+// Accessibilité : n'importe qui doit pouvoir lire. Échelle de 0.85 à 1.6,
+// persistée. La taille de #term = base responsive (largeur) × échelle de
+// lecture. Le ResizeObserver met à jour _termBaseFont ; applyTermFont fusionne
+// les deux, pour que la préférence d'accessibilité ne soit pas écrasée au resize.
+let _termBaseFont=13;
+function getReadScale(){return parseFloat(localStorage.getItem('sparrow-read-scale')||'1')||1}
+function applyTermFont(){
+  const term=document.getElementById('term');
+  if(term)term.style.fontSize=(_termBaseFont*getReadScale()).toFixed(1)+'px';
+}
+function setReadScale(s){
+  const v=Math.max(0.85,Math.min(1.6,Math.round(s*100)/100));
+  localStorage.setItem('sparrow-read-scale',String(v));
+  applyTermFont();
+}
+function initReadScale(){applyTermFont();}
+
+// ─── Sprint 1 inc 5 : theme toggle (captain → paper → white) ────────
+const THEMES=['captain','paper','white'];
 function getTheme(){return document.documentElement.getAttribute('data-theme')||'captain'}
 function setTheme(t){
+  if(!THEMES.includes(t))t='captain';
   document.documentElement.setAttribute('data-theme',t);
   const btn=document.getElementById('themeBtn');
-  if(btn)btn.textContent=t==='captain'?'☾':'☀';
+  if(btn)btn.textContent=t==='captain'?'☾':t==='paper'?'☀':'◻';
+  const sel=document.getElementById('cfgThemeSelect');
+  if(sel&&sel.value!==t)sel.value=t;
   localStorage.setItem('sparrow-theme',t);
+}
+function cycleTheme(){
+  setTheme(THEMES[(THEMES.indexOf(getTheme())+1)%THEMES.length]);
 }
 function initTheme(){
   const queryTheme=new URLSearchParams(location.search).get('theme');
-  if(queryTheme==='captain'||queryTheme==='paper'){
+  if(THEMES.includes(queryTheme)){
     setTheme(queryTheme);
     return;
   }
@@ -1815,32 +2077,234 @@ function chirp(freq=900,dur=0.08){
 }
 function syncSoundBtn(){const b=document.getElementById('soundBtn');if(b)b.textContent=muted?'🔇':'🔊'}
 
+// ─── Config panel: MCP connectors + lifecycle hooks (real endpoints) ──
+async function loadMcpList(){
+  const el=document.getElementById('mcpList');if(!el)return;
+  el.innerHTML='<span style="color:var(--dimmer)">loading…</span>';
+  try{
+    const j=await fetch('/mcp/list').then(r=>r.json());
+    const servers=j.servers||[];
+    if(!servers.length){
+      el.innerHTML=`<div class="drw-empty">No MCP connectors configured.<br><span style="font-size:10px">Add one: <code>sparrow mcp add &lt;name&gt; --cmd "npx -y @modelcontextprotocol/server-filesystem"</code></span></div>`;
+      return;
+    }
+    el.innerHTML=servers.map(s=>`<div class="drw-row" style="cursor:default">
+      <div class="ttl">${esc(s.name)} <span style="color:var(--dimmer);font-size:9px;border:1px solid var(--line);border-radius:999px;padding:0 6px;margin-left:6px">${esc(s.transport||'stdio')}</span></div>
+      <div class="meta"><span>${esc(s.command?[s.command,...(s.args||[])].join(' '):(s.url||''))}</span>${(s.allow_tools||[]).length?`<span>allow: ${esc(s.allow_tools.join(', '))}</span>`:''}</div>
+    </div>`).join('');
+  }catch(_){el.innerHTML='<div class="drw-empty">MCP list unavailable (console offline).</div>';}
+}
+async function loadHooksList(){
+  const el=document.getElementById('hooksList');if(!el)return;
+  el.innerHTML='<span style="color:var(--dimmer)">loading…</span>';
+  try{
+    const j=await fetch('/hooks').then(r=>r.json());
+    const hooks=j.hooks||[];
+    if(!hooks.length){
+      el.innerHTML='<div class="drw-empty">No hooks configured.<br><span style="font-size:10px">Add <code>[[hooks]]</code> entries (id, event, command) to your config.toml.</span></div>';
+      return;
+    }
+    el.innerHTML=hooks.map(h=>`<div class="drw-row" style="cursor:default">
+      <div class="ttl">${esc(h.id||'(hook)')} <span style="color:${h.enabled===false?'var(--rem)':'var(--add)'};font-size:9px;margin-left:6px">${h.enabled===false?'disabled':'enabled'}</span></div>
+      <div class="meta"><span>${esc(typeof h.event==='string'?h.event:JSON.stringify(h.event))}</span><span>${esc(h.command||'')}</span>${h.matcher?`<span>match: ${esc(h.matcher)}</span>`:''}${h.blocking?'<span>blocking</span>':''}</div>
+    </div>`).join('');
+  }catch(_){el.innerHTML='<div class="drw-empty">Hooks list unavailable (console offline).</div>';}
+}
+
+// ─── Replay picker (▸ replay → GET /replays → GET /replay?run_id=) ──
+async function replayRun(runId){
+  try{
+    const r=await fetch('/replay'+(runId?'?run_id='+encodeURIComponent(runId):''));
+    const j=await r.json();
+    if(j.ok&&Array.isArray(j.events)&&j.events.length){
+      term.innerHTML='';
+      line(`<span class="sec">— replay · ${esc((j.task||j.run_id||'').slice(0,90))} —</span>`);
+      j.events.forEach(ev=>{try{handleEvent(ev)}catch(_){}});
+      line('<span class="sec">— end of replay —</span>');
+      return true;
+    }
+    toast(j.message||'No recorded runs yet — run a task first.','error');
+  }catch(e){toast('Replay unavailable: '+e.message,'error');}
+  return false;
+}
+function toggleReplayPicker(anchor){
+  const old=document.getElementById('replayDrop');
+  if(old){old.remove();return;}
+  const drop=document.createElement('div');
+  drop.id='replayDrop';drop.className='mp-drop';
+  const r=anchor.getBoundingClientRect();
+  drop.style.cssText=`position:fixed;top:${r.bottom+6}px;right:${Math.max(8,innerWidth-r.right)}px;left:auto;bottom:auto;width:380px;z-index:1500`;
+  drop.innerHTML='<div class="mp-drop-head">replay a recorded run</div><div id="replayDropList"><div style="padding:12px 14px;color:var(--dimmer);font-size:11px">loading…</div></div>';
+  document.body.appendChild(drop);
+  const close=e=>{if(!drop.contains(e.target)&&e.target!==anchor){drop.remove();document.removeEventListener('pointerdown',close);}};
+  document.addEventListener('pointerdown',close);
+  fetch('/replays').then(r=>r.json()).then(j=>{
+    const host=document.getElementById('replayDropList');if(!host)return;
+    const items=(j.replays||[]).slice(0,12);
+    if(!items.length){host.innerHTML='<div style="padding:12px 14px;color:var(--dimmer);font-size:11px">No recorded runs yet — finish a task and it appears here.</div>';return;}
+    host.innerHTML=items.map(it=>
+      `<div class="mp-item" data-replay-id="${escAttr(it.run_id)}">
+        <span class="mp-name" title="${escAttr(it.task||it.run_id)}">${esc((it.task||it.run_id).slice(0,60)||it.run_id)}</span>
+        <span class="mp-ctx">${esc(String(it.event_count||0))} ev</span>
+        <span class="mp-cost">${esc((it.created_at||'').slice(5,16))}</span>
+      </div>`).join('');
+    host.querySelectorAll('[data-replay-id]').forEach(el=>el.addEventListener('click',()=>{
+      drop.remove();replayRun(el.dataset.replayId);
+    }));
+  }).catch(()=>{
+    const host=document.getElementById('replayDropList');
+    if(host)host.innerHTML='<div style="padding:12px 14px;color:var(--dimmer);font-size:11px">Replay list unavailable (console offline).</div>';
+  });
+}
+
 // ─── Bind chrome chips ───────────────────────────────────────────────
 function bindChromeChips(){
+  const focusBtn=document.getElementById('focusModeBtn');
+  const cockpitBtn=document.getElementById('cockpitModeBtn');
+  if(focusBtn)focusBtn.addEventListener('click',()=>setViewMode('focus'));
+  if(cockpitBtn)cockpitBtn.addEventListener('click',()=>setViewMode('cockpit'));
   const cmdk=document.getElementById('cmdkBtn');if(cmdk)cmdk.addEventListener('click',()=>{chirp(1000,.04);paletteOpen()});
   const rb=document.getElementById('replayBtn');if(rb)rb.addEventListener('click',async()=>{
     chirp(800,.05);setTimeout(()=>chirp(1200,.05),80);
-    // Try to replay a recorded run; fall back to boot animation.
-    var runId=prompt('Run ID to replay (leave empty for boot animation):');
-    if(runId&&runId.trim()){
-      try{
-        var r=await fetch('/replay?run_id='+encodeURIComponent(runId.trim()));
-        var j=await r.json();
-        if(j.ok&&j.events){term.innerHTML='';j.events.forEach(function(ev){handleEvent(ev);});return;}
-      }catch(e){}
-    }
-    sessionStorage.removeItem('sparrow-booted');runBootAnimation();
+    toggleReplayPicker(rb);
   });
   const sb=document.getElementById('soundBtn');if(sb)sb.addEventListener('click',()=>{
     muted=!muted;localStorage.setItem('sparrow-muted',muted?'1':'0');syncSoundBtn();if(!muted)chirp(1200,.06);
   });
   const tb=document.getElementById('themeBtn');if(tb)tb.addEventListener('click',()=>{
-    setTheme(getTheme()==='captain'?'paper':'captain');chirp(900,.05);
+    cycleTheme();chirp(900,.05);
   });
+  const fd=document.getElementById('fontDownBtn');if(fd)fd.addEventListener('click',()=>{setReadScale(getReadScale()-0.1);chirp(700,.03);});
+  const fu=document.getElementById('fontUpBtn');if(fu)fu.addEventListener('click',()=>{setReadScale(getReadScale()+0.1);chirp(1100,.03);});
   document.addEventListener('keydown',e=>{
     if((e.metaKey||e.ctrlKey)&&e.shiftKey&&e.key.toLowerCase()==='l'){e.preventDefault();if(tb)tb.click();}
     if((e.metaKey||e.ctrlKey)&&!e.shiftKey&&e.key.toLowerCase()==='m'){e.preventDefault();if(sb)sb.click();}
+    // Ctrl/Cmd + / − adjust reading size (a11y).
+    if((e.metaKey||e.ctrlKey)&&(e.key==='+'||e.key==='=')){e.preventDefault();if(fu)fu.click();}
+    if((e.metaKey||e.ctrlKey)&&(e.key==='-'||e.key==='_')){e.preventDefault();if(fd)fd.click();}
+    if(e.altKey&&e.key.toLowerCase()==='f'){e.preventDefault();toggleViewMode();}
+    if(e.altKey&&e.key.toLowerCase()==='a'){e.preventDefault();focusAccept();}
+    if(e.altKey&&e.key.toLowerCase()==='u'){e.preventDefault();focusUndo();}
+    if(e.altKey&&e.key.toLowerCase()==='e'){e.preventDefault();focusExplain();}
+    // ── right tools sidebar shortcuts ──
+    const mod=e.metaKey||e.ctrlKey;
+    const k=e.key.toLowerCase();
+    if(mod&&e.shiftKey&&k==='s'){e.preventDefault();toggleRightSidebar();}
+    else if(mod&&!e.shiftKey&&k==='p'){e.preventDefault();openRightSidebar('preview','shortcut');}
+    else if(mod&&e.shiftKey&&k==='p'){e.preventDefault();openRightSidebar('plan','shortcut');}
+    else if(mod&&e.shiftKey&&k==='d'){e.preventDefault();openRightSidebar('diff','shortcut');}
+    else if(mod&&e.shiftKey&&k==='f'){e.preventDefault();openRightSidebar('files','shortcut');}
+    else if(e.ctrlKey&&!e.shiftKey&&!e.altKey&&e.key==='`'){e.preventDefault();openRightSidebar('terminal','shortcut');}
   });
+}
+
+function setViewMode(mode){
+  mode=mode==='cockpit'?'cockpit':'focus';
+  document.documentElement.dataset.view=mode;
+  localStorage.setItem('sparrow-view-mode',mode);
+  const focusBtn=document.getElementById('focusModeBtn');
+  const cockpitBtn=document.getElementById('cockpitModeBtn');
+  if(focusBtn)focusBtn.setAttribute('aria-pressed',String(mode==='focus'));
+  if(cockpitBtn)cockpitBtn.setAttribute('aria-pressed',String(mode==='cockpit'));
+  setTimeout(()=>document.getElementById('taskInput')?.focus(),30);
+}
+function toggleViewMode(){
+  setViewMode((document.documentElement.dataset.view||'focus')==='focus'?'cockpit':'focus');
+}
+function initViewMode(){
+  setViewMode(localStorage.getItem('sparrow-view-mode')||'focus');
+}
+function focusAccept(){
+  const modal=document.getElementById('approvalModal');
+  if(modal&&modal.classList.contains('show')){document.getElementById('approvalApprove')?.click();return;}
+  const inline=document.querySelector('.approval-actions .approve:not(:disabled)');
+  if(inline){inline.click();return;}
+  if(runActive){toast('Approval sent to the active run.','ok');return;}
+  runTask();
+}
+async function focusUndo(){
+  await runWebviewCliCommand('/annule');
+}
+async function focusExplain(){
+  const input=document.getElementById('taskInput');
+  const selected=(window.getSelection&&String(window.getSelection()).trim())||'';
+  input.value=selected?`Explain this simply: ${selected}`:'Explain simply what is happening and what I should do next.';
+  autoResizeComposer();
+  await runTask();
+}
+
+let micRecognition=null;
+let micListening=false;
+function toggleMicDictation(){
+  const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;
+  const btn=document.getElementById('micBtn');
+  if(!SpeechRecognition){
+    toast('Microphone unavailable in this browser. Use `sparrow voice transcribe` in the terminal.','error');
+    return;
+  }
+  if(micListening&&micRecognition){
+    micRecognition.stop();
+    return;
+  }
+  micRecognition=new SpeechRecognition();
+  micRecognition.lang=(navigator.language||'fr-FR');
+  micRecognition.interimResults=true;
+  micRecognition.continuous=false;
+  let finalText='';
+  micRecognition.onstart=()=>{micListening=true;if(btn){btn.classList.add('listening');btn.setAttribute('aria-pressed','true');}};
+  micRecognition.onend=()=>{micListening=false;if(btn){btn.classList.remove('listening');btn.setAttribute('aria-pressed','false');}};
+  micRecognition.onerror=ev=>toast('Microphone stopped: '+(ev.error||'unknown error'),'error');
+  micRecognition.onresult=ev=>{
+    let interim='';
+    for(let i=ev.resultIndex;i<ev.results.length;i++){
+      const chunk=ev.results[i][0]?.transcript||'';
+      if(ev.results[i].isFinal)finalText+=chunk;
+      else interim+=chunk;
+    }
+    const input=document.getElementById('taskInput');
+    const base=(input.dataset.micBase||input.value||'').trim();
+    input.value=[base,finalText.trim(),interim.trim()].filter(Boolean).join(' ');
+    input.dataset.micBase=base;
+    autoResizeComposer();
+    updateContextMeter();
+  };
+  const input=document.getElementById('taskInput');
+  input.dataset.micBase=input.value||'';
+  micRecognition.start();
+}
+
+function initFocusTour(){
+  if(localStorage.getItem('sparrow-focus-tour-done')==='1')return;
+  const steps=[
+    ['#taskInput','Your starting point','Type or dictate what you want to fix. Sparrow prepares the rest.'],
+    ['#focusOkBtn','One confirmation','When Sparrow asks for approval, this button answers without hunting through panels.'],
+    ['#focusUndoBtn','Go back fast','Undo the last action quickly if the result is not right.'],
+    ['#cockpitModeBtn','Cockpit mode','Switch to Cockpit when you want details, routing, and metrics.']
+  ];
+  let i=0;
+  const pop=document.createElement('div');
+  pop.className='tour-pop';
+  pop.setAttribute('role','dialog');
+  pop.setAttribute('aria-live','polite');
+  document.body.appendChild(pop);
+  function done(){
+    localStorage.setItem('sparrow-focus-tour-done','1');
+    pop.remove();
+  }
+  function render(){
+    const [sel,title,body]=steps[i];
+    const target=document.querySelector(sel);
+    if(!target){done();return;}
+    const r=target.getBoundingClientRect();
+    pop.innerHTML=`<b>${escHtml(title)}</b><div>${escHtml(body)}</div><div class="tour-actions"><button type="button" data-tour="skip">Skip</button><button class="primary" type="button" data-tour="next">${i===steps.length-1?'Done':'Next'}</button></div>`;
+    const top=Math.min(window.innerHeight-150,Math.max(12,r.top-12));
+    const left=Math.min(window.innerWidth-314,Math.max(12,r.left+r.width+12));
+    pop.style.top=top+'px';
+    pop.style.left=(left<20?20:left)+'px';
+    pop.querySelector('[data-tour="skip"]').addEventListener('click',done);
+    pop.querySelector('[data-tour="next"]').addEventListener('click',()=>{i++;if(i>=steps.length)done();else render();});
+  }
+  setTimeout(render,650);
 }
 
 // Mirror the context fill into the chrome hint label.
@@ -1855,6 +2319,8 @@ const _mirrorIv=setInterval(mirrorContextPct,800);
 const _heroRefreshIv=setInterval(()=>{hydrateHero();},15000);
 
 initTheme();
+initReadScale();
+initViewMode();
 syncSoundBtn();
 
 // ─── Sprint 2 : ResizeObserver for dynamic terminal sizing ─────────
@@ -1865,7 +2331,9 @@ syncSoundBtn();
     for(var i=0;i<entries.length;i++){
       var w=entries[i].contentRect.width;
       var base=Math.round(11+Math.min(3,Math.max(0,(w-360)/210)));
-      termEl.style.fontSize=base+'px';
+      // a11y: fold in the user's reading scale instead of overwriting it.
+      _termBaseFont=base;
+      applyTermFont();
       termEl.style.padding=w<520?'12px 14px 18px':'';
     }
   });
@@ -2561,6 +3029,57 @@ document.getElementById('agentPicker').addEventListener('click',e=>{
 document.addEventListener('click',e=>{
   if(!e.target.closest('#taskInput')&&!e.target.closest('#agentPicker'))document.getElementById('agentPicker').classList.add('hidden');
 });
+
+// ─── Ghost-text autocomplete (fish-style) ────────────────────────────
+// Suggests the rest of a previous task inline while typing; Tab accepts,
+// Escape dismisses. Source: real input history (GET /history), most recent
+// first — nothing is invented.
+let GHOST_HISTORY=[];
+let GHOST_REST='';
+async function ghostLoadHistory(){
+  try{
+    const j=await fetch('/history?limit=200').then(r=>r.json());
+    if(j.ok&&Array.isArray(j.inputs))GHOST_HISTORY=j.inputs.filter(s=>s&&s.length>3);
+  }catch(_){/* offline: ghost stays silent */}
+}
+function ghostUpdate(){
+  const inp=document.getElementById('taskInput');
+  const ghost=document.getElementById('composerGhost');
+  if(!inp||!ghost)return;
+  const v=inp.value;
+  GHOST_REST='';
+  // Only suggest on a single-line prefix of ≥3 chars, caret at end, no slash
+  // command palette interference.
+  if(v.length>=3&&!v.includes('\n')&&inp.selectionStart===v.length){
+    const low=v.toLowerCase();
+    const hit=GHOST_HISTORY.find(h=>h.toLowerCase().startsWith(low)&&h.length>v.length);
+    if(hit)GHOST_REST=hit.slice(v.length);
+  }
+  ghost.innerHTML=GHOST_REST?`<span class="g-typed">${esc(v)}</span><span class="g-rest">${esc(GHOST_REST)}</span>`:'';
+  ghost.scrollTop=inp.scrollTop;
+}
+{
+  const inp=document.getElementById('taskInput');
+  if(inp){
+    inp.addEventListener('input',ghostUpdate);
+    inp.addEventListener('scroll',()=>{const g=document.getElementById('composerGhost');if(g)g.scrollTop=inp.scrollTop;});
+    inp.addEventListener('keydown',e=>{
+      if(e.defaultPrevented)return; // agent picker already consumed the key
+      const pickerOpen=!document.getElementById('agentPicker').classList.contains('hidden');
+      if(e.key==='Tab'&&GHOST_REST&&!pickerOpen&&!e.shiftKey){
+        e.preventDefault();
+        inp.value+=GHOST_REST;
+        GHOST_REST='';
+        document.getElementById('composerGhost').innerHTML='';
+        if(typeof autoResizeComposer==='function')autoResizeComposer();
+      }else if(e.key==='Escape'&&GHOST_REST){
+        GHOST_REST='';document.getElementById('composerGhost').innerHTML='';
+      }
+    });
+    inp.addEventListener('blur',()=>{GHOST_REST='';const g=document.getElementById('composerGhost');if(g)g.innerHTML='';});
+  }
+  ghostLoadHistory();
+}
 
 // ─── WebSocket ─────────────────────────────────────────────────────
 let ws;
@@ -3372,7 +3891,451 @@ function stripActiveDecorations(){
   if(LAST_ACTIVITY){LAST_ACTIVITY.remove();LAST_ACTIVITY=null;}
 }
 
+// ═══ v0.9 : Right tools sidebar — Preview · Diff · Terminal · Files · Tasks · Plan ═══
+//
+// One central state object + tiny helpers (openRightSidebar / closeRightSidebar /
+// toggleRightSidebar / autoOpenRightSidebar). Data is captured from the same WS
+// event stream handleEvent() consumes (rbOnEvent below) — nothing is faked: every
+// panel renders a clean empty state until a real event or endpoint provides data.
+const RB_IS_MAC=/mac/i.test(navigator.platform||'');
+function rbKey(sc){return sc.replace('Mod',RB_IS_MAC?'⌘':'Ctrl')}
+const RB_TABS={
+  preview:{label:'Preview',ico:'◫',sc:'Mod+P'},
+  diff:{label:'Diff',ico:'◇',sc:'Mod+Shift+D'},
+  terminal:{label:'Terminal',ico:'❯',sc:'Ctrl+`'},
+  files:{label:'Files',ico:'▤',sc:'Mod+Shift+F'},
+  tasks:{label:'Background tasks',ico:'◷',sc:''},
+  plan:{label:'Plan',ico:'☰',sc:'Mod+Shift+P'},
+};
+const RB={
+  isOpen:false,
+  activeTab:null, // null = menu
+  autoOpenEnabled:localStorage.getItem('sparrow-rightbar-autoopen')!=='0',
+  wasManuallyClosed:false,
+  lastAutoOpenReason:null,
+};
+// ── real data stores (fed by rbOnEvent) ──
+const RB_DIFFS=new Map();      // file -> {patch,plus,minus,applied,ts}
+const RB_TASKS=new Map();      // key  -> {label,kind,status,started,ended,detail}
+const RB_TERM=[];              // {cmd,output,ts}
+const RB_PREVIEW=new Map();    // url -> ts (detected local server URLs)
+const RB_TOOL_BY_ID=new Map(); // tool_use id -> {name,args}
+const RB_EXEC_NAMES=new Set(['exec','bash','shell','code_exec','run_command','terminal']);
+let RB_OBJECTIVE='';
+let RB_PLAN_TODOS=null;        // null = not fetched yet; [] = fetched, empty
+
+function rbIsExec(name,args){
+  return RB_EXEC_NAMES.has(String(name||'').toLowerCase())||!!(args&&typeof args==='object'&&args.command);
+}
+function rbNow(){return new Date().toLocaleTimeString('en-US',{hour12:false})}
+
+// ── open / close / toggle ──
+function openRightSidebar(tab,reason){
+  if(tab&&!RB_TABS[tab])tab=null;
+  RB.isOpen=true;
+  if(tab!==undefined)RB.activeTab=tab;
+  if(reason)RB.lastAutoOpenReason=reason;
+  if(reason==='manual'||reason==='shortcut'||reason==='chat-request')RB.wasManuallyClosed=false;
+  document.body.classList.add('rightbar-open');
+  localStorage.setItem('sparrow-rightbar-open','1');
+  if(RB.activeTab)localStorage.setItem('sparrow-rightbar-tab',RB.activeTab);
+  rbSyncChrome();rbRender();
+}
+function closeRightSidebar(manual){
+  RB.isOpen=false;
+  if(manual!==false)RB.wasManuallyClosed=true;
+  document.body.classList.remove('rightbar-open');
+  localStorage.setItem('sparrow-rightbar-open','0');
+  rbSyncChrome();
+}
+function toggleRightSidebar(){
+  if(RB.isOpen)closeRightSidebar(true);else openRightSidebar(RB.activeTab,'manual');
+}
+// priority: 'low' never opens (badges only) · 'medium' opens unless the user
+// closed the panel this session or disabled auto-open · 'high' (errors,
+// blockers) reopens even after a manual close.
+function autoOpenRightSidebar(tab,reason,priority){
+  priority=priority||'medium';
+  rbBadges();
+  if(priority==='low')return;
+  if(priority==='medium'&&(!RB.autoOpenEnabled||RB.wasManuallyClosed))return;
+  if(RB.isOpen){
+    // Don't yank the user away from the tab they're reading — only retarget
+    // for high-priority events (failures need eyes now).
+    if(priority==='high'&&RB.activeTab!==tab){RB.activeTab=tab;rbRender();}
+    return;
+  }
+  RB.isOpen=true;RB.activeTab=tab;RB.lastAutoOpenReason=reason;
+  document.body.classList.add('rightbar-open');
+  rbSyncChrome();rbRender();
+}
+function rbSetAutoOpen(on){
+  RB.autoOpenEnabled=!!on;
+  localStorage.setItem('sparrow-rightbar-autoopen',on?'1':'0');
+  const pin=document.getElementById('rbPin');
+  if(pin){pin.classList.toggle('on',RB.autoOpenEnabled);pin.textContent=RB.autoOpenEnabled?'◉':'○';
+    pin.title='Auto-open: '+(RB.autoOpenEnabled?'on':'off');pin.setAttribute('aria-pressed',String(RB.autoOpenEnabled));}
+  const cb=document.getElementById('cfgRightbarAuto');
+  if(cb&&cb.checked!==RB.autoOpenEnabled)cb.checked=RB.autoOpenEnabled;
+}
+function rbSyncChrome(){
+  const btn=document.getElementById('rightbarBtn');
+  if(btn){
+    btn.title=RB.isOpen?'Close tools panel':'Open tools panel';
+    btn.setAttribute('aria-label',btn.title);
+    btn.setAttribute('aria-pressed',String(RB.isOpen));
+    btn.classList.toggle('solid',RB.isOpen);
+  }
+  const bar=document.getElementById('rightbar');
+  if(bar)bar.setAttribute('aria-hidden',String(!RB.isOpen));
+}
+
+// ── rendering ──
+function rbTouch(){const t=document.getElementById('rbFootTime');if(t)t.textContent='updated '+rbNow();}
+function rbFootState(state,running){
+  const el=document.getElementById('rbFootState'),foot=document.getElementById('rbFoot');
+  if(el)el.textContent=state;
+  if(foot)foot.classList.toggle('running',!!running);
+}
+function rbBadges(){
+  // refresh menu badges + live panel if visible
+  if(RB.isOpen&&RB.activeTab===null)rbRender();
+  else if(RB.isOpen)rbRenderIfActive();
+}
+let _rbRenderPending=false;
+function rbRenderIfActive(){
+  if(!RB.isOpen||_rbRenderPending)return;
+  _rbRenderPending=true;
+  setTimeout(()=>{_rbRenderPending=false;if(RB.isOpen)rbRender();},150);
+}
+function rbRender(){
+  const body=document.getElementById('rbBody');
+  const title=document.getElementById('rbTitle');
+  const back=document.getElementById('rbBack');
+  if(!body)return;
+  const tab=RB.activeTab;
+  if(back)back.style.display=tab?'':'none';
+  if(title)title.textContent=tab?RB_TABS[tab].label:'Tools';
+  if(!tab){body.innerHTML=rbMenuHtml();}
+  else if(tab==='preview')rbRenderPreview(body);
+  else if(tab==='diff')rbRenderDiff(body);
+  else if(tab==='terminal')rbRenderTerminal(body);
+  else if(tab==='files')rbRenderFiles(body);
+  else if(tab==='tasks')rbRenderTasks(body);
+  else if(tab==='plan')rbRenderPlan(body);
+  rbTouch();
+}
+function rbMenuHtml(){
+  const running=[...RB_TASKS.values()].filter(t=>t.status==='running'||t.status==='waiting').length;
+  const failed=[...RB_TASKS.values()].some(t=>t.status==='failed');
+  const counts={
+    preview:RB_PREVIEW.size,
+    diff:RB_DIFFS.size,
+    terminal:RB_TERM.length,
+    files:(window.SPARROW_WRITTEN?window.SPARROW_WRITTEN.size:0),
+    tasks:running,
+    plan:(RB_PLAN_TODOS||[]).filter(t=>t.status!=='completed'&&t.status!=='cancelled').length,
+  };
+  return Object.entries(RB_TABS).map(([k,t])=>{
+    const n=counts[k]||0;
+    const badge=`<span class="mi-badge${n?' show':''}${k==='tasks'&&failed?' err':''}">${n}</span>`;
+    const kbd=t.sc?`<kbd>${rbKey(t.sc)}</kbd>`:'';
+    return `<button class="rb-menu-item" data-rb-tab="${k}" role="menuitem">
+      <span class="mi-ico" aria-hidden="true">${t.ico}</span>
+      <span class="mi-label">${t.label}</span>${badge}${kbd}
+    </button>`;
+  }).join('');
+}
+function rbRenderPreview(body){
+  const draw=()=>{
+    const items=[...RB_PREVIEW.entries()].sort((a,b)=>b[1]-a[1]);
+    let html=`<div class="r-meta" style="gap:6px;margin-bottom:10px;display:flex;align-items:center">
+      <input id="rbPreviewUrl" type="text" placeholder="http://localhost:3000" spellcheck="false"
+        style="flex:1;min-width:0;padding:5px 8px;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--fg);font-family:inherit;font-size:11px">
+      <button class="rb-btn" id="rbPreviewGo">embed</button>
+      <button class="rb-btn" id="rbPreviewRescan" title="Probe common dev ports on localhost">⟳ scan</button>
+    </div>`;
+    if(!items.length){
+      html+='<div class="rb-empty">No local server detected.<br><span style="font-size:10.5px">Servers are found by probing common dev ports (3000, 5173, 8080…) and by watching command output — start one and hit <b>⟳ scan</b>.</span></div>';
+    }else{
+      html+='<div class="rb-sec">live local servers</div>'+items.map(([url])=>
+        `<div class="rb-row"><div class="r-top"><span class="r-name" title="${escAttr(url)}">${esc(url)}</span></div>
+         <div class="r-meta" style="gap:6px;margin-top:3px">
+           <button class="rb-btn" data-rb-embed="${escAttr(url)}">embed</button>
+           <button class="rb-btn" data-rb-open="${escAttr(url)}">open ↗</button>
+         </div></div>`).join('');
+    }
+    html+='<div id="rbPreviewFrameHost"></div>';
+    body.innerHTML=html;
+    const embed=url=>{
+      const host=document.getElementById('rbPreviewFrameHost');
+      if(host&&url)host.innerHTML=`<iframe class="rb-preview-frame" src="${escAttr(url)}" title="App preview" sandbox="allow-scripts allow-same-origin allow-forms"></iframe>`;
+    };
+    body.querySelectorAll('[data-rb-open]').forEach(b=>b.addEventListener('click',()=>window.open(b.dataset.rbOpen,'_blank')));
+    body.querySelectorAll('[data-rb-embed]').forEach(b=>b.addEventListener('click',()=>embed(b.dataset.rbEmbed)));
+    const urlInput=document.getElementById('rbPreviewUrl');
+    const go=()=>{let u=(urlInput.value||'').trim();if(!u)return;if(!/^https?:\/\//.test(u))u='http://'+u;embed(u);};
+    document.getElementById('rbPreviewGo')?.addEventListener('click',go);
+    urlInput?.addEventListener('keydown',e=>{if(e.key==='Enter')go();});
+    document.getElementById('rbPreviewRescan')?.addEventListener('click',()=>rbScanPreviewServers(true));
+  };
+  draw();
+  rbScanPreviewServers(false);
+}
+// Probe the backend port scanner (`GET /preview/scan`) and merge live servers
+// into RB_PREVIEW. `force` re-renders even when nothing new was found so the
+// user gets feedback from the ⟳ scan button.
+let _rbScanInflight=false;
+async function rbScanPreviewServers(force){
+  if(_rbScanInflight)return;_rbScanInflight=true;
+  try{
+    const j=await fetch('/preview/scan').then(r=>r.json());
+    let found=false;
+    (j.servers||[]).forEach(s=>{if(s.url&&!RB_PREVIEW.has(s.url)){RB_PREVIEW.set(s.url,Date.now());found=true;}});
+    if((found||force)&&RB.isOpen&&RB.activeTab==='preview')rbRender();
+    if(found)rbBadges();
+  }catch(_){/* console offline / static serve — detected URLs still render */}
+  finally{_rbScanInflight=false;}
+}
+function rbRenderDiff(body){
+  if(!RB_DIFFS.size){body.innerHTML='<div class="rb-empty">No changes yet.</div>';return;}
+  const items=[...RB_DIFFS.entries()].sort((a,b)=>b[1].ts-a[1].ts);
+  body.innerHTML=items.map(([file,d])=>
+    `<div class="rb-row click" data-rb-diff="${escAttr(file)}" title="Open diff viewer">
+      <div class="r-top"><span class="r-name">${esc(file.split(/[\\/]/).pop()||file)}</span>
+        <span class="rb-st ${d.applied?'completed':'waiting'}">${d.applied?'applied':'proposed'}</span></div>
+      <div class="r-meta"><span>${esc(file)}</span><span><b style="color:var(--add)">+${d.plus||0}</b> <b style="color:var(--rem)">−${d.minus||0}</b></span></div>
+    </div>`).join('');
+  body.querySelectorAll('[data-rb-diff]').forEach(r=>r.addEventListener('click',()=>{
+    const d=RB_DIFFS.get(r.dataset.rbDiff);
+    if(d&&d.patch)openDiffPanel({file:r.dataset.rbDiff,patch:d.patch});
+    else loadFileInPanel(r.dataset.rbDiff);
+  }));
+}
+function rbRenderTerminal(body){
+  if(!RB_TERM.length){
+    body.innerHTML='<div class="rb-empty">No commands run yet.<br><span style="font-size:10.5px">Shell commands executed by the agent appear here with their output.</span></div>'
+      +'<div style="text-align:center"><button class="rb-btn" onclick="document.getElementById(\'taskInput\')?.focus()">focus composer ❯</button></div>';
+    return;
+  }
+  body.innerHTML=RB_TERM.slice(-30).reverse().map(t=>
+    `<div class="rb-term-line${t.err?' err':''}"><span class="cmdline">❯ ${esc(t.cmd)}</span>${t.err?'<span style="color:var(--rem);font-size:9px;margin-left:6px;letter-spacing:.6px">FAILED</span>':''}${t.output?`<span class="out">${esc(t.output)}</span>`:''}</div>`).join('');
+}
+function rbRenderFiles(body){
+  const written=window.SPARROW_WRITTEN?[...window.SPARROW_WRITTEN.entries()].sort((a,b)=>b[1].ts-a[1].ts):[];
+  let html='';
+  if(written.length){
+    html+='<div class="rb-sec">modified by sparrow</div>'+written.map(([file,meta])=>
+      `<div class="rb-row click" data-rb-file="${escAttr(file)}" title="View file">
+        <div class="r-top"><span class="r-name">${esc(file.split(/[\\/]/).pop()||file)}</span><span class="r-meta">×${meta.count}</span></div>
+        <div class="r-meta"><span>${esc(file)}</span></div>
+      </div>`).join('');
+  }
+  html+='<div class="rb-sec">attachments</div><div id="rbFilesUploads"><div class="rb-empty" style="padding:8px">loading…</div></div>';
+  if(!written.length&&!html)html='<div class="rb-empty">No files yet.</div>';
+  body.innerHTML=html||'<div class="rb-empty">No files yet.</div>';
+  body.querySelectorAll('[data-rb-file]').forEach(r=>r.addEventListener('click',()=>loadFileInPanel(r.dataset.rbFile)));
+  fetch('/artifacts').then(r=>r.json()).then(j=>{
+    const host=document.getElementById('rbFilesUploads');if(!host)return;
+    const items=Array.isArray(j.items)?j.items:[];
+    host.innerHTML=items.length?items.map(it=>
+      `<div class="rb-row"><div class="r-top"><span class="r-name">${esc(it.name)}</span></div>
+       <div class="r-meta"><span>${esc(it.kind||'file')}</span><span>${Math.round((it.size||0)/1024)} KB</span></div></div>`).join('')
+      :'<div class="rb-empty" style="padding:8px">no attachments · drag a file onto the page to upload</div>';
+  }).catch(()=>{
+    const host=document.getElementById('rbFilesUploads');
+    if(host)host.innerHTML='<div class="rb-empty" style="padding:8px">attachments unavailable</div>';
+  });
+}
+function rbRenderTasks(body){
+  if(!RB_TASKS.size){body.innerHTML='<div class="rb-empty">No background tasks running.</div>';return;}
+  const items=[...RB_TASKS.values()].sort((a,b)=>b.started-a.started).slice(0,40);
+  body.innerHTML=items.map(t=>{
+    const dur=t.ended?Math.max(0,Math.round((t.ended-t.started)/1000))+'s':'';
+    return `<div class="rb-row">
+      <div class="r-top"><span class="r-name" title="${escAttr(t.label)}">${esc(t.label)}</span>
+        <span class="rb-st ${t.status}">${t.status}</span></div>
+      <div class="r-meta"><span>${esc(t.kind)}</span>${dur?`<span>${dur}</span>`:''}${t.detail?`<span>${esc(t.detail)}</span>`:''}</div>
+    </div>`;
+  }).join('');
+}
+async function rbFetchTodos(){
+  try{
+    const j=await fetch('/todos').then(r=>r.json());
+    RB_PLAN_TODOS=Array.isArray(j.todos)?j.todos:[];
+  }catch(_){RB_PLAN_TODOS=RB_PLAN_TODOS||[];}
+}
+function rbRenderPlan(body){
+  const draw=()=>{
+    const todos=RB_PLAN_TODOS||[];
+    const open=todos.filter(t=>t.status==='pending'||t.status==='in_progress');
+    const done=todos.filter(t=>t.status==='completed');
+    let html='';
+    if(RB_OBJECTIVE)html+=`<div class="rb-objective"><div class="ob-label">current objective</div>${esc(RB_OBJECTIVE)}</div>`;
+    if(!todos.length&&!RB_OBJECTIVE){
+      body.innerHTML='<div class="rb-empty">No plan yet.<br><span style="font-size:10.5px">When the agent builds a task list, its steps and status appear here.</span></div>';
+      return;
+    }
+    const mark=s=>s==='completed'?'✓':s==='in_progress'?'●':s==='cancelled'?'✕':'○';
+    if(open.length){
+      html+='<div class="rb-sec">steps</div>'+open.map(t=>
+        `<div class="rb-plan-step ${esc(t.status)}"><span class="ps-mark">${mark(t.status)}</span><span class="ps-txt">${esc(t.content)}</span></div>`).join('');
+      const next=open.find(t=>t.status==='in_progress')||open[0];
+      if(next)html+=`<div class="r-meta" style="margin:2px 4px 8px;font-size:10px;color:var(--dim)">next: <b>${esc(next.content)}</b></div>`;
+    }
+    if(done.length){
+      html+='<div class="rb-sec">completed</div>'+done.slice(-10).map(t=>
+        `<div class="rb-plan-step completed"><span class="ps-mark">✓</span><span class="ps-txt">${esc(t.content)}</span></div>`).join('');
+    }
+    if(!open.length&&!done.length&&RB_OBJECTIVE)html+='<div class="rb-empty" style="padding:10px">no detailed steps recorded for this objective</div>';
+    body.innerHTML=html;
+  };
+  if(RB_PLAN_TODOS===null){
+    body.innerHTML='<div class="rb-empty">loading plan…</div>';
+    rbFetchTodos().then(draw);
+  }else draw();
+}
+
+// ── event capture: feed the stores from the same WS stream ──
+let _rbLongRunTimers=new Map();
+function rbTask(key,patch){
+  const cur=RB_TASKS.get(key)||{label:'task',kind:'task',status:'waiting',started:Date.now(),ended:null,detail:''};
+  RB_TASKS.set(key,Object.assign(cur,patch));
+}
+function rbScanPreviewUrls(text){
+  if(!text)return;
+  const re=/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d+)?(?:\/[^\s"'<>)\]]*)?/g;
+  let m,found=false;
+  while((m=re.exec(text)))if(!RB_PREVIEW.has(m[0])){RB_PREVIEW.set(m[0],Date.now());found=true;}
+  if(found)autoOpenRightSidebar('preview','preview-detected','low');
+}
+// onPreviewRequested / onDiffRequested / onTerminalRequested / onFilesRequested /
+// onPlanRequested — the user asked for a surface in plain chat (FR/EN), so open
+// the matching tool directly. Word-boundary matching keeps false positives low.
+const RB_INTENTS=[
+  ['preview',/\b(preview|aper[cç]u|pr[ée]visualis\w*)\b/i],
+  ['diff',/\b(diff|diffs|changements|modifs?|modifications)\b/i],
+  ['terminal',/\b(terminal|console shell|shell)\b/i],
+  ['files',/\b(files?|fichiers?)\b/i],
+  ['tasks',/\b(background tasks?|t[aâ]ches de fond|jobs en cours)\b/i],
+  ['plan',/\b(plan|todo ?list|liste des [ée]tapes)\b/i],
+];
+function rbDetectIntent(task){
+  if(!task)return;
+  // Only react to "show me X"-style requests, not any sentence containing the
+  // word: require a display verb near the keyword.
+  if(!/\b(montre|montrer|affiche|afficher|ouvre|ouvrir|voir|show|open|display|view)\b/i.test(task))return;
+  for(const[tab,re]of RB_INTENTS){
+    if(re.test(task)){openRightSidebar(tab,'chat-request');break;}
+  }
+}
+function rbOnEvent(ev){
+  switch(ev.type){
+    case 'RunStarted':
+      RB_OBJECTIVE=ev.task||'';
+      rbTask('run:'+(ev.run||''),{label:(ev.task||'task').slice(0,90),kind:'run',status:'running',started:Date.now(),ended:null});
+      rbFootState('run in progress',true);
+      break;
+    case 'ToolUseProposed':{
+      RB_TOOL_BY_ID.set(ev.id,{name:ev.name,args:ev.args});
+      if(rbIsExec(ev.name,ev.args)){
+        const cmd=(ev.args&&(ev.args.command||ev.args.cmd))||ev.name;
+        rbTask('tool:'+ev.id,{label:String(cmd).slice(0,90),kind:'command',status:'waiting',started:Date.now()});
+      }
+      if(String(ev.name||'').toLowerCase()==='todo'){
+        const action=ev.args&&ev.args.action;
+        if(action&&action!=='list'){
+          RB_PLAN_TODOS=null; // force refetch on next render
+          autoOpenRightSidebar('plan','plan-updated','medium');
+        }
+      }
+      break;
+    }
+    case 'ToolUseStarted':{
+      const meta=RB_TOOL_BY_ID.get(ev.id);
+      if(meta&&rbIsExec(meta.name,meta.args)){
+        rbTask('tool:'+ev.id,{status:'running'});
+        autoOpenRightSidebar('tasks','task-started','low');
+        // long-running detection: surface the tasks panel if still running after 5 s
+        _rbLongRunTimers.set(ev.id,setTimeout(()=>{
+          const t=RB_TASKS.get('tool:'+ev.id);
+          if(t&&t.status==='running')autoOpenRightSidebar('tasks','long-running-task','medium');
+        },5000));
+      }
+      break;
+    }
+    case 'ToolOutput':{
+      const meta=RB_TOOL_BY_ID.get(ev.id);
+      const text=(ev.blocks||[]).map(b=>typeof b==='string'?b:(b&&b.Text)||'').filter(Boolean).join('\n');
+      const failed=!!ev.is_error; // real failure flag from ToolResult::is_error
+      if(meta&&rbIsExec(meta.name,meta.args)){
+        if(RB_TASKS.has('tool:'+ev.id))rbTask('tool:'+ev.id,{status:failed?'failed':'completed',ended:Date.now(),
+          detail:failed?text.split(/\r?\n/)[0].slice(0,80):''});
+        const tm=_rbLongRunTimers.get(ev.id);if(tm){clearTimeout(tm);_rbLongRunTimers.delete(ev.id);}
+        const cmd=(meta.args&&(meta.args.command||meta.args.cmd))||meta.name;
+        RB_TERM.push({cmd:String(cmd),output:text.slice(0,4000),ts:Date.now(),err:failed});
+        if(RB_TERM.length>60)RB_TERM.shift();
+        if(failed)autoOpenRightSidebar('tasks','task-failed','high');
+      }
+      if(meta&&String(meta.name||'').toLowerCase()==='todo')RB_PLAN_TODOS=null;
+      rbScanPreviewUrls(text);
+      break;
+    }
+    case 'DiffProposed':
+      RB_DIFFS.set(ev.file,{patch:ev.patch||'',plus:ev.plus||0,minus:ev.minus||0,applied:false,ts:Date.now()});
+      autoOpenRightSidebar('diff','diff-available','medium');
+      break;
+    case 'DiffApplied':{
+      const prev=RB_DIFFS.get(ev.file);
+      RB_DIFFS.set(ev.file,Object.assign(prev||{patch:ev.patch||'',plus:0,minus:0},{applied:true,ts:Date.now()}));
+      autoOpenRightSidebar('diff','diff-applied','low');
+      break;
+    }
+    case 'TestResult':{
+      const failed=(ev.failed||0)>0;
+      rbTask('tests:'+Date.now(),{label:failed?`tests · ${ev.failed} failed / ${ev.passed} passed`:`tests · ${ev.passed} passed`,
+        kind:'tests',status:failed?'failed':'completed',started:Date.now(),ended:Date.now(),detail:(ev.detail||'').slice(0,80)});
+      autoOpenRightSidebar('tasks',failed?'task-failed':'tests-passed',failed?'high':'low');
+      break;
+    }
+    case 'Error':
+      RB_TASKS.forEach((t,k)=>{if(t.status==='running'||t.status==='waiting')rbTask(k,{status:'failed',ended:Date.now(),detail:(ev.message||'').slice(0,80)});});
+      rbFootState('error',false);
+      autoOpenRightSidebar('tasks','run-error','high');
+      break;
+    case 'RunFinished':
+      RB_TASKS.forEach((t,k)=>{if(t.status==='running'||t.status==='waiting')rbTask(k,{status:'completed',ended:Date.now()});});
+      RB_PLAN_TODOS=null; // the run may have touched the todo list
+      rbFootState('idle',false);
+      if(typeof ghostLoadHistory==='function')ghostLoadHistory(); // fresh input history for autocomplete
+      rbBadges();
+      break;
+    default:return;
+  }
+  rbBadges();
+}
+
+// ── init + DOM bindings ──
+(function initRightbar(){
+  const bar=document.getElementById('rightbar');if(!bar)return;
+  document.getElementById('rightbarBtn')?.addEventListener('click',toggleRightSidebar);
+  document.getElementById('rbClose')?.addEventListener('click',()=>closeRightSidebar(true));
+  document.getElementById('rbBack')?.addEventListener('click',()=>{RB.activeTab=null;localStorage.removeItem('sparrow-rightbar-tab');rbRender();});
+  document.getElementById('rbPin')?.addEventListener('click',()=>rbSetAutoOpen(!RB.autoOpenEnabled));
+  document.getElementById('rbBody')?.addEventListener('click',e=>{
+    const item=e.target.closest('[data-rb-tab]');
+    if(item)openRightSidebar(item.dataset.rbTab,'manual');
+  });
+  rbSetAutoOpen(RB.autoOpenEnabled);
+  // restore persisted open state + tab
+  if(localStorage.getItem('sparrow-rightbar-open')==='1'){
+    const tab=localStorage.getItem('sparrow-rightbar-tab');
+    openRightSidebar(tab&&RB_TABS[tab]?tab:null,'restore');
+  }else rbSyncChrome();
+})();
+
 function handleEvent(ev){
+  try{rbOnEvent(ev)}catch(_){/* sidebar capture must never break the feed */}
   // End the streaming line only for events that actually change the visual
   // flow. Metric ticks + status/route/message pass through transparently.
   if(STREAM_BUF&&!STREAM_TRANSPARENT.has(ev.type)){
@@ -3407,7 +4370,11 @@ function handleEvent(ev){
       updateRoutePanel(ev.chain,ev.context_window);
       break;
     }
-    case 'ModelSwitched':line(`<span class="warn">${routeSwitchLabel(ev.from,ev.to,ev.reason)}</span> <span style="color:var(--add);font-size:10px;margin-left:6px">● context preserved</span>`);break;
+    case 'ModelSwitched':
+      // v0.9 simple mode: one plain-language line instead of "X → Y (reason)".
+      if(ev.simple&&ev.human){line(esc(ev.human),'muted');}
+      else{line(`<span class="warn">${routeSwitchLabel(ev.from,ev.to,ev.reason)}</span> <span style="color:var(--add);font-size:10px;margin-left:6px">● context preserved</span>`);}
+      break;
     case 'Message':
       if(ev.role==='router'){
         // Skip raw classification dumps — keep routing messages clean
@@ -3545,13 +4512,24 @@ function handleEvent(ev){
       const finalCost=ev.outcome?.cost_usd??costV;
       const finalTok=ev.outcome?.tokens?.input+ev.outcome?.tokens?.output||tokV;
       const status=esc(ev.outcome?.status||'done');
-      const meta=document.createElement('div');meta.className='ln run-meta';
-      meta.innerHTML='<span class="ok">✓</span> <span class="muted">'+status+'</span>'+
-        '<span style="color:var(--brand);font-size:10px;margin-left:8px">$'+finalCost.toFixed(4)+'</span>'+
-        '<span style="color:var(--agent);font-size:10px;margin-left:8px">'+(finalTok||tokV).toLocaleString('en-US')+' tok</span>'+
-        '<span class="muted" style="font-size:10px;margin-left:8px">'+durStr+'</span>'+
-        (runDiffsApplied?'<span class="muted" style="font-size:10px;margin-left:8px">'+runDiffsApplied+' file'+(runDiffsApplied===1?'':'s')+'</span>':'');
-      term.appendChild(meta);term.scrollTop=term.scrollHeight;
+      if(ev.simple){
+        // Plain-language wrap-up: human sentence + one cost line in centimes,
+        // no token jargon, no $ figure.
+        if(ev.human)line('<span class="ok">✓</span> '+esc(ev.human));
+        let costLine;
+        if(finalCost<=0)costLine="C'était gratuit.";
+        else if(finalCost<0.01)costLine="Coût : moins d'un centime.";
+        else costLine='Coût : environ '+Math.round(finalCost*100)+' centimes.';
+        line('<span class="muted">'+esc(costLine)+'</span>');
+      }else{
+        const meta=document.createElement('div');meta.className='ln run-meta';
+        meta.innerHTML='<span class="ok">✓</span> <span class="muted">'+status+'</span>'+
+          '<span style="color:var(--brand);font-size:10px;margin-left:8px">$'+finalCost.toFixed(4)+'</span>'+
+          '<span style="color:var(--agent);font-size:10px;margin-left:8px">'+(finalTok||tokV).toLocaleString('en-US')+' tok</span>'+
+          '<span class="muted" style="font-size:10px;margin-left:8px">'+durStr+'</span>'+
+          (runDiffsApplied?'<span class="muted" style="font-size:10px;margin-left:8px">'+runDiffsApplied+' file'+(runDiffsApplied===1?'':'s')+'</span>':'');
+        term.appendChild(meta);term.scrollTop=term.scrollHeight;
+      }
       chirp(900,.05);setTimeout(function(){chirp(1400,.07);},100);
       setRunActive(false);
       break;
@@ -3735,12 +4713,17 @@ async function stopRun(){
 // ─── Input ─────────────────────────────────────────────────────────
 $('runBtn').addEventListener('click',runTask);
 const _stopBtn=$('stopBtn');if(_stopBtn)_stopBtn.addEventListener('click',stopRun);
+const _focusOk=$('focusOkBtn');if(_focusOk)_focusOk.addEventListener('click',focusAccept);
+const _focusUndo=$('focusUndoBtn');if(_focusUndo)_focusUndo.addEventListener('click',focusUndo);
+const _focusExplain=$('focusExplainBtn');if(_focusExplain)_focusExplain.addEventListener('click',focusExplain);
+const _micBtn=$('micBtn');if(_micBtn)_micBtn.addEventListener('click',toggleMicDictation);
 $('taskInput').addEventListener('keydown',composerKeydown);
 $('taskInput').addEventListener('input',composerInput);
 $('taskInput').addEventListener('paste',composerPaste);
 $('fileInput').addEventListener('change',handleFiles);
 restoreDraft();
 autoResizeComposer();
+initFocusTour();
 
 function composerInput(){
   HISTORY_IDX=null;
@@ -3982,6 +4965,7 @@ async function runTask(){
     if(handled)return;
   }
   const payload=task+attachmentPrompt();
+  rbDetectIntent(task); // onPreviewRequested / onDiffRequested / … from chat
   $('taskInput').value='';
   localStorage.removeItem('sparrow-composer-draft');
   autoResizeComposer();

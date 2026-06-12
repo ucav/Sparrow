@@ -5,6 +5,7 @@ pub mod enterprise;
 pub mod migration;
 pub mod setup_agent;
 pub mod wizard;
+pub mod zero_question;
 
 // ─── User mode ─────────────────────────────────────────────────────────────────
 

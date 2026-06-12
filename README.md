@@ -36,6 +36,25 @@ The project focuses on a narrow product promise: a Rust-native local cockpit whe
 
 ---
 
+## Qu'est-ce que tu veux faire ? · What do you want to do?
+
+> N'importe qui peut utiliser Sparrow. Décris ton problème avec tes mots —
+> Sparrow le règle, te montre, et garantit que rien n'est jamais perdu.
+
+```sh
+sparrow bonjour                 # accueil : Sparrow regarde ton dossier et propose
+sparrow fix "mon site plante"   # décris le problème → diagnostic + correction
+sparrow explique src/app.js     # comprends un fichier ou une erreur, en clair
+sparrow idees                   # tout ce que tu peux faire, par profil
+sparrow whatis token            # c'est quoi ce mot ? (définition instantanée)
+sparrow annule                  # reviens en arrière — rien n'est jamais perdu
+```
+
+Sparrow te parle en **langage simple par défaut** (`sparrow mode simple|pro`).
+Pour le détail technique complet, tout le mode pro est là — rien n'est retiré.
+
+---
+
 ## Why Sparrow vs Claude Code / Codex / Aider
 
 | Capability | Claude Code | OpenAI Codex CLI | Aider | **Sparrow** |
@@ -60,38 +79,42 @@ See [`docs/comparison/vs-competitors.md`](docs/comparison/vs-competitors.md) for
 
 ---
 
-## ✨ What's New — v0.8.1
+## ✨ What's New — v0.9 « Anyone »
 
-> **Cost routing, zero-friction migration, and a self-improving engine.** Sparrow routes every sub-task to the cheapest capable model (local free for reads, frontier for rewrites), then shows you exactly what you saved vs Claude Code. Import your existing setup in one command. The engine now learns per-repo, escalates on failure, and ships with a hardened reasoning protocol.
+> **Radical accessibility.** Anyone should understand and use Sparrow — a child, a grandparent, a teacher, a mechanic, an engineer. The engine doesn't change; the **surface** does. Focus mode for humans, Cockpit for pros. Same power, two depths.
 
-**💰 Cost routing — Sparrow's competitive moat**
-- Every run ends with a cost comparison: *"Sparrow $0.04 — Claude Code would have cost $0.61 (save 93%)"*
-- Shown on ALL surfaces: CLI run, TUI cockpit, chat, Telegram/Discord, WebView JSON
-- Competitor pricing: Claude Code ($3/$15), Codex CLI ($2.5/$10), OpenCode ($3/$15) per MTok
-- Sub-cent amounts displayed with precision ($0.0041 not "$0.00")
+**🗣️ Zero jargon — Mode Simple / Pro**
+- `sparrow mode simple|pro|auto` — choose how Sparrow talks to you, persisted in config
+- Every engine `Event` now has a human-language phrase (FR/EN) — no more `run a3f2 · route · tier T1`
+- Exhaustive match at compile time: adding a new event without a human phrase **fails to compile** — anti-regression lock
 
-**📦 Zero-friction migration — `sparrow import`**
-- `sparrow import claude-code` — CLAUDE.md → instructions, commands → slash, agents → SOUL, MCP servers imported, API keys detected
-- `sparrow import codex` | `opencode` | `openclaw` | `auto` — one command, all your config
-- Auto-detect: `sparrow import auto` finds every installed tool and imports each
+**🔧 `sparrow fix` — the universal fixer**
+- Paste an error message, describe a problem, or just run `sparrow fix` — it scans your directory, diagnoses in one sentence, and proposes a fix
+- Automatic checkpoint before any change, one-word undo: `sparrow annule`
 
-**🧠 Self-improving engine**
-- **REFLEXION-MAX PROTOCOL V2** — default agent soul with tier triage, three-reviewer tribunal (skeptic/adversary/hurried user), verification by different method, absolute rules against simulated results
-- **Verified escalation** — when a model exhausts its fix budget, the run climbs to the next model instead of failing silently
-- **Per-repo routing memory** — the router learns which models succeed in your repo, self-corrects
-- **Transient retry + stuck-loop guard** — one 429 doesn't downgrade your run; repeated tool calls trigger a nudge then honest stop
-- **Pre-run quote** — `sparrow run` shows estimated cost before executing; `--yes` to skip
+**👋 `sparrow bonjour` — the warm welcome**
+- Detects your context (git conflict, uninstalled project, photo folder) and suggests the best next action
+- No jargon, no flags — just "What are we fixing today?"
 
-**🖥️ Console & CLI**
-- **Replay-on-connect** — refresh mid-run replays current events instead of blank feed
-- **`--continue` / `--fresh`** — session continuity visible across all surfaces
-- **`sparrow skills install gh:user/repo`** — GitHub shorthand for skill installs
-- Budget caps work after subcommand: `sparrow run "task" --max-cost-usd 0.50`
+**💡 `sparrow idees` — the idea gallery**
+- 50+ concrete recipes organized by persona: teacher, grandparent, child, artisan, builder, developer
+- Pick a recipe, press Enter, watch Sparrow work — the recipe IS the tutorial
 
-**Install & distribution** (v0.6.2 baseline)
-- **`cargo install sparrow-cli` v0.8.1** on crates.io
+**🖥️ Focus / Cockpit — one console, two views**
+- **Focus** (default): one column, large text, three buttons — `[✅ Okay] [↩️ Undo] [❓ Explain]`
+- **Cockpit**: full 3-column view with swarm lanes, config, routing — zero power lost
+- Right-side tools panel: Preview, Diff, Terminal, Files, Tasks, Plan — all fed by real events
+- New **white theme** alongside Captain and Paper
+
+**🛡️ Safety net**
+- `sparrow budget 2€` — set spending cap in human language
+- `sparrow annule` — one-word undo, back to last checkpoint
+- Contract displayed before ANY file modification: "I'll modify 2 files. Checkpoint created ✓. Proceed?"
+
+**Install & distribution**
+- **`cargo install sparrow-cli` v0.9.0** on crates.io
 - **Pre-built binaries** for Linux, macOS, Windows on every release
-- **`sparrow launch`** — first-run wizard with free provider fallbacks
+- **`sparrow launch`** — zero-question first launch with free/local fallbacks; `--pro` keeps the expert wizard
 
 **What was already here (v0.5.x)**
 - Agentic engine with planner → coder → verifier pipeline, swarm orchestrator, git checkpoints + rewind.
@@ -150,7 +173,7 @@ Sparrow is **public beta** with a green cross-platform CI baseline. The kernel, 
 | Gateway | ✅ Stable | `/status` roundtrip on port 9338; run registry with real abort |
 | Replay / memory | ✅ Stable | Recorder, checkpoint, rewind, SQLite facts, knowledge graph, optional Neo4j sync, bounded `MEMORY.md`, session search |
 | Provider routing | 🔶 Alpha | Ollama + NVIDIA tested locally; 92 NVIDIA models discovered |
-| First-run setup | 🔶 Alpha | Conversational setup agent + interactive fallback |
+| First-run setup | ✅ Stable | Zero-question default launch, readable config, expert wizard behind `sparrow launch --pro` |
 | Telegram / Discord / Slack | 🔸 Partial | Transport implementations exist; E2E token validation pending |
 | Extra transports | 🧪 Experimental | WhatsApp, Signal, Email, Feishu, WeCom, QQ, Teams adapters present |
 | Cloud sandboxes | 🧪 Experimental | Modal, Daytona, Vercel, Singularity — placeholder entries |
@@ -197,13 +220,13 @@ winget install ucav.Sparrow
 **Then:**
 
 ```bash
-sparrow launch       # first-run picks a free provider, opens cockpit
+sparrow launch       # first-run prepares a free/local fallback, opens Focus cockpit
 sparrow run "explain this repo and write TODO.md"
 ```
 
 That's the [60-second tour](docs/getting-started.md). No API key required —
-the first-run wizard offers a free provider (Groq / Gemini / NVIDIA) or local
-Ollama (auto-installed if missing).
+first launch prepares a free/local fallback and lets you start from the prompt.
+Use `sparrow launch --pro` if you want the detailed provider wizard.
 
 **Launch Sparrow:**
 
@@ -211,8 +234,9 @@ Ollama (auto-installed if missing).
 sparrow launch
 ```
 
-`sparrow launch` runs first-launch setup when needed, then opens the WebView cockpit on
-`http://127.0.0.1:9339/`. Use `sparrow launch --tui` for the terminal cockpit.
+`sparrow launch` prepares Sparrow silently when needed, then opens the WebView
+Focus cockpit on `http://127.0.0.1:9339/`. Use `sparrow launch --tui` for the
+terminal cockpit, or `sparrow launch --pro` for the expert setup wizard.
 
 **Build from source:**
 

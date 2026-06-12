@@ -172,7 +172,14 @@ fn run_finished_reports_status_and_cost() {
         },
     });
     let text = joined(&tui.render_to_lines(120, 40));
-    assert!(text.contains("done"), "completion line missing:\n{text}");
+    assert!(
+        text.contains("Fin : ok.") || text.contains("Terminé"),
+        "completion line missing:\n{text}"
+    );
+    assert!(
+        text.contains("centimes") || text.contains("gratuit"),
+        "human cost line missing:\n{text}"
+    );
 }
 
 #[test]
@@ -190,6 +197,7 @@ fn tool_output_text_appears_in_scrollback() {
         run: r.clone(),
         id: "t1".into(),
         blocks: vec![Block::Text("name = \"sparrow-cli\"".into())],
+        is_error: false,
     });
     let text = joined(&tui.render_to_lines(120, 40));
     assert!(

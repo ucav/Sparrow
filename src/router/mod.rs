@@ -259,7 +259,7 @@ impl Router for BasicRouter {
         // Manual mode with a specific model: use EXACTLY that model, nothing else.
         if self.routing_mode == "manual" {
             if let Some(ref model) = self.preferred_model {
-                for (_, brains) in &self.providers {
+                for brains in self.providers.values() {
                     for brain in brains {
                         if brain.id() == *model {
                             return vec![brain.clone()];

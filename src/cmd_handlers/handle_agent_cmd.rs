@@ -143,6 +143,31 @@ pub fn apply_cli_overrides(config: &mut sparrow::config::Config, cli: &Cli) {
             config.budget.session_usd = budget;
         }
     }
+    // `--max-cost-usd` is the competitor-style alias for the session cap; it
+    // takes precedence over `--budget` when both are given. (Was parsed but
+    // never applied.)
+    if let Some(cap) = cli.max_cost_usd {
+        if cap > 0.0 {
+            config.budget.session_usd = cap;
+        }
+    }
+    // `--max-wall-secs` / `--max-tokens` were parsed but never enforced. Wire
+    // them into the budget so the engine can hard-stop on time and tokens.
+    if let Some(secs) = cli.max_wall_secs {
+        if secs > 0 {
+            config.budget.max_wall_secs = Some(secs);
+        }
+    }
+    if let Some(toks) = cli.max_tokens {
+        if toks > 0 {
+            config.budget.max_tokens = Some(toks);
+        }
+    }
+    // `--no-checkpoint` was parsed but never enforced — wire it so the engine
+    // actually skips Git checkpoints when asked.
+    if cli.no_checkpoint {
+        config.defaults.checkpointing = false;
+    }
     if let Some(sandbox) = cli
         .sandbox
         .as_ref()
@@ -581,6 +606,7 @@ pub async fn run_tui(
                                 "rewound to checkpoint {}",
                                 id
                             ))],
+                            is_error: false,
                         });
                     }
                     Err(err) => {
@@ -656,7 +682,9 @@ pub async fn run_tui(
         }
     });
 
-    let mut tui = Tui::new().with_channels(task_tx, event_rx);
+    let mut tui = Tui::new()
+        .with_experience(config.experience.is_simple(), config.experience.lang())
+        .with_channels(task_tx, event_rx);
     drop(inject_holder);
     tokio::task::spawn_blocking(move || tui.run()).await??;
 

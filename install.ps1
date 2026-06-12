@@ -7,6 +7,7 @@
 param(
     [string]$InstallDir = "$env:LOCALAPPDATA\Sparrow\bin",
     [switch]$NoLaunch,
+    [switch]$NoShortcut,
     [switch]$FromSource
 )
 
@@ -68,6 +69,28 @@ function Install-FromRelease {
     }
 }
 
+function New-SparrowShortcut {
+    if ($NoShortcut) {
+        return
+    }
+    try {
+        $desktop = [Environment]::GetFolderPath("Desktop")
+        if ([string]::IsNullOrWhiteSpace($desktop)) {
+            return
+        }
+        $shortcutPath = Join-Path $desktop "Sparrow.lnk"
+        $shell = New-Object -ComObject WScript.Shell
+        $shortcut = $shell.CreateShortcut($shortcutPath)
+        $shortcut.TargetPath = $BinaryPath
+        $shortcut.WorkingDirectory = [Environment]::GetFolderPath("UserProfile")
+        $shortcut.Description = "Open Sparrow"
+        $shortcut.Save()
+        Write-Host "Desktop shortcut created: $shortcutPath"
+    } catch {
+        Write-Warning "Could not create desktop shortcut: $($_.Exception.Message)"
+    }
+}
+
 Write-Host "Installing Sparrow into $InstallDir"
 if ($FromSource) {
     Install-FromSource
@@ -76,6 +99,7 @@ if ($FromSource) {
 }
 
 Add-UserPath -PathToAdd $InstallDir
+New-SparrowShortcut
 
 Write-Host ""
 Write-Host "Sparrow installed: $BinaryPath"

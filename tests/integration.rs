@@ -1920,6 +1920,7 @@ mod tests {
                     budget: sparrow::config::Budget {
                         daily_usd: daily.max(0.0),
                         session_usd: session.max(0.0),
+                        ..Default::default()
                     },
                     ..Default::default()
                 };

@@ -163,6 +163,10 @@ pub async fn run_task(
     let repo_head = current_repo_head();
     let start_time = std::time::Instant::now();
     eprintln!("\x1b[36m⚡ Sparrow running: {}\x1b[0m", task);
+    // v0.9 Pilier 2: in simple mode the status events render as plain-language
+    // lines via the humanize table; the technical labels are kept for pro mode.
+    let simple = run_config.experience.is_simple();
+    let lang = run_config.experience.lang();
     let print_handle = tokio::spawn(async move {
         let mut full_reply = String::new();
         let mut reasoning_reply = String::new();
@@ -202,25 +206,49 @@ pub async fn run_task(
                     }
                 }
                 sparrow::event::Event::ToolUseProposed { name, .. } => {
-                    println!("\n[Tool: {}]", name);
+                    if simple {
+                        if let Some(line) = sparrow::humanize::humanize(&event, lang) {
+                            println!("\n{}", line);
+                        }
+                    } else {
+                        println!("\n[Tool: {}]", name);
+                    }
                 }
                 sparrow::event::Event::ApprovalRequested { summary, .. } => {
-                    println!("\n[APPROVAL NEEDED: {}]", summary);
+                    if simple {
+                        if let Some(line) = sparrow::humanize::humanize(&event, lang) {
+                            println!("\n{}", line);
+                        }
+                    } else {
+                        println!("\n[APPROVAL NEEDED: {}]", summary);
+                    }
                 }
                 sparrow::event::Event::CheckpointCreated { id, label, .. } => {
-                    println!("\n[Checkpoint: {} — {}]", id.0, label);
+                    if simple {
+                        if let Some(line) = sparrow::humanize::humanize(&event, lang) {
+                            println!("\n{}", line);
+                        }
+                    } else {
+                        println!("\n[Checkpoint: {} — {}]", id.0, label);
+                    }
                 }
                 sparrow::event::Event::ModelSwitched {
                     from, to, reason, ..
                 } => {
-                    let clean = sparrow::event::friendly_model_switch_reason(reason);
-                    if sparrow::event::is_local_model_unavailable(reason) {
-                        println!(
-                            "\n[Routing] modèle local indisponible → routage modèle cloud ({})",
-                            to
-                        );
+                    if simple {
+                        if let Some(line) = sparrow::humanize::humanize(&event, lang) {
+                            println!("\n{}", line);
+                        }
                     } else {
-                        println!("\n[Routing] {} → {} ({})", from, to, clean);
+                        let clean = sparrow::event::friendly_model_switch_reason(reason);
+                        if sparrow::event::is_local_model_unavailable(reason) {
+                            println!(
+                                "\n[Routing] modèle local indisponible → routage modèle cloud ({})",
+                                to
+                            );
+                        } else {
+                            println!("\n[Routing] {} → {} ({})", from, to, clean);
+                        }
                     }
                 }
                 // Cost is shown once at the end (no noisy inline $0.0000 prints).
@@ -232,7 +260,25 @@ pub async fn run_task(
                         print!("{}", tail);
                         let _ = std::io::stdout().flush();
                     }
-                    if outcome.status == "completed" {
+                    if simple {
+                        // Plain-language wrap-up: one human sentence + one cost
+                        // line in centimes, no token jargon, no competitor table.
+                        if let Some(line) = sparrow::humanize::humanize(&event, lang) {
+                            println!("\n{}", line);
+                        }
+                        let usd = outcome.cost_usd;
+                        let cost_line = if usd <= 0.0 {
+                            "C'était gratuit.".to_string()
+                        } else if usd < 0.01 {
+                            "Coût : moins d'un centime.".to_string()
+                        } else {
+                            format!("Coût : environ {:.0} centimes.", usd * 100.0)
+                        };
+                        println!("{}", cost_line);
+                        if outcome.status == "completed" {
+                            println!("Pas convaincu ? « sparrow annule » remet tout comme avant.");
+                        }
+                    } else if outcome.status == "completed" {
                         println!(
                             "\nDone. Cost: ${:.4}, Tokens: {} in / {} out",
                             outcome.cost_usd, outcome.tokens.input, outcome.tokens.output,

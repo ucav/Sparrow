@@ -320,6 +320,10 @@ pub enum Event {
         run: RunId,
         id: String,
         blocks: Vec<Block>,
+        /// True when the tool reported a failure (ToolResult::is_error).
+        /// Additive + defaulted so old recordings/replays still deserialize.
+        #[serde(default)]
+        is_error: bool,
     },
     DiffProposed {
         run: RunId,

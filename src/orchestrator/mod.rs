@@ -640,6 +640,7 @@ Your job: implement the SPEC exactly. Use tools to read existing files and write
                             run: parent_run.clone(),
                             id: id.clone(),
                             blocks,
+                            is_error: result.is_error,
                         });
                         tool_result_blocks.push(ContentBlock::ToolResult {
                             tool_use_id: id,
