@@ -33,11 +33,11 @@ ratatui = "0.29"
 crossterm = "0.28"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sparrow-core = { path = "crates/sparrow-core" }
-sparrow-intel = { path = "crates/sparrow-intel" }
-sparrow-providers = { path = "crates/sparrow-providers" }
-sparrow-memory = { path = "crates/sparrow-memory" }
-sparrow-config = { path = "crates/sparrow-config" }
+sparrow-core = { version = "0.9.2", path = "crates/sparrow-core" }
+sparrow-intel = { version = "0.9.2", path = "crates/sparrow-intel" }
+sparrow-providers = { version = "0.9.2", path = "crates/sparrow-providers" }
+sparrow-memory = { version = "0.9.2", path = "crates/sparrow-memory" }
+sparrow-config = { version = "0.9.2", path = "crates/sparrow-config" }
 toml = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json", "blocking", "multipart"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
