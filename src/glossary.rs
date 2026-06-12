@@ -105,7 +105,7 @@ pub fn lookup(term: &str, lang: Lang) -> Option<String> {
 pub fn terms() -> Vec<&'static str> {
     GLOSSARY
         .iter()
-        .filter_map(|e| e.keys.first().copied())
+        .flat_map(|e| e.keys.first().copied())
         .collect()
 }
 
