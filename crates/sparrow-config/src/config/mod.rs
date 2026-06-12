@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::event::AutonomyLevel;
+use sparrow_core::event::AutonomyLevel;
 use crate::permissions::PermissionConfig;
 
 pub mod providers;

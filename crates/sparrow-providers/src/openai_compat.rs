@@ -550,7 +550,7 @@ impl Brain for OpenAICompatAdapter {
                                                             Vec::new()
                                                         };
                                                         if native {
-                                                            crate::event::StopReason::ToolUse
+                                                            sparrow_core::event::StopReason::ToolUse
                                                         } else if calls.is_empty() {
                                                             if !state.suppress_text
                                                                 && !state.pending_text.is_empty()
@@ -563,7 +563,7 @@ impl Brain for OpenAICompatAdapter {
                                                                     ),
                                                                 );
                                                             }
-                                                            crate::event::StopReason::EndTurn
+                                                            sparrow_core::event::StopReason::EndTurn
                                                         } else {
                                                             for call in calls.into_iter() {
                                                                 // B8: unique id per
@@ -589,10 +589,10 @@ impl Brain for OpenAICompatAdapter {
                                                                     BrainEvent::ToolUseEnd { id },
                                                                 );
                                                             }
-                                                            crate::event::StopReason::ToolUse
+                                                            sparrow_core::event::StopReason::ToolUse
                                                         }
                                                     }
-                                                    "length" => crate::event::StopReason::MaxTokens,
+                                                    "length" => sparrow_core::event::StopReason::MaxTokens,
                                                     "tool_calls" => {
                                                         // A1/A2: emit Ends in index order,
                                                         // not HashMap-arbitrary order.
@@ -611,9 +611,9 @@ impl Brain for OpenAICompatAdapter {
                                                                 }
                                                             }
                                                         }
-                                                        crate::event::StopReason::ToolUse
+                                                        sparrow_core::event::StopReason::ToolUse
                                                     }
-                                                    s => crate::event::StopReason::StopSequence(
+                                                    s => sparrow_core::event::StopReason::StopSequence(
                                                         s.to_string(),
                                                     ),
                                                 };
@@ -627,7 +627,7 @@ impl Brain for OpenAICompatAdapter {
                                 {
                                     // Use .get() — indexing a serde_json::Map with [] panics on a
                                     // missing key, and some providers (e.g. MiniMax) omit fields.
-                                    parsed.push(BrainEvent::Usage(crate::event::TokenUsage {
+                                    parsed.push(BrainEvent::Usage(sparrow_core::event::TokenUsage {
                                         input: usage
                                             .get("prompt_tokens")
                                             .and_then(|v| v.as_u64())
@@ -655,7 +655,7 @@ impl Brain for OpenAICompatAdapter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::{Msg, PromptCacheConfig, PromptCacheTtl};
+    use crate::{Msg, PromptCacheConfig, PromptCacheTtl};
     use futures::StreamExt;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
@@ -704,7 +704,7 @@ mod tests {
                         text: "what is in this image?".into(),
                     },
                     ContentBlock::Image {
-                        source: crate::provider::ImageSource::Base64 {
+                        source: crate::ImageSource::Base64 {
                             media_type: "image/png".into(),
                             data: "iVBORw0KGgo=".into(),
                         },
@@ -885,6 +885,6 @@ mod tests {
         assert_eq!(tool_name.as_deref(), Some("read"));
         let args: serde_json::Value = serde_json::from_str(&tool_args).unwrap();
         assert_eq!(args["file_path"], "config.py");
-        assert!(matches!(done, Some(crate::event::StopReason::ToolUse)));
+        assert!(matches!(done, Some(sparrow_core::event::StopReason::ToolUse)));
     }
 }

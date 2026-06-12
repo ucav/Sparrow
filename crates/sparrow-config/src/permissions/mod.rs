@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
-use crate::event::{AutonomyLevel, Decision, RiskLevel};
+use sparrow_core::event::{AutonomyLevel, Decision, RiskLevel};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]

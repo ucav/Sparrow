@@ -164,7 +164,7 @@ fn push_responses_events(val: &serde_json::Value, events: &mut Vec<BrainEvent>) 
         collect_nested_reasoning(response, events);
     }
     if event_type == "response.completed" {
-        events.push(BrainEvent::Done(crate::event::StopReason::EndTurn));
+        events.push(BrainEvent::Done(sparrow_core::event::StopReason::EndTurn));
     }
 }
 
@@ -245,7 +245,7 @@ impl Brain for OpenAIResponsesAdapter {
                             }
                             let data = &line[6..];
                             if data == "[DONE]" {
-                                events.push(BrainEvent::Done(crate::event::StopReason::EndTurn));
+                                events.push(BrainEvent::Done(sparrow_core::event::StopReason::EndTurn));
                                 continue;
                             }
                             if let Ok(val) = serde_json::from_str::<serde_json::Value>(data) {
@@ -344,7 +344,7 @@ impl Brain for BedrockAdapter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::{ContentBlock, Msg, PromptCacheConfig, PromptCacheTtl};
+    use crate::{ContentBlock, Msg, PromptCacheConfig, PromptCacheTtl};
 
     #[test]
     fn responses_body_adds_prompt_cache_controls() {
@@ -404,7 +404,7 @@ mod tests {
                         text: "describe this".into(),
                     },
                     ContentBlock::Image {
-                        source: crate::provider::ImageSource::Base64 {
+                        source: crate::ImageSource::Base64 {
                             media_type: "image/png".into(),
                             data: "iVBORw0KGgo=".into(),
                         },

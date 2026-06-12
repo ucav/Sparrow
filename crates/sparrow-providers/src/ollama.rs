@@ -267,7 +267,7 @@ impl Brain for OllamaAdapter {
                                 event.get("prompt_eval_count").and_then(|v| v.as_u64()),
                                 event.get("eval_count").and_then(|v| v.as_u64()),
                             ) {
-                                parsed.push(BrainEvent::Usage(crate::event::TokenUsage {
+                                parsed.push(BrainEvent::Usage(sparrow_core::event::TokenUsage {
                                     input: prompt,
                                     output: completion,
                                 }));
@@ -280,10 +280,10 @@ impl Brain for OllamaAdapter {
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("stop");
                                 let stop = match reason {
-                                    "stop" => crate::event::StopReason::EndTurn,
-                                    "length" => crate::event::StopReason::MaxTokens,
-                                    "tool_calls" => crate::event::StopReason::ToolUse,
-                                    s => crate::event::StopReason::StopSequence(s.to_string()),
+                                    "stop" => sparrow_core::event::StopReason::EndTurn,
+                                    "length" => sparrow_core::event::StopReason::MaxTokens,
+                                    "tool_calls" => sparrow_core::event::StopReason::ToolUse,
+                                    s => sparrow_core::event::StopReason::StopSequence(s.to_string()),
                                 };
                                 parsed.push(BrainEvent::Done(stop));
                             }

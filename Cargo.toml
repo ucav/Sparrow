@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/sparrow-core", "crates/sparrow-intel"]
+members = ["crates/sparrow-core", "crates/sparrow-intel", "crates/sparrow-providers", "crates/sparrow-memory", "crates/sparrow-config"]
 resolver = "2"
 
 [package]
@@ -35,6 +35,9 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sparrow-core = { path = "crates/sparrow-core" }
 sparrow-intel = { path = "crates/sparrow-intel" }
+sparrow-providers = { path = "crates/sparrow-providers" }
+sparrow-memory = { path = "crates/sparrow-memory" }
+sparrow-config = { path = "crates/sparrow-config" }
 toml = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json", "blocking", "multipart"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
@@ -77,7 +80,8 @@ imap = { version = "2", optional = true }
 native-tls = { version = "0.2", optional = true }
 
 # OS keychain
-keyring = { version = "3", optional = true }
+# keyring moved to the sparrow-config crate (auth lives there now); the
+# `keyring` feature below re-exports sparrow-config's optional keyring support.
 syntect = "5.3.0"
 pulldown-cmark = "0.13.4"
 indicatif = "0.18.4"
@@ -93,9 +97,10 @@ tempfile = "3"
 
 [features]
 default = ["keyring"]
+keyring = ["sparrow-config/keyring"]
 keyring-dep = ["keyring"]
 browser = []
-treesitter = ["tree-sitter", "tree-sitter-rust", "tree-sitter-python", "tree-sitter-javascript"]
+treesitter = ["tree-sitter", "tree-sitter-rust", "tree-sitter-python", "tree-sitter-javascript", "sparrow-memory/treesitter"]
 email = ["lettre", "imap", "native-tls"]
 
 [profile.release]

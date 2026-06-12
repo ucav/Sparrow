@@ -1,4 +1,4 @@
-use crate::event::Event;
+use sparrow_core::event::Event;
 use std::collections::HashSet;
 
 // ─── Redaction filter ───────────────────────────────────────────────────────────
@@ -93,7 +93,7 @@ impl RedactionFilter {
             Event::ToolOutput { blocks, .. } => {
                 for block in blocks {
                     match block {
-                        crate::event::Block::Text(t) => {
+                        sparrow_core::event::Block::Text(t) => {
                             *t = self.redact_str(t);
                         }
                         _ => {}
@@ -132,8 +132,8 @@ impl Default for RedactionFilter {
 
 // ─── Context Manager ────────────────────────────────────────────────────────────
 
-use crate::memory::RepoMap;
-use crate::provider::Msg;
+use crate::RepoMap;
+use sparrow_providers::Msg;
 
 /// Manages context window by summarizing/compacting when approaching limits.
 /// §3.7: "The Context Manager enforces the model's window via summarization/compaction
@@ -197,7 +197,7 @@ impl ContextManager {
 
             for msg in &middle {
                 for block in &msg.content {
-                    if let crate::provider::ContentBlock::Text { text } = block {
+                    if let sparrow_providers::ContentBlock::Text { text } = block {
                         // Extract tool names
                         for tool in &[
                             "fs_read", "fs_write", "edit", "exec", "git", "search", "test",
@@ -255,7 +255,7 @@ impl ContextManager {
 
             compacted.push(Msg {
                 role: "user".into(),
-                content: vec![crate::provider::ContentBlock::Text {
+                content: vec![sparrow_providers::ContentBlock::Text {
                     text: summary_str.clone(),
                 }],
             });
@@ -335,7 +335,7 @@ mod tests {
         filter.load_secrets(vec!["mysecret123".into()]);
 
         let event = Event::ThinkingDelta {
-            run: crate::event::RunId("test".into()),
+            run: sparrow_core::event::RunId("test".into()),
             text: "The secret is mysecret123".into(),
         };
         let redacted = filter.redact_event(&event);

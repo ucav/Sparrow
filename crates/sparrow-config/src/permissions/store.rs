@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::event::Decision;
+use sparrow_core::event::Decision;
 
 // ─── Store ─────────────────────────────────────────────────────────────────────
 

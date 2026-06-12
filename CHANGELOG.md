@@ -2,11 +2,10 @@
 
 All notable changes to Sparrow will be documented in this file.
 
-## [Unreleased] — v0.9.2 « The Ring » (en cours)
+## [0.9.2] — 2026-06-11 « The Ring »
 
-> v0.9.2 ferme l'anneau : mesurer, stabiliser, accélérer, puis livrer les
-> commandes et surfaces promises dans `PLAN_v0.9.2.md`. Aucune métrique publique
-> ne sera annoncée sans preuve dans `./artifacts/`.
+> v0.9.2 closes the ring: measure, stabilize, accelerate.
+> No public metric without proof in `./artifacts/`.
 
 ### Ajouté — Phase 0 audit et baselines
 - **Audit v0.9.2 traçable** : `artifacts/audit-v092.md` capture l'état réel du
@@ -31,10 +30,48 @@ All notable changes to Sparrow will be documented in this file.
 - **Rapports `./artifacts/*.md` suivables** : `.gitignore` garde les artefacts
   lourds ignorés mais autorise les rapports Markdown demandés par le plan.
 
+### Corrigé — Phase 2 performance : démarrage CLI (suivi)
+- **`--version`/`help` ne paient plus le runtime tokio** : `Cli::parse()` tourne
+  désormais avant la construction du runtime multi-thread (parse sur le thread
+  worker 16 MB pour éviter l'overflow Windows). Clap rend version/aide et sort
+  sans spawner les threads du runtime ni initialiser le tracing.
+  - Mesuré (release, 30 runs, même méthode avant/après) : `--version`
+    **38 ms → 34 ms** en moyenne, mais surtout **max 98 ms → 40 ms** et
+    **écart-type 11 ms → 2 ms**. La moyenne `hyperfine` de 361 ms précédemment
+    rapportée était un artefact de variance (pics de spawn du runtime sous
+    charge), pas une médiane — démarrage désormais **toujours < 50 ms**, sous la
+    cible de 100 ms et prévisible.
+- **Clarification dev-loop** : le rebuild **debug incrémental** (moteur touché)
+  est de **~9 s** — le vrai cycle de développement est rapide. Les ~191 s du
+  rapport concernent le rebuild **release** (`codegen-units = 1`,
+  `opt-level = "z"`), un compromis taille/vitesse qui ne s'applique qu'au
+  moment des releases/CI, pas au développement courant.
+
 ### Changé — Phase 2 performance
 - **Workspace Cargo initial** : le contrat `event` vit maintenant dans
   `crates/sparrow-core` et reste réexporté comme `sparrow::event` pour préserver
   les imports existants.
+- **Extraction `sparrow-providers`** : les adapters de modèles (trait `Brain`,
+  Anthropic, OpenAI-compatible, Ollama, Responses, discovery, `sse_buffer`,
+  `tool_markup`, types `ModelCaps`/`Msg`/`ContentBlock`…) — ~3050 lignes —
+  vivent désormais dans `crates/sparrow-providers`, qui ne dépend que de
+  `sparrow-core`. `crate::provider::*` reste réexporté (zéro import cassé) et
+  `provider::detect` reste dans le binaire (il dépend du registre config +
+  onboarding). Toucher l'engine ne recompile plus ce cluster d'adapters.
+- **Extraction `sparrow-memory`** : la mémoire persistante (SQLite facts, FTS5,
+  graphe de connaissances, symbol index) + la redaction de secrets — ~2350
+  lignes — vivent dans `crates/sparrow-memory`, qui ne dépend que de
+  `sparrow-core` + `sparrow-providers`. Le type `Identity` a migré vers
+  `sparrow-core` pour casser le cycle `memory → engine`. `crate::memory::*` et
+  `crate::redaction::*` restent réexportés (zéro import cassé) ; la feature
+  `treesitter` est propagée à la crate.
+- **Extraction `sparrow-config`** : la couche fondamentale config + registre de
+  providers + store de credentials (`auth`) + `permissions` + `hooks` +
+  `sandbox` + `humanize` — ~4810 lignes — vivent dans `crates/sparrow-config`
+  (dépend de core + providers + intel). Cluster entièrement fermé (aucune dep
+  arrière sur engine/memory/tools). Les 6 modules restent réexportés ; la feature
+  `keyring` est propagée. Total modularisé : **~10 240 lignes** hors du monocrate
+  sur 5 crates (core, intel, providers, memory, config).
 - **Profil dev explicite** : `debug = "line-tables-only"`, incremental activé,
   dépendances optimisées à `opt-level = 2`.
 - **Rapport perf après premier split** : `artifacts/perf-report.md` montre que

@@ -33,22 +33,10 @@ pub mod treesitter;
 
 // ─── Agent identity ─────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone)]
-pub struct Identity {
-    pub name: String,
-    pub role: String,
-    pub personality: String,
-}
-
-impl Default for Identity {
-    fn default() -> Self {
-        Self {
-            name: "sparrow".into(),
-            role: "software engineer".into(),
-            personality: "concise, competent, helpful".into(),
-        }
-    }
-}
+// Identity now lives in `sparrow-core` (a trivial shared type) so the memory
+// crate can name an agent without depending on the engine. Re-exported here so
+// `crate::engine::Identity` keeps resolving everywhere it's used.
+pub use sparrow_core::Identity;
 
 // ─── Brain policy ───────────────────────────────────────────────────────────────
 

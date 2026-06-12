@@ -15,7 +15,7 @@
 //! deltas, opaque reasoning) return `None` — in simple mode they belong to the
 //! HUD, not the conversation.
 
-use crate::event::{AgentStatus, AutonomyLevel, Decision, Event, RiskLevel};
+use sparrow_core::event::{AgentStatus, AutonomyLevel, Decision, Event, RiskLevel};
 
 /// Display language for the human layer. Only two are shipped on purpose
 /// (the structure allows more); see PLAN_v0.9.0 §8.
@@ -307,7 +307,7 @@ pub fn status_phrase(status: &AgentStatus, lang: Lang) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event::{OutcomeSummary, RunId, TokenUsage};
+    use sparrow_core::event::{OutcomeSummary, RunId, TokenUsage};
     use serde_json::json;
 
     fn run() -> RunId {
@@ -418,7 +418,7 @@ mod tests {
             },
             Event::CheckpointCreated {
                 run: run(),
-                id: crate::event::CheckpointId("c".into()),
+                id: sparrow_core::event::CheckpointId("c".into()),
                 label: "l".into(),
             },
             Event::RunFinished {
@@ -465,7 +465,7 @@ mod tests {
             run: run(),
             outcome: OutcomeSummary {
                 status: "completed".into(),
-                diffs: vec![crate::event::FileDiff {
+                diffs: vec![sparrow_core::event::FileDiff {
                     file: "a.txt".into(),
                     plus: 1,
                     minus: 0,

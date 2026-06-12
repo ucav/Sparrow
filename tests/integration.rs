@@ -1799,7 +1799,8 @@ mod tests {
     fn test_regression_tokio_sleep_in_sandbox() {
         // BUG 2: no std::thread::sleep in sandbox async code
         use std::fs;
-        let src = fs::read_to_string("src/sandbox/mod.rs").unwrap();
+        // sandbox moved to the sparrow-config crate in the v0.9.2 workspace split.
+        let src = fs::read_to_string("crates/sparrow-config/src/sandbox/mod.rs").unwrap();
         // Verify the sleep is tokio::time::sleep, not std::thread::sleep
         // (the source now uses tokio::time::sleep)
         assert!(

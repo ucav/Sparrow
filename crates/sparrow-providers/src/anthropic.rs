@@ -312,7 +312,7 @@ impl Brain for AnthropicAdapter {
                                     "message_delta" => {
                                         if let Some(usage) = event["usage"].as_object() {
                                             events.push(BrainEvent::Usage(
-                                                crate::event::TokenUsage {
+                                                sparrow_core::event::TokenUsage {
                                                     input: usage["input_tokens"]
                                                         .as_u64()
                                                         .unwrap_or(0),
@@ -326,10 +326,10 @@ impl Brain for AnthropicAdapter {
                                             .as_str()
                                             .unwrap_or("end_turn");
                                         let reason = match stop_reason {
-                                            "end_turn" => crate::event::StopReason::EndTurn,
-                                            "max_tokens" => crate::event::StopReason::MaxTokens,
-                                            "tool_use" => crate::event::StopReason::ToolUse,
-                                            s => crate::event::StopReason::StopSequence(
+                                            "end_turn" => sparrow_core::event::StopReason::EndTurn,
+                                            "max_tokens" => sparrow_core::event::StopReason::MaxTokens,
+                                            "tool_use" => sparrow_core::event::StopReason::ToolUse,
+                                            s => sparrow_core::event::StopReason::StopSequence(
                                                 s.to_string(),
                                             ),
                                         };
@@ -357,7 +357,7 @@ impl Brain for AnthropicAdapter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::provider::{Msg, PromptCacheConfig, PromptCacheTtl};
+    use crate::{Msg, PromptCacheConfig, PromptCacheTtl};
 
     #[test]
     fn anthropic_system_prompt_gets_cache_control() {

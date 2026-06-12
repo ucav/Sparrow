@@ -38,24 +38,32 @@ fn main() -> anyhow::Result<()> {
     // of the CLI inlines its locals into the future's size). On Windows the
     // OS main thread caps at ~1 MB, which the future + tokio runtime
     // initialisation blow through in debug builds even when the future is
-    // Box::pinned. Run the whole thing on a worker thread with an explicit
-    // 16 MB stack — release builds are fine on any platform, so this is a
-    // no-cost safety net.
+    // Box::pinned. `Cli` itself is also a large type (clap builds the full
+    // command tree), so even `Cli::parse()` must run on the roomy stack. Run
+    // everything on a worker thread with an explicit 16 MB stack.
     let worker = std::thread::Builder::new()
         .name("sparrow-main".into())
         .stack_size(16 * 1024 * 1024)
-        .spawn(|| -> anyhow::Result<()> {
+        .spawn(move || -> anyhow::Result<()> {
+            // Parse args BEFORE building the tokio runtime. Clap renders
+            // `--version`/`--help` (and usage errors) and exits right here — so
+            // those hot paths never pay for a multi-threaded tokio runtime (one
+            // worker per core + IO/timer drivers) or tracing init. That runtime
+            // spin-up was the dominant wasted cost in `sparrow --version` /
+            // `help` startup (see artifacts/perf-report.md, Plan B). Parsing on
+            // the 16 MB worker stack avoids the main-thread overflow.
+            let cli = Cli::parse();
             let runtime = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()?;
-            runtime.block_on(Box::pin(async_main()))
+            runtime.block_on(Box::pin(async_main(cli)))
         })?;
     worker
         .join()
         .map_err(|_| anyhow::anyhow!("sparrow main thread panicked"))?
 }
 
-async fn async_main() -> anyhow::Result<()> {
+async fn async_main(cli: Cli) -> anyhow::Result<()> {
     // Quiet by default so structured logs (e.g. "Transcript saved") never
     // interleave with the user-facing answer on stdout. Logs go to stderr;
     // set RUST_LOG=sparrow=info (or debug) for verbose diagnostics.
@@ -66,8 +74,6 @@ async fn async_main() -> anyhow::Result<()> {
                 .unwrap_or_else(|_| "sparrow=warn".into()),
         )
         .init();
-
-    let cli = Cli::parse();
 
     let config_dir = dirs::config_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))

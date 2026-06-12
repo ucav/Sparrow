@@ -2869,7 +2869,6 @@ dependencies = [
  "git2",
  "imap",
  "indicatif",
- "keyring",
  "lettre",
  "mime_guess",
  "native-tls",
@@ -2888,8 +2887,11 @@ dependencies = [
  "serde",
  "serde_json",
  "similar",
+ "sparrow-config",
  "sparrow-core",
  "sparrow-intel",
+ "sparrow-memory",
+ "sparrow-providers",
  "syntect",
  "tempfile",
  "thiserror 2.0.18",
@@ -2907,6 +2909,29 @@ dependencies = [
  "url",
  "uuid",
  "walkdir",
+]
+
+[[package]]
+name = "sparrow-config"
+version = "0.9.2"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chacha20poly1305",
+ "chrono",
+ "dirs",
+ "keyring",
+ "rand 0.8.6",
+ "regex",
+ "reqwest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "sparrow-core",
+ "sparrow-intel",
+ "sparrow-providers",
+ "tokio",
+ "toml",
 ]
 
 [[package]]
@@ -2931,6 +2956,43 @@ dependencies = [
  "sha2",
  "tempfile",
  "toml",
+ "url",
+]
+
+[[package]]
+name = "sparrow-memory"
+version = "0.9.2"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "regex",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sparrow-core",
+ "sparrow-providers",
+ "tracing",
+ "tree-sitter",
+ "tree-sitter-javascript",
+ "tree-sitter-python",
+ "tree-sitter-rust",
+]
+
+[[package]]
+name = "sparrow-providers"
+version = "0.9.2"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64 0.22.1",
+ "futures",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sparrow-core",
+ "tokio",
+ "tracing",
  "url",
 ]
 
