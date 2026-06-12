@@ -2014,7 +2014,7 @@ async fn list_replays() -> axum::extract::Json<serde_json::Value> {
                 "task": task,
                 "event_count": meta.get("event_count").cloned().unwrap_or(0.into()),
                 "created_at": meta.get("created_at").cloned().unwrap_or("".into()),
-            }))
+            })
         })
         .collect();
     // meta.created_at is "YYYY-MM-DD HH:MM:SS" — lexicographic sort works.
