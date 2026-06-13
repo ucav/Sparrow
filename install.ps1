@@ -1,18 +1,27 @@
 # Sparrow one-click installer for Windows.
+#
+# By default this installs the binary and STOPS — it does not launch the agent.
+# Run `sparrow launch` yourself when ready, or pass -Launch to start at the end.
+#
 # Usage:
 #   irm https://raw.githubusercontent.com/ucav/Sparrow/master/install.ps1 | iex
-#   iex "& { $(irm https://raw.githubusercontent.com/ucav/Sparrow/master/install.ps1) } -NoLaunch"
+#   iex "& { $(irm .../install.ps1) } -Launch"            # opt in to auto-launch
+#   iex "& { $(irm .../install.ps1) } -FromSource"        # build from git
+#   iex "& { $(irm .../install.ps1) } -AllowUnverified"   # skip checksum (NOT recommended)
 
 [CmdletBinding()]
 param(
     [string]$InstallDir = "$env:LOCALAPPDATA\Sparrow\bin",
-    [switch]$NoLaunch,
+    [switch]$Launch,            # default: do NOT auto-launch
+    [switch]$NoLaunch,          # back-compat no-op (no-launch is already the default)
     [switch]$NoShortcut,
-    [switch]$FromSource
+    [switch]$FromSource,
+    [switch]$AllowUnverified    # install even without a SHA256 checksum
 )
 
 $ErrorActionPreference = "Stop"
 $Repo = "ucav/Sparrow"
+$Artifact = "sparrow-windows-x86_64.exe"
 $BinaryPath = Join-Path $InstallDir "sparrow.exe"
 
 function Add-UserPath {
@@ -53,20 +62,60 @@ function Install-FromSource {
     }
 }
 
+# Returns: 'ok' (verified), 'mismatch' (tampering), or 'absent' (no checksum).
+function Test-ReleaseChecksum {
+    param([string]$BinFile)
+
+    $sumsUrl = "https://github.com/$Repo/releases/latest/download/$Artifact.sha256"
+    $sumsFile = "$BinFile.sha256"
+    try {
+        Invoke-WebRequest -Uri $sumsUrl -OutFile $sumsFile -UseBasicParsing -ErrorAction Stop
+    } catch {
+        return 'absent'
+    }
+
+    try {
+        $have = (Get-FileHash -Algorithm SHA256 -Path $BinFile).Hash.ToLower()
+        $text = (Get-Content -Raw $sumsFile).ToLower()
+        Remove-Item -Force $sumsFile -ErrorAction SilentlyContinue
+        if ($text -match [regex]::Escape($have)) { return 'ok' } else { return 'mismatch' }
+    } catch {
+        Remove-Item -Force $sumsFile -ErrorAction SilentlyContinue
+        return 'absent'
+    }
+}
+
 function Install-FromRelease {
-    $url = "https://github.com/$Repo/releases/latest/download/sparrow-windows-x86_64.exe"
+    $url = "https://github.com/$Repo/releases/latest/download/$Artifact"
     $tmp = "$BinaryPath.tmp"
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 
-    Write-Host "Downloading Sparrow release artifact: sparrow-windows-x86_64.exe"
+    Write-Host "Downloading Sparrow release artifact: $Artifact"
     try {
         Invoke-WebRequest -Uri $url -OutFile $tmp -UseBasicParsing
-        Move-Item -Force $tmp $BinaryPath
     } catch {
         Remove-Item -Force $tmp -ErrorAction SilentlyContinue
         Write-Warning "Release artifact unavailable. Falling back to source build."
         Install-FromSource
+        return
     }
+
+    if (-not $AllowUnverified) {
+        $verdict = Test-ReleaseChecksum -BinFile $tmp
+        if ($verdict -eq 'mismatch') {
+            Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+            throw "SHA256 MISMATCH for $Artifact - refusing to install a possibly tampered binary. Re-run with -FromSource."
+        } elseif ($verdict -eq 'absent') {
+            Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+            Write-Warning "No SHA256 checksum available for $Artifact - cannot verify integrity."
+            Write-Warning "Falling back to a source build (safer than an unverified binary). Pass -AllowUnverified to override."
+            Install-FromSource
+            return
+        }
+        Write-Host "SHA256 verified."
+    }
+
+    Move-Item -Force $tmp $BinaryPath
 }
 
 function New-SparrowShortcut {
@@ -105,7 +154,7 @@ Write-Host ""
 Write-Host "Sparrow installed: $BinaryPath"
 Write-Host "Next command: sparrow launch"
 
-if (-not $NoLaunch) {
+if ($Launch) {
     Write-Host ""
     Write-Host "Launching Sparrow WebView cockpit..."
     & $BinaryPath launch

@@ -60,7 +60,7 @@ Pour le détail technique complet, tout le mode pro est là — rien n'est retir
 | Capability | Claude Code | OpenAI Codex CLI | Aider | **Sparrow** |
 |---|:---:|:---:|:---:|:---:|
 | Single static binary, no Node/Python runtime | ❌ | ❌ | ❌ | ✅ |
-| Choose any provider, any model | ❌ Anthropic | ❌ OpenAI | ✅ | ✅ **38 providers** |
+| Choose any provider, any model | ❌ Anthropic | ❌ OpenAI | ✅ | ✅ **30+ registry** ¹ |
 | Local-first (Ollama OOTB) | ❌ | ❌ | ⚠️ | ✅ |
 | Git checkpoints + `rewind` per run | ❌ | ❌ | ⚠️ | ✅ |
 | Budget caps (`--max-cost-usd` / `--max-wall-secs`) | ❌ | ❌ | ❌ | ✅ |
@@ -70,14 +70,17 @@ Pour le détail technique complet, tout le mode pro est là — rien n'est retir
 | MCP server **host + client** | ✅ | ⚠️ | ❌ | ✅ |
 | Drop-in import (`~/.claude/`, Codex, OpenCode) | n/a | ❌ | ❌ | ✅ |
 | Multi-agent swarm (Planner → Coder → Verifier) | ❌ | ❌ | ❌ | ✅ |
-| Telegram / Discord / Slack gateways | ❌ | ❌ | ❌ | ✅ |
+| Telegram / Discord / Slack gateways | ❌ | ❌ | ❌ | 🔶 alpha ² |
 | Pre-commit secret scanner bundled | ❌ | ❌ | ❌ | ✅ |
-| Voice (`speak`, `transcribe`) | ❌ | ❌ | ❌ | ✅ |
-| Replay & share session as URL/Gist | ❌ | ❌ | ❌ | ✅ |
+| Voice (`speak`, `transcribe`) | ❌ | ❌ | ❌ | 🔶 alpha ² |
+| Replay & share session as URL/Gist | ❌ | ❌ | ❌ | ✅ replay · 🔶 share ² |
 | Source open, MIT | ⚠️ closed | ⚠️ closed | ✅ | ✅ |
 | Zero telemetry by default | ⚠️ | ⚠️ | ✅ | ✅ |
 
-See [`docs/comparison/vs-competitors.md`](docs/comparison/vs-competitors.md) for the long form (incl. OpenCode, Hermes, Continue, Cursor).
+> ¹ Static registry of ~34 keyed providers; **Ollama and NVIDIA are the routes verified end-to-end** today — others depend on your credentials and provider availability. See the [status table](#status).
+> ² ✅ = implemented and tested at the kernel level. 🔶 alpha = code is present and exercised by unit tests, but **not yet end-to-end validated** with live accounts. Labels are kept honest against the [status table](#status), not marketing.
+
+See [`docs/comparison/vs-competitors.md`](docs/comparison/vs-competitors.md) for the long form (incl. OpenCode, Hermes, Continue, Cursor). This table reflects capabilities that exist in Sparrow today — it is a feature comparison, not a claim that Sparrow is universally "better" than mature tools.
 
 ---
 
@@ -154,7 +157,14 @@ See [`docs/comparison/vs-competitors.md`](docs/comparison/vs-competitors.md) for
 
 ## Status
 
-Sparrow is **public beta** with a green cross-platform CI baseline. The kernel, routing core, console surfaces, replay, checkpoints, and memory are wired and tested; external transports are being validated by early adopters.
+Sparrow is **public beta** with a green cross-platform CI baseline. The kernel, routing core, console surfaces, replay, checkpoints, and memory are wired and tested; external transports, the GitHub Action, and most provider routes are **alpha** — present and unit-tested, but not yet end-to-end validated with live accounts.
+
+**Safety model (read before granting autonomy):**
+- **Local-first, zero telemetry by default** — nothing leaves your machine unless you call a cloud provider.
+- **Credentials stay local** — OS keychain → encrypted `auth.enc` → env vars; never written to config or HTML in plaintext, redacted from logs/transcripts/model context.
+- **Checkpoints before mutating actions**, one-word `sparrow annule` / `sparrow rewind` to restore.
+- **Autonomy gates:** `Supervised` (asks before exec/mutate), `Trusted`, `Autonomous`. ⚠️ **The current default is `Trusted`**, which auto-runs `exec` and network tools (you are notified but not prompted); `Destructive` actions always ask. Set `Supervised` in config if you want a prompt before every command.
+- **Sandbox:** `local-hardened` confines the working directory to your workspace and blocks known secret paths (`.ssh`, `.env`, …). On Linux it additionally wraps commands with `firejail`/`bwrap` (FS scoped to workspace, network denied) **when those tools are installed**; otherwise it falls back to in-process path checks. For strong isolation use the `docker` or `ssh` sandbox backend. See [SECURITY.md](SECURITY.md).
 
 <details>
 <summary><strong>Full status table</strong> (click to expand)</summary>
@@ -175,8 +185,8 @@ Sparrow is **public beta** with a green cross-platform CI baseline. The kernel, 
 | Browser / computer-use | 🔶 Alpha | Playwright driver, screenshot blocks, click/type, Linux `bwrap` wrapper when available |
 | Security audit CLI | ✅ Stable | `sparrow security audit [--json]`, WebView `/security` |
 | Sandbox policy | ✅ Stable | Protected paths, env allowlist; Docker/SSH/Worktree backends; honest vendor errors |
-| Media tools | ✅ Stable | `vision`, `image_generate`, `text_to_speech`, `transcribe`; WebView upload/artifacts |
-| GitHub Action | ✅ Stable | `action.yml`, sample workflow, `sparrow github review/status/logs`, `--dry-run` |
+| Media tools | 🔶 Alpha | `vision`, `image_generate`, `text_to_speech`, `transcribe`; WebView upload/artifacts — unit-tested, not E2E with live provider media APIs |
+| GitHub Action | 🔶 Alpha | `action.yml`, sample workflow, `sparrow github review/status/logs`, `--dry-run`; install command fixed, no live E2E run yet |
 | Context / compaction | ✅ Stable | `ContextMeter`, engine auto-trigger at 120k chars, durable `HandoffDoc` |
 | Gateway | ✅ Stable | `/status` roundtrip on port 9338; run registry with real abort |
 | Replay / memory | ✅ Stable | Recorder, checkpoint, rewind, SQLite facts, knowledge graph, optional Neo4j sync, bounded `MEMORY.md`, session search |
@@ -208,9 +218,16 @@ curl -fsSL https://raw.githubusercontent.com/ucav/Sparrow/master/install.sh | sh
 irm https://raw.githubusercontent.com/ucav/Sparrow/master/install.ps1 | iex
 ```
 
+> **Trust note.** Piping a script to `sh`/`iex` runs code from the network. Read
+> [`install.sh`](install.sh) / [`install.ps1`](install.ps1) first if you prefer.
+> The installers **verify the release SHA256** against the `.sha256` published
+> with each release, install to a user directory, print the exact binary path,
+> and **do not auto-launch** — run `sparrow launch` yourself when ready
+> (`--launch` / `-Launch` to opt in).
+
 Or grab a prebuilt binary directly from the
 [latest release](https://github.com/ucav/Sparrow/releases/latest)
-(Linux x86_64, macOS arm64, Windows x86_64).
+(Linux x86_64, macOS arm64, Windows x86_64) — each ships a matching `.sha256`.
 
 **Package managers (manifests ready, publishing in progress):**
 
@@ -374,7 +391,7 @@ Custom slash commands can be declared as Markdown files in `.sparrow/commands/*.
 
 | File | Role |
 |---|---|
-| [`src/event.rs`](src/event.rs) | Canonical event stream |
+| [`crates/sparrow-core/src/event.rs`](crates/sparrow-core/src/event.rs) | Canonical event stream |
 | [`src/provider/mod.rs`](src/provider/mod.rs) | `Brain` abstraction |
 | [`src/router/mod.rs`](src/router/mod.rs) | Model ranking and fallbacks |
 | [`src/engine/mod.rs`](src/engine/mod.rs) | Agent loop |
@@ -401,6 +418,27 @@ Custom slash commands can be declared as Markdown files in `.sparrow/commands/*.
 | [assets/brand/](assets/brand/) | Brand assets (SVG, HTML, ASCII) |
 
 ---
+
+## Known limitations
+
+Sparrow is honest about its edges:
+
+- **Provider routes** other than Ollama and NVIDIA depend on your credentials and the provider's availability — they are implemented but not yet end-to-end verified.
+- **Gateways** (Telegram/Discord/Slack) and the **GitHub Action** are alpha: the code paths exist and are unit-tested, but live token/account round-trips are not yet part of CI.
+- **Cloud sandboxes** (Modal, Daytona, Vercel, Singularity) are experimental placeholders; for real isolation use the `docker` or `ssh` backend.
+- **WebView and TUI** cockpits are evolving; expect rough edges on less common terminals.
+- **Default autonomy is `Trusted`** — it runs `exec`/network tools without prompting. Switch to `Supervised` if you want a gate before each command.
+- **Package-manager installs** (Homebrew/Scoop/winget) and crates.io/docs.rs availability may lag a release — if a badge or command doesn't resolve yet, use the release binary or `--from-source`.
+
+## Support & Sponsors
+
+Sparrow is built in the open under MIT. If it helps you, the best support is
+trying it, filing precise issues, and contributing.
+
+If you'd like to fund the work, **GitHub Sponsors will be the only official
+sponsorship channel** once the profile is active (see [`.github/FUNDING.yml`](.github/FUNDING.yml)).
+There are **no crypto wallets, no private payment flows, and no third-party
+funding links** — ignore anyone who asks you to send money any other way.
 
 ## Contributing
 

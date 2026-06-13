@@ -405,7 +405,10 @@ impl Tool for WebFetch {
         // above and the actual dial. Only applies when the host is a name we
         // resolved here; bare-IP literals and unresolvable names fall through to
         // reqwest's own resolver (still covered by the redirect guard).
-        if let Some(host) = url::Url::parse(url).ok().and_then(|u| u.host_str().map(str::to_owned)) {
+        if let Some(host) = url::Url::parse(url)
+            .ok()
+            .and_then(|u| u.host_str().map(str::to_owned))
+        {
             if !validated_addrs.is_empty() {
                 builder = builder.resolve_to_addrs(&host, &validated_addrs);
             }

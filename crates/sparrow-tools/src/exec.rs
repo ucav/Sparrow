@@ -46,8 +46,7 @@ impl Tool for Exec {
         // actually reads. Scan the command text itself for literal references to
         // protected paths (.ssh, .env, id_rsa, …) before running. This is a
         // heuristic, not isolation — see `command_touches_denied_path`.
-        if let Some(hit) =
-            command_touches_denied_path(cmd_str, &self.sandbox.policy().denied_paths)
+        if let Some(hit) = command_touches_denied_path(cmd_str, &self.sandbox.policy().denied_paths)
         {
             return Ok(ToolResult::error(format!(
                 "Refused: command references a protected path ('{hit}'). \

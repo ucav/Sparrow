@@ -37,13 +37,14 @@ cargo test --release
 
 - [ ] Tests added/updated for changed behavior
 - [ ] Docs updated if public API or CLI surface changes
+- [ ] **Status labels are honest** — anything you touch in README/docs is `Stable` only if compiled **and** tested/smoke-tested; otherwise `Alpha` / `Experimental` / `Planned`. Never upgrade a label without evidence.
 - [ ] No secrets logged, stored, or passed to model context
-- [ ] Autonomy gate and security impact reviewed
+- [ ] Autonomy gate and security impact reviewed — changes to tool exec, sandbox, permissions, or the installers call for explicit security review in the PR description
 - [ ] Rollback/checkpoint behavior considered for mutating changes
 - [ ] No provider lock-in introduced
 - [ ] Surfaces remain thin renderers (no business logic in TUI/CLI/gateway)
-- [ ] `cargo build --release` and `cargo test --release` pass
-- [ ] `cargo clippy` passes with no new warnings
+- [ ] `cargo build --release` and `cargo test --all-targets` pass
+- [ ] `cargo clippy --all-targets -- -D warnings` passes
 
 ## Code Style
 

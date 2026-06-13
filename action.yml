@@ -48,8 +48,16 @@ runs:
     - name: Install Sparrow
       shell: bash
       run: |
-        cargo install --git https://github.com/ucav/Sparrow.git --branch "${{ inputs.sparrow-version }}" sparrow || \
-          (echo "::error::Sparrow install failed" && exit 1)
+        set -euo pipefail
+        REF="${{ inputs.sparrow-version }}"
+        URL="https://github.com/ucav/Sparrow.git"
+        # The crate is `sparrow-cli`; the binary is `sparrow`. The ref may be a
+        # branch (default `master`), a tag (e.g. v0.9.2), or a commit — try each.
+        install_ref() { cargo install --git "$URL" "$@" --package sparrow-cli --bin sparrow --locked; }
+        install_ref --branch "$REF" \
+          || install_ref --tag "$REF" \
+          || install_ref --rev "$REF" \
+          || { echo "::error::Sparrow install failed for ref '$REF'"; exit 1; }
 
     - name: Run Sparrow
       shell: bash

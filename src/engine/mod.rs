@@ -1393,7 +1393,9 @@ impl Engine {
                 }
                 #[cfg(not(target_os = "linux"))]
                 {
-                    Arc::new(crate::sandbox::LocalSandbox::hardened(workspace_root.clone()))
+                    Arc::new(crate::sandbox::LocalSandbox::hardened(
+                        workspace_root.clone(),
+                    ))
                 }
             }
             "docker" => Arc::new(crate::sandbox::backends::DockerSandbox::new(

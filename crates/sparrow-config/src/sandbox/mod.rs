@@ -490,7 +490,10 @@ mod denied_path_tests {
         assert!(path_is_denied(Path::new("project/.env"), &denied));
         assert!(path_is_denied(Path::new("id_ed25519"), &denied));
         // `.environment` must NOT trip the `.env` rule (component, not prefix).
-        assert!(!path_is_denied(Path::new("src/.environment/notes"), &denied));
+        assert!(!path_is_denied(
+            Path::new("src/.environment/notes"),
+            &denied
+        ));
         assert!(!path_is_denied(Path::new("src/main.rs"), &denied));
     }
 
