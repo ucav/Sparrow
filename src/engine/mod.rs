@@ -1380,9 +1380,22 @@ impl Engine {
         // Build tools and workspace
         let workspace_root = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let sandbox: Arc<dyn Sandbox> = match self.config.defaults.sandbox.as_str() {
-            "local-hardened" => Arc::new(crate::sandbox::LocalSandbox::hardened(
-                workspace_root.clone(),
-            )),
+            "local-hardened" => {
+                // On Linux, use the real userspace-isolation backend (firejail/
+                // bwrap: workspace-scoped FS, network denied), falling back to the
+                // in-process LocalSandbox checks when no such tool is installed.
+                // Off Linux there is no namespacing primitive, so we keep the
+                // policy-enforcing LocalSandbox::hardened (network-deny flagged,
+                // denied paths + workdir confinement) — same as before.
+                #[cfg(target_os = "linux")]
+                {
+                    Arc::new(crate::sandbox::HardenedSandbox::new(workspace_root.clone()))
+                }
+                #[cfg(not(target_os = "linux"))]
+                {
+                    Arc::new(crate::sandbox::LocalSandbox::hardened(workspace_root.clone()))
+                }
+            }
             "docker" => Arc::new(crate::sandbox::backends::DockerSandbox::new(
                 workspace_root.clone(),
                 "ubuntu:latest",

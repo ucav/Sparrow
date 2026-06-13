@@ -222,6 +222,26 @@ fn extract_href(line: &str) -> Option<String> {
 /// loopback, link-local, multicast, or unspecified address (SSRF defence).
 /// Also rejects bare IPs in those ranges and the AWS/GCP metadata endpoints.
 pub(crate) fn validate_public_url(url: &str) -> Result<(), &'static str> {
+    resolve_public_url(url).map(|_| ())
+}
+
+/// Like [`validate_public_url`], but on success also returns the validated
+/// socket addresses for the host.
+///
+/// Callers should pin their HTTP client to exactly these addresses (e.g. via
+/// `reqwest::ClientBuilder::resolve_to_addrs`). Validating the hostname and
+/// then letting the client re-resolve at connect time leaves a DNS-rebinding
+/// TOCTOU window: an attacker domain can answer with a public IP during this
+/// check and `127.0.0.1` (or `169.254.169.254`) microseconds later when the
+/// request actually dials. Pinning closes that window — we connect only to the
+/// IPs we just screened.
+///
+/// For bare-IP literals there is nothing to rebind, so the returned vec simply
+/// carries that single address. When a hostname cannot be resolved here we
+/// return `Ok(vec![])` rather than failing: resolution may be transient and the
+/// client will surface a real connection error — but with an empty pin set the
+/// caller MUST fall back to its own (still redirect-guarded) resolution.
+pub(crate) fn resolve_public_url(url: &str) -> Result<Vec<std::net::SocketAddr>, &'static str> {
     let parsed = url::Url::parse(url).map_err(|_| "invalid URL")?;
     match parsed.scheme() {
         "http" | "https" => {}
@@ -241,27 +261,31 @@ pub(crate) fn validate_public_url(url: &str) -> Result<(), &'static str> {
         return Err("host points to local/internal network");
     }
 
+    let port = parsed.port_or_known_default().unwrap_or(0);
+
     // If the host parses as an IP literal, check the ranges directly.
     if let Ok(ip) = host.parse::<std::net::IpAddr>() {
         if is_blocked_ip(&ip) {
             return Err("IP belongs to a private/loopback/link-local range");
         }
-        return Ok(());
+        return Ok(vec![std::net::SocketAddr::new(ip, port)]);
     }
 
     // Hostname: best-effort DNS check. We can't await here without making the
     // fn async, so we resolve synchronously via the std API. A single resolution
     // is cheap and prevents the most common SSRF payloads (`127.0.0.1`-aliasing
-    // domains, hosts file tricks, etc.).
-    let port = parsed.port_or_known_default().unwrap_or(0);
+    // domains, hosts file tricks, etc.). Every returned address is screened, and
+    // the screened set is handed back so the caller can pin to it.
+    let mut validated = Vec::new();
     if let Ok(addrs) = std::net::ToSocketAddrs::to_socket_addrs(&(host, port)) {
         for sa in addrs {
             if is_blocked_ip(&sa.ip()) {
                 return Err("hostname resolves to a private/loopback IP");
             }
+            validated.push(sa);
         }
     }
-    Ok(())
+    Ok(validated)
 }
 
 fn is_blocked_ip(ip: &std::net::IpAddr) -> bool {
@@ -357,11 +381,12 @@ impl Tool for WebFetch {
         let url = args["url"].as_str().unwrap_or("");
         let format = args["format"].as_str().unwrap_or("text");
 
-        if let Err(why) = validate_public_url(url) {
-            return Ok(ToolResult::error(format!("Refused URL ({}): {}", why, url)));
-        }
+        let validated_addrs = match resolve_public_url(url) {
+            Ok(addrs) => addrs,
+            Err(why) => return Ok(ToolResult::error(format!("Refused URL ({}): {}", why, url))),
+        };
 
-        let client = reqwest::Client::builder()
+        let mut builder = reqwest::Client::builder()
             .user_agent("sparrow/0.1")
             .timeout(std::time::Duration::from_secs(30))
             // Belt-and-suspenders: re-validate after redirects to block private-IP redirect attacks.
@@ -373,8 +398,20 @@ impl Tool for WebFetch {
                 } else {
                     attempt.follow()
                 }
-            }))
-            .build()?;
+            }));
+
+        // Pin the connection to the exact IPs we just screened so a rebinding
+        // DNS server can't swap in a loopback/metadata address between the check
+        // above and the actual dial. Only applies when the host is a name we
+        // resolved here; bare-IP literals and unresolvable names fall through to
+        // reqwest's own resolver (still covered by the redirect guard).
+        if let Some(host) = url::Url::parse(url).ok().and_then(|u| u.host_str().map(str::to_owned)) {
+            if !validated_addrs.is_empty() {
+                builder = builder.resolve_to_addrs(&host, &validated_addrs);
+            }
+        }
+
+        let client = builder.build()?;
 
         let resp = client.get(url).send().await?;
         let status = resp.status();
@@ -410,5 +447,64 @@ impl Tool for WebFetch {
             "URL: {}\nStatus: {}\nType: {}\n\n{}",
             url, status, content_type, text
         ))]))
+    }
+}
+
+#[cfg(test)]
+mod ssrf_tests {
+    use super::{resolve_public_url, validate_public_url};
+
+    #[test]
+    fn rejects_non_http_schemes() {
+        assert!(validate_public_url("file:///etc/passwd").is_err());
+        assert!(validate_public_url("ftp://example.com/x").is_err());
+        assert!(validate_public_url("gopher://example.com").is_err());
+    }
+
+    #[test]
+    fn rejects_loopback_and_metadata_literals() {
+        for url in [
+            "http://127.0.0.1/",
+            "http://127.0.0.1:8080/admin",
+            "http://[::1]/",
+            "http://169.254.169.254/latest/meta-data/",
+            "http://0.0.0.0/",
+            "http://10.0.0.5/",
+            "http://192.168.1.1/",
+            "http://172.16.4.2/",
+            // Carrier-grade NAT 100.64.0.0/10
+            "http://100.64.1.1/",
+        ] {
+            assert!(validate_public_url(url).is_err(), "should reject {url}");
+        }
+    }
+
+    #[test]
+    fn rejects_local_hostnames() {
+        for url in [
+            "http://localhost/",
+            "http://foo.localhost/",
+            "http://metadata.google.internal/",
+            "http://db.internal/",
+            "http://printer.local/",
+        ] {
+            assert!(validate_public_url(url).is_err(), "should reject {url}");
+        }
+    }
+
+    #[test]
+    fn public_ip_literal_pins_to_itself() {
+        // A public IP literal needs no DNS and cannot be rebound: the pin set is
+        // exactly that address.
+        let addrs = resolve_public_url("http://93.184.216.34/").expect("public IP allowed");
+        assert_eq!(addrs.len(), 1);
+        assert_eq!(addrs[0].ip().to_string(), "93.184.216.34");
+        assert_eq!(addrs[0].port(), 80);
+    }
+
+    #[test]
+    fn https_default_port_is_443() {
+        let addrs = resolve_public_url("https://8.8.8.8/").expect("public IP allowed");
+        assert_eq!(addrs[0].port(), 443);
     }
 }

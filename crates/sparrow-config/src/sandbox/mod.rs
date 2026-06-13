@@ -6,27 +6,107 @@ pub mod backends;
 
 #[cfg(target_os = "linux")]
 mod linux_hardened {
-    // ─── Real local-hardened sandbox (Linux namespaces + seccomp) ───────────────
-    // §3.5: "Linux namespaces + seccomp (landlock/seccompiler),
-    //        filesystem allow-list scoped to workspace, network deny by default"
+    // ─── Real local-hardened sandbox (Linux userspace isolation) ────────────────
+    // §3.5: "filesystem allow-list scoped to workspace, network deny by default".
+    //
+    // When `firejail` or `bwrap` is on PATH we wrap the command with it: the
+    // filesystem is scoped to the workspace and the network is severed. When
+    // neither is available we DELEGATE to `LocalSandbox` rather than reaching for
+    // `unshare --root` (which needs CAP_SYS_ADMIN/root and would break exec for
+    // ordinary users). That keeps this backend a strict superset of the previous
+    // default: never weaker, never requiring privileges.
 
-    use super::{Command, ExecResult, FsNetPolicy, Limits, Sandbox};
+    use super::{Command, ExecResult, FsNetPolicy, Limits, LocalSandbox, Sandbox};
     use std::path::PathBuf;
 
     pub struct HardenedSandbox {
         root: PathBuf,
         policy: FsNetPolicy,
+        /// Fallback executor + shared per-arg denied-path / workdir enforcement.
+        inner: LocalSandbox,
     }
 
     impl HardenedSandbox {
         pub fn new(root: PathBuf) -> Self {
+            let policy = FsNetPolicy {
+                allowed_paths: vec![root.clone()],
+                allow_network: false,
+                ..FsNetPolicy::default()
+            };
+            let inner = LocalSandbox::new(root.clone()).with_policy(policy.clone());
             Self {
-                root: root.clone(),
-                policy: FsNetPolicy {
-                    allowed_paths: vec![root],
-                    allow_network: false,
-                    ..FsNetPolicy::default()
-                },
+                root,
+                policy,
+                inner,
+            }
+        }
+
+        /// Wrap `cmd` with `firejail` if present, scoping the filesystem to the
+        /// workspace and (unless the policy allows it) severing the network.
+        fn firejail(&self, cmd: &Command, limits: &Limits) -> Command {
+            let mut args = vec![
+                "--quiet".to_string(),
+                format!("--timeout={}", (limits.timeout_ms / 1000).max(1)),
+                format!("--private={}", self.root.display()),
+            ];
+            if !self.policy.allow_network {
+                args.push("--net=none".to_string());
+            }
+            for path in &self.policy.allowed_paths {
+                args.push(format!("--whitelist={}", path.display()));
+            }
+            args.push("--".to_string());
+            args.push(cmd.program.clone());
+            args.extend(cmd.args.clone());
+            Command {
+                program: "firejail".to_string(),
+                args,
+                env: cmd.env.clone(),
+                workdir: cmd.workdir.clone(),
+            }
+        }
+
+        /// Wrap `cmd` with `bwrap` (bubblewrap): read-only system dirs, the
+        /// workspace bind-mounted read-write, network unshared by default.
+        fn bwrap(&self, cmd: &Command) -> Command {
+            let root = self.root.display().to_string();
+            let mut args = vec![
+                "--ro-bind".to_string(),
+                "/usr".to_string(),
+                "/usr".to_string(),
+                "--ro-bind".to_string(),
+                "/bin".to_string(),
+                "/bin".to_string(),
+                "--ro-bind".to_string(),
+                "/lib".to_string(),
+                "/lib".to_string(),
+                "--ro-bind-try".to_string(),
+                "/lib64".to_string(),
+                "/lib64".to_string(),
+                "--ro-bind-try".to_string(),
+                "/etc/resolv.conf".to_string(),
+                "/etc/resolv.conf".to_string(),
+                "--proc".to_string(),
+                "/proc".to_string(),
+                "--dev".to_string(),
+                "/dev".to_string(),
+                "--bind".to_string(),
+                root.clone(),
+                root.clone(),
+                "--chdir".to_string(),
+                root,
+            ];
+            if !self.policy.allow_network {
+                args.push("--unshare-net".to_string());
+            }
+            args.push("--".to_string());
+            args.push(cmd.program.clone());
+            args.extend(cmd.args.clone());
+            Command {
+                program: "bwrap".to_string(),
+                args,
+                env: cmd.env.clone(),
+                workdir: cmd.workdir.clone(),
             }
         }
     }
@@ -34,76 +114,17 @@ mod linux_hardened {
     #[async_trait::async_trait]
     impl Sandbox for HardenedSandbox {
         async fn exec(&self, cmd: &Command, limits: &Limits) -> anyhow::Result<ExecResult> {
-            use std::process::Command as StdCommand;
-
-            // Build a firejail/bwrap command if available, else fall back to local
-            let (program, args) = if which("firejail") {
-                let mut fargs = vec![
-                    "--quiet".into(),
-                    format!("--timeout={}", limits.timeout_ms / 1000),
-                    format!("--private={}", self.root.display()),
-                ];
-                if !self.policy.allow_network {
-                    fargs.push("--net=none".into());
-                }
-                for path in &self.policy.allowed_paths {
-                    fargs.push(format!("--whitelist={}", path.display()));
-                }
-                fargs.push("--".into());
-                fargs.push(cmd.program.clone());
-                fargs.extend(cmd.args.clone());
-                ("firejail".to_string(), fargs)
+            // Always route through `inner.exec`, which enforces the workdir-escape
+            // and per-arg denied-path checks and handles the timeout uniformly —
+            // whether we run the raw command or a firejail/bwrap-wrapped one.
+            let effective = if which("firejail") {
+                self.firejail(cmd, limits)
             } else if which("bwrap") {
-                let mut bargs = vec![
-                    "--ro-bind".into(),
-                    "/usr".into(),
-                    "/usr".into(),
-                    "--ro-bind".into(),
-                    "/lib".into(),
-                    "/lib".into(),
-                    "--ro-bind".into(),
-                    "/lib64".into(),
-                    "/lib64".into(),
-                    "--ro-bind".into(),
-                    "/bin".into(),
-                    "/bin".into(),
-                    "--bind".into(),
-                    self.root.display().to_string(),
-                    self.root.display().to_string(),
-                    "--chdir".into(),
-                    self.root.display().to_string(),
-                ];
-                if !self.policy.allow_network {
-                    bargs.push("--unshare-net".into());
-                }
-                bargs.push("--".into());
-                bargs.push(cmd.program.clone());
-                bargs.extend(cmd.args.clone());
-                ("bwrap".to_string(), bargs)
+                self.bwrap(cmd)
             } else {
-                // Fallback: unshare with basic isolation
-                let mut uargs = vec![
-                    "--mount".into(),
-                    "--pid".into(),
-                    "--fork".into(),
-                    "--root".into(),
-                    self.root.display().to_string(),
-                ];
-                uargs.push(cmd.program.clone());
-                uargs.extend(cmd.args.clone());
-                ("unshare".to_string(), uargs)
+                cmd.clone()
             };
-
-            let output = StdCommand::new(&program)
-                .args(&args)
-                .current_dir(&cmd.workdir)
-                .output()?;
-
-            Ok(ExecResult {
-                stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-                stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-                exit_code: output.status.code().unwrap_or(-1),
-            })
+            self.inner.exec(&effective, limits).await
         }
 
         fn root(&self) -> &std::path::Path {
@@ -260,6 +281,46 @@ pub fn path_is_denied(path: &Path, denied: &[PathBuf]) -> bool {
     false
 }
 
+/// Best-effort scan of a *shell command string* (e.g. the argument to `sh -c`)
+/// for references to denied paths, returning the offending token if found.
+///
+/// IMPORTANT — this is defence-in-depth, NOT isolation. A `sh -c "<string>"`
+/// invocation can read anything the process user can via globs (`.s*h`), shell
+/// expansion (`$HOME/.ssh`), here-docs, or an alternate reader, none of which
+/// this catches. It exists to stop the obvious, literal `cat ~/.ssh/id_rsa`
+/// class of accidents/prompt-injections; for real confinement use the
+/// `local-hardened` (Linux namespaces) or `docker`/`ssh` sandbox backends.
+///
+/// We tokenise on shell metacharacters and whitespace, strip quotes, and run
+/// each path-shaped token through [`path_is_denied`].
+pub fn command_touches_denied_path(cmd: &str, denied: &[PathBuf]) -> Option<String> {
+    if denied.is_empty() {
+        return None;
+    }
+    let is_sep = |c: char| {
+        c.is_whitespace()
+            || matches!(
+                c,
+                ';' | '|' | '&' | '<' | '>' | '(' | ')' | '{' | '}' | '`' | '"' | '\'' | '=' | ','
+            )
+    };
+    for raw in cmd.split(is_sep) {
+        let token = raw.trim_matches(|c| matches!(c, '"' | '\'' | '`'));
+        if token.is_empty() {
+            continue;
+        }
+        // Only bother with tokens that look like a path or a bare sensitive name.
+        let path_shaped = token.contains('/') || token.contains('\\') || token.starts_with('.');
+        if !path_shaped && !token.contains("id_") {
+            continue;
+        }
+        if path_is_denied(Path::new(token), denied) {
+            return Some(token.to_string());
+        }
+    }
+    None
+}
+
 // ─── THE SANDBOX TRAIT ──────────────────────────────────────────────────────────
 
 /// Isolates `exec`/`Mutating` actions. Backends are selectable per run.
@@ -414,5 +475,46 @@ fn truncate(s: String, max_bytes: usize) -> String {
             &s[..truncate_at.min(s.len())],
             s.len()
         )
+    }
+}
+
+#[cfg(test)]
+mod denied_path_tests {
+    use super::{command_touches_denied_path, default_denied_paths, path_is_denied};
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn path_is_denied_matches_components_not_substrings() {
+        let denied = default_denied_paths();
+        assert!(path_is_denied(Path::new("/home/u/.ssh/id_rsa"), &denied));
+        assert!(path_is_denied(Path::new("project/.env"), &denied));
+        assert!(path_is_denied(Path::new("id_ed25519"), &denied));
+        // `.environment` must NOT trip the `.env` rule (component, not prefix).
+        assert!(!path_is_denied(Path::new("src/.environment/notes"), &denied));
+        assert!(!path_is_denied(Path::new("src/main.rs"), &denied));
+    }
+
+    #[test]
+    fn command_guard_catches_literal_secret_reads() {
+        let denied = default_denied_paths();
+        assert!(command_touches_denied_path("cat ~/.ssh/id_rsa", &denied).is_some());
+        assert!(command_touches_denied_path("cat /home/u/.ssh/id_rsa", &denied).is_some());
+        assert!(command_touches_denied_path("cp .env /tmp/x", &denied).is_some());
+        assert!(command_touches_denied_path("echo hi > project/.git/hooks/x", &denied).is_some());
+        // quoted / piped variants still tokenise
+        assert!(command_touches_denied_path("tar c '.ssh' | nc x 1", &denied).is_some());
+    }
+
+    #[test]
+    fn command_guard_allows_benign_commands() {
+        let denied = default_denied_paths();
+        assert!(command_touches_denied_path("cargo test --all", &denied).is_none());
+        assert!(command_touches_denied_path("ls -la src/", &denied).is_none());
+        assert!(command_touches_denied_path("grep -r TODO crates/", &denied).is_none());
+    }
+
+    #[test]
+    fn command_guard_empty_denylist_is_noop() {
+        assert!(command_touches_denied_path("cat ~/.ssh/id_rsa", &[] as &[PathBuf]).is_none());
     }
 }

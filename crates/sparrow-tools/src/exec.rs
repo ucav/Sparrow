@@ -3,7 +3,7 @@ use serde_json::json;
 use std::sync::Arc;
 
 use super::{Tool, ToolCtx, ToolResult};
-use sparrow_config::sandbox::{Command, Limits, Sandbox};
+use sparrow_config::sandbox::{Command, Limits, Sandbox, command_touches_denied_path};
 use sparrow_core::event::RiskLevel;
 
 pub struct Exec {
@@ -40,6 +40,20 @@ impl Tool for Exec {
     async fn call(&self, args: serde_json::Value, ctx: &ToolCtx) -> anyhow::Result<ToolResult> {
         let cmd_str = args["command"].as_str().unwrap_or("");
         let timeout_ms = args["timeout_ms"].as_u64().unwrap_or(120_000);
+
+        // Defence-in-depth: the sandbox only sees `sh -c "<string>"` as a single
+        // argument, so its per-arg denied-path check can't see what the command
+        // actually reads. Scan the command text itself for literal references to
+        // protected paths (.ssh, .env, id_rsa, …) before running. This is a
+        // heuristic, not isolation — see `command_touches_denied_path`.
+        if let Some(hit) =
+            command_touches_denied_path(cmd_str, &self.sandbox.policy().denied_paths)
+        {
+            return Ok(ToolResult::error(format!(
+                "Refused: command references a protected path ('{hit}'). \
+                 Protected paths (.ssh, .env, id_rsa, .git, …) are off-limits to exec."
+            )));
+        }
 
         let cmd = Command {
             program: if cfg!(windows) { "cmd" } else { "sh" }.to_string(),

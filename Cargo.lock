@@ -2931,6 +2931,7 @@ dependencies = [
  "sparrow-core",
  "sparrow-intel",
  "sparrow-providers",
+ "tempfile",
  "tokio",
  "toml",
 ]
