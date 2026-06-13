@@ -3,8 +3,8 @@ use serde_json::json;
 use std::sync::Arc;
 
 use super::{Tool, ToolCtx, ToolResult};
-use crate::event::RiskLevel;
-use crate::sandbox::{Command, Limits, Sandbox};
+use sparrow_config::sandbox::{Command, Limits, Sandbox};
+use sparrow_core::event::RiskLevel;
 
 pub struct Exec {
     sandbox: Arc<dyn Sandbox>,

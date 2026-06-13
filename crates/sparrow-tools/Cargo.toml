@@ -1,0 +1,30 @@
+[package]
+name = "sparrow-tools"
+version = "0.9.2"
+edition = "2024"
+description = "Agent tools (fs, edit, search, web, browser, git, exec, todo, media, code-nav, memory tool) for Sparrow"
+license = "MIT"
+
+[dependencies]
+sparrow-core = { version = "0.9.2", path = "../sparrow-core" }
+sparrow-providers = { version = "0.9.2", path = "../sparrow-providers" }
+sparrow-memory = { version = "0.9.2", path = "../sparrow-memory" }
+sparrow-config = { version = "0.9.2", path = "../sparrow-config" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+async-trait = "0.1"
+anyhow = "1"
+tracing = "0.1"
+regex = "1"
+url = "2"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json", "blocking", "multipart"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+base64 = "0.22"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+tokio = { version = "1", features = ["full"] }
+mime_guess = "2"
+dirs = "6"
+
+[features]
+treesitter = ["sparrow-memory/treesitter"]

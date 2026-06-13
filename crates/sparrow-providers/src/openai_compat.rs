@@ -885,6 +885,9 @@ mod tests {
         assert_eq!(tool_name.as_deref(), Some("read"));
         let args: serde_json::Value = serde_json::from_str(&tool_args).unwrap();
         assert_eq!(args["file_path"], "config.py");
-        assert!(matches!(done, Some(sparrow_core::event::StopReason::ToolUse)));
+        assert!(matches!(
+            done,
+            Some(sparrow_core::event::StopReason::ToolUse)
+        ));
     }
 }

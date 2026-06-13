@@ -25,11 +25,7 @@ pub fn handle_voice(cmd: VoiceCommand) -> anyhow::Result<()> {
     match cmd {
         VoiceCommand::Speak { text, output } => {
             println!("🔊 Converting text to speech...");
-            let path = crate::tools::tts::text_to_speech(
-                &text,
-                crate::tools::tts::TtsProvider::Edge,
-                output,
-            )?;
+            let path = crate::tts::text_to_speech(&text, crate::tts::TtsProvider::Edge, output)?;
             println!("✓ Audio saved: {}", path.display());
             println!("  → Play: ffplay {} -nodisp -autoexit", path.display());
         }
@@ -38,10 +34,10 @@ pub fn handle_voice(cmd: VoiceCommand) -> anyhow::Result<()> {
             language,
         } => {
             println!("🎤 Transcribing audio...");
-            let text = crate::tools::stt::transcribe(
+            let text = crate::stt::transcribe(
                 &audio_file,
                 language.as_deref(),
-                crate::tools::stt::SttBackend::OpenAIApi,
+                crate::stt::SttBackend::OpenAIApi,
             )?;
             println!("✓ Transcription:\n\n{text}");
         }

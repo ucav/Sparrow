@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use sparrow_core::event::Event;
 use crate::sandbox::Sandbox;
+use sparrow_core::event::Event;
 
 // ─── Hook event types (12 lifecycle points) ────────────────────────────────────
 

@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use sparrow_core::event::AutonomyLevel;
 use crate::permissions::PermissionConfig;
+use sparrow_core::event::AutonomyLevel;
 
 pub mod providers;
 pub mod validate;

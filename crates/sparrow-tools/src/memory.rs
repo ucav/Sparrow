@@ -3,8 +3,8 @@ use serde_json::json;
 use std::sync::Arc;
 
 use super::{Tool, ToolCtx, ToolResult};
-use crate::event::RiskLevel;
-use crate::memory::{Fact, Memory, MemoryDocKind};
+use sparrow_core::event::RiskLevel;
+use sparrow_memory::{Fact, Memory, MemoryDocKind};
 
 pub struct MemoryTool {
     memory: Arc<dyn Memory>,

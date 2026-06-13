@@ -283,7 +283,9 @@ impl Brain for OllamaAdapter {
                                     "stop" => sparrow_core::event::StopReason::EndTurn,
                                     "length" => sparrow_core::event::StopReason::MaxTokens,
                                     "tool_calls" => sparrow_core::event::StopReason::ToolUse,
-                                    s => sparrow_core::event::StopReason::StopSequence(s.to_string()),
+                                    s => {
+                                        sparrow_core::event::StopReason::StopSequence(s.to_string())
+                                    }
                                 };
                                 parsed.push(BrainEvent::Done(stop));
                             }

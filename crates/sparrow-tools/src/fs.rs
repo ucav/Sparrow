@@ -4,7 +4,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use super::{Tool, ToolCtx, ToolResult, resolve_workspace_path};
-use crate::event::RiskLevel;
+use sparrow_core::event::RiskLevel;
 
 pub struct FsRead;
 

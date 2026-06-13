@@ -1020,7 +1020,7 @@ mod tests {
         let mut registry = crate::tools::ToolRegistry::new();
         registry.register(std::sync::Arc::new(crate::tools::fs::FsRead));
         registry.register(std::sync::Arc::new(crate::tools::fs::FsWrite));
-        let specs = registry.to_specs_for_skill(&invocation.skill);
+        let specs = registry.to_specs_for_skill(&invocation.skill.allowed_tools);
         let names: Vec<_> = specs.into_iter().map(|s| s.name).collect();
         assert_eq!(names, vec!["fs_read"]);
 

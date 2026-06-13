@@ -2892,6 +2892,7 @@ dependencies = [
  "sparrow-intel",
  "sparrow-memory",
  "sparrow-providers",
+ "sparrow-tools",
  "syntect",
  "tempfile",
  "thiserror 2.0.18",
@@ -2994,6 +2995,31 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "sparrow-tools"
+version = "0.9.2"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "dirs",
+ "mime_guess",
+ "regex",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sparrow-config",
+ "sparrow-core",
+ "sparrow-memory",
+ "sparrow-providers",
+ "tokio",
+ "tracing",
+ "url",
+ "uuid",
 ]
 
 [[package]]

@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use super::{Tool, ToolCtx, ToolResult};
-use crate::event::{Block, RiskLevel};
+use sparrow_core::event::{Block, RiskLevel};
 
 fn resolve_key(env_names: &[&str]) -> Option<String> {
     for name in env_names {
@@ -73,7 +73,7 @@ impl Tool for ImageGen {
         let filename = args["filename"].as_str().unwrap_or("generated.png");
 
         let endpoint = format!("{}/images/generations", self.base_url.trim_end_matches('/'));
-        if let Err(why) = crate::tools::search_and_web::validate_public_url(&endpoint) {
+        if let Err(why) = crate::search_and_web::validate_public_url(&endpoint) {
             return Ok(ToolResult::error(format!(
                 "Refused IMAGE_API_BASE ({}): {}",
                 why, endpoint
@@ -175,7 +175,7 @@ impl Tool for Tts {
         let filename = args["filename"].as_str().unwrap_or("speech.mp3");
 
         let endpoint = format!("{}/audio/speech", self.base_url.trim_end_matches('/'));
-        if let Err(why) = crate::tools::search_and_web::validate_public_url(&endpoint) {
+        if let Err(why) = crate::search_and_web::validate_public_url(&endpoint) {
             return Ok(ToolResult::error(format!(
                 "Refused TTS_API_BASE ({}): {}",
                 why, endpoint
@@ -289,7 +289,7 @@ impl Tool for Transcribe {
             "{}/audio/transcriptions",
             self.base_url.trim_end_matches('/')
         );
-        if let Err(why) = crate::tools::search_and_web::validate_public_url(&endpoint) {
+        if let Err(why) = crate::search_and_web::validate_public_url(&endpoint) {
             return Ok(ToolResult::error(format!(
                 "Refused TRANSCRIBE_API_BASE ({}): {}",
                 why, endpoint

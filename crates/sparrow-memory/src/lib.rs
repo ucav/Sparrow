@@ -29,10 +29,10 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use crate::redaction::RedactionFilter;
 use sparrow_core::Identity;
 use sparrow_core::event::RunId;
 use sparrow_providers::Msg;
-use crate::redaction::RedactionFilter;
 
 pub mod redaction;
 #[cfg(feature = "treesitter")]

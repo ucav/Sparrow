@@ -245,7 +245,9 @@ impl Brain for OpenAIResponsesAdapter {
                             }
                             let data = &line[6..];
                             if data == "[DONE]" {
-                                events.push(BrainEvent::Done(sparrow_core::event::StopReason::EndTurn));
+                                events.push(BrainEvent::Done(
+                                    sparrow_core::event::StopReason::EndTurn,
+                                ));
                                 continue;
                             }
                             if let Ok(val) = serde_json::from_str::<serde_json::Value>(data) {

@@ -307,8 +307,8 @@ pub fn status_phrase(status: &AgentStatus, lang: Lang) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sparrow_core::event::{OutcomeSummary, RunId, TokenUsage};
     use serde_json::json;
+    use sparrow_core::event::{OutcomeSummary, RunId, TokenUsage};
 
     fn run() -> RunId {
         RunId("test".into())

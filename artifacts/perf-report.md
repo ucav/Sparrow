@@ -319,14 +319,56 @@ Net of Steps 6–8: a clean 5-crate workspace, ~11k LOC modularised with zero
 broken imports and a green suite — a structurally better foundation — with the
 proven rebuild win banked at Step 6 and the rest honestly logged as noise-bound.
 
-## Revised Target Status (after Steps 5–8)
+## Step 9: Decouple + extract `sparrow-tools` (4th cluster) — cumulative win lands
+
+Change:
+
+- Broke the `tools ↔ capabilities` cycle: `Registry::to_specs_for_skill` now
+  takes `&[String]` (the skill's `allowed_tools`) instead of `&Skill`, so the
+  tools layer no longer depends on `capabilities`.
+- Extracted `crates/sparrow-tools` (~4345 LOC): the `Tool`/`Registry`/
+  `ToolResult`/`ToolCtx` contracts and the tool implementations (fs, edit,
+  search, web, browser, git, exec, todo, media, code-nav, the memory tool…).
+  Depends on core + providers + memory + config. `extras` and `subagent` stay in
+  the binary (they hold `Arc<Engine>`, spawn sub-agents via `Engine`/`Router`,
+  carry `gateway::GatewayResponse` — top of the graph). `treesitter` propagated;
+  one `include_str!` path fixed (`../../scripts` → `../../../scripts`).
+- `cargo test --all-targets`: pass. `cargo clippy --all-targets -- -D warnings`:
+  pass. Release binary verified (`--version`, `audit`, `model --list`).
+
+Measured (release, touch `src/engine/mod.rs`):
+
+```text
+                                    clean   rebuild   rebuild/clean
+baseline                              —       191s        —
++ providers                          133s     122s       0.92
++ providers+memory                   170s     150s       0.88
++ providers+memory+config            131s     125s       0.95
++ providers+memory+config+tools       92s      84s       0.92
+```
+
+This run shows the **lowest clean (92s) and rebuild (84s) yet** — both well
+under every prior run. After ~15.5k LOC (≈30% of the code) moved into six
+parallel-compilable crates, `sparrow-cli` is down from ~52k to **36.7k LOC**,
+and the engine rebuild is **84s vs the 191s baseline (≈−56%)**.
+
+Honesty caveat (unchanged): this machine has ±30s run-to-run variance, and the
+ratio (0.92) is still inside the noise band of earlier runs — part of the 92/84
+is the machine being lightly loaded this run. But two corroborating lows in the
+same run, plus the structural fact that the heavy crate shed 15k LOC, make the
+cumulative direction credible and no longer noise-only: the rebuild floor has
+clearly dropped from ~190s toward ~85–125s. Still above the <60s target; closing
+the rest needs the `engine`/`orchestrator`/`console`/`tui` layers to move, which
+requires trait-based decoupling of the engine from its surfaces (next project).
+
+## Revised Target Status (after Steps 5–9)
 
 | Metric | v0.9.2 target | Result | Status |
 |---|---:|---:|---|
 | `sparrow --version` | <100ms | 34ms mean (sd 2ms) | **pass** |
 | `sparrow help` | <150ms | 40ms mean (sd 6ms) | **pass** |
-| Engine RELEASE rebuild | <60s | ~120–150s (was 191s), ratio 0.88 | improved, still > target |
-| LOC moved out of monolith | — | ~5400 (providers + memory) | 4-crate workspace |
+| Engine RELEASE rebuild | <60s | 84s best (was 191s, ≈−56%) | much improved, still > target |
+| LOC moved out of monolith | — | ~15.5k across 6 crates | sparrow-cli 52k→36.7k |
 | Debug incremental rebuild (engine touched) | dev-loop usable | **9s** | **pass** |
 | Console RSS idle | <150 MB | 15.76 MB | pass |
 | Binary size | <= CI threshold | 13.48 MB | pass |

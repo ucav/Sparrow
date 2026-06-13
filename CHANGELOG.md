@@ -70,8 +70,18 @@ All notable changes to Sparrow will be documented in this file.
   `sandbox` + `humanize` — ~4810 lignes — vivent dans `crates/sparrow-config`
   (dépend de core + providers + intel). Cluster entièrement fermé (aucune dep
   arrière sur engine/memory/tools). Les 6 modules restent réexportés ; la feature
-  `keyring` est propagée. Total modularisé : **~10 240 lignes** hors du monocrate
-  sur 5 crates (core, intel, providers, memory, config).
+  `keyring` est propagée.
+- **Extraction `sparrow-tools`** + **découplage `tools ↔ capabilities`** :
+  le registre d'outils (`Tool`/`Registry`/`ToolResult`/`ToolCtx`) et la majorité
+  des implémentations (fs, edit, search, web, browser, git, exec, todo, media,
+  code-nav, outil mémoire…) — ~4350 lignes — vivent dans `crates/sparrow-tools`.
+  Le cycle `tools ↔ capabilities` est cassé : `Registry::to_specs_for_skill`
+  prend désormais `&[String]` au lieu de `&Skill`. `extras` et `subagent`
+  restent dans le binaire (ils tiennent un `Arc<Engine>`, lancent des sous-agents
+  via `Engine`/`Router` et portent `gateway::GatewayResponse` — sommet du graphe).
+  Feature `treesitter` propagée. Total modularisé : **~15 520 lignes** hors du
+  monocrate sur **6 crates** (core, intel, providers, memory, config, tools) ;
+  `sparrow-cli` passe de ~52k à **~36,7k lignes**.
 - **Profil dev explicite** : `debug = "line-tables-only"`, incremental activé,
   dépendances optimisées à `opt-level = 2`.
 - **Rapport perf après premier split** : `artifacts/perf-report.md` montre que

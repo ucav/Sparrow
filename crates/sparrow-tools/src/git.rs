@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::process::Command as StdCommand;
 
 use super::{Tool, ToolCtx, ToolResult};
-use crate::event::RiskLevel;
+use sparrow_core::event::RiskLevel;
 
 pub struct Git;
 

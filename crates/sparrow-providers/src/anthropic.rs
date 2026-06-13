@@ -327,7 +327,9 @@ impl Brain for AnthropicAdapter {
                                             .unwrap_or("end_turn");
                                         let reason = match stop_reason {
                                             "end_turn" => sparrow_core::event::StopReason::EndTurn,
-                                            "max_tokens" => sparrow_core::event::StopReason::MaxTokens,
+                                            "max_tokens" => {
+                                                sparrow_core::event::StopReason::MaxTokens
+                                            }
                                             "tool_use" => sparrow_core::event::StopReason::ToolUse,
                                             s => sparrow_core::event::StopReason::StopSequence(
                                                 s.to_string(),

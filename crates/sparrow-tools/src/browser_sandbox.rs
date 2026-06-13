@@ -4,10 +4,10 @@ use serde_json::json;
 use std::io::Write;
 use std::process::Stdio;
 
-use crate::event::{Block, RiskLevel};
-use crate::tools::{Tool, ToolCtx, ToolResult};
+use crate::{Tool, ToolCtx, ToolResult};
+use sparrow_core::event::{Block, RiskLevel};
 
-const PLAYWRIGHT_DRIVER: &str = include_str!("../../scripts/playwright-driver.mjs");
+const PLAYWRIGHT_DRIVER: &str = include_str!("../../../scripts/playwright-driver.mjs");
 
 /// Browser automation through a real Playwright Chromium runtime.
 ///
@@ -333,7 +333,7 @@ mod tests {
                     json!({"action": "navigate", "url": "https://example.com"}),
                     &ToolCtx {
                         workspace_root: std::env::current_dir().unwrap(),
-                        run_id: crate::event::RunId("test".into()),
+                        run_id: sparrow_core::event::RunId("test".into()),
                     },
                 )
                 .await

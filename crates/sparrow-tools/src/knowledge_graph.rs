@@ -3,8 +3,8 @@ use serde_json::json;
 use std::sync::Arc;
 
 use super::{Tool, ToolCtx, ToolResult};
-use crate::event::{Block, RiskLevel};
-use crate::memory::{GraphDirection, GraphEdge, GraphNode, KnowledgeGraph, Memory};
+use sparrow_core::event::{Block, RiskLevel};
+use sparrow_memory::{GraphDirection, GraphEdge, GraphNode, KnowledgeGraph, Memory};
 
 pub struct KnowledgeGraphTool {
     memory: Arc<dyn Memory>,

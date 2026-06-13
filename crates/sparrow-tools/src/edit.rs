@@ -3,7 +3,7 @@ use serde_json::json;
 use std::fs;
 
 use super::{Tool, ToolCtx, ToolResult, resolve_workspace_path};
-use crate::event::{Block, RiskLevel};
+use sparrow_core::event::{Block, RiskLevel};
 
 pub struct Edit;
 

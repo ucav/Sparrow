@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/sparrow-core", "crates/sparrow-intel", "crates/sparrow-providers", "crates/sparrow-memory", "crates/sparrow-config"]
+members = ["crates/sparrow-core", "crates/sparrow-intel", "crates/sparrow-providers", "crates/sparrow-memory", "crates/sparrow-config", "crates/sparrow-tools"]
 resolver = "2"
 
 [package]
@@ -38,6 +38,7 @@ sparrow-intel = { version = "0.9.2", path = "crates/sparrow-intel" }
 sparrow-providers = { version = "0.9.2", path = "crates/sparrow-providers" }
 sparrow-memory = { version = "0.9.2", path = "crates/sparrow-memory" }
 sparrow-config = { version = "0.9.2", path = "crates/sparrow-config" }
+sparrow-tools = { version = "0.9.2", path = "crates/sparrow-tools" }
 toml = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream", "json", "blocking", "multipart"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
@@ -100,7 +101,7 @@ default = ["keyring"]
 keyring = ["sparrow-config/keyring"]
 keyring-dep = ["keyring"]
 browser = []
-treesitter = ["tree-sitter", "tree-sitter-rust", "tree-sitter-python", "tree-sitter-javascript", "sparrow-memory/treesitter"]
+treesitter = ["tree-sitter", "tree-sitter-rust", "tree-sitter-python", "tree-sitter-javascript", "sparrow-memory/treesitter", "sparrow-tools/treesitter"]
 email = ["lettre", "imap", "native-tls"]
 
 [profile.release]

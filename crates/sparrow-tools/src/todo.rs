@@ -3,7 +3,7 @@ use serde_json::json;
 use std::sync::Mutex;
 
 use super::{Tool, ToolCtx, ToolResult};
-use crate::event::RiskLevel;
+use sparrow_core::event::RiskLevel;
 
 pub struct Todo {
     db: Mutex<Option<rusqlite::Connection>>,

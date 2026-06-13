@@ -3,8 +3,8 @@ use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::process::Command as StdCommand;
 
-use crate::event::{Block, RiskLevel};
-use crate::tools::{Tool, ToolCtx, ToolResult};
+use crate::{Tool, ToolCtx, ToolResult};
+use sparrow_core::event::{Block, RiskLevel};
 
 // ─── Test Runner ───────────────────────────────────────────────────────────────
 
@@ -321,7 +321,7 @@ impl Tool for LspClient {
             .workspace_root
             .canonicalize()
             .unwrap_or_else(|_| ctx.workspace_root.clone());
-        let path = crate::tools::resolve_workspace_path(&root, file)?;
+        let path = crate::resolve_workspace_path(&root, file)?;
         let rel = path
             .strip_prefix(&root)
             .unwrap_or(&path)
