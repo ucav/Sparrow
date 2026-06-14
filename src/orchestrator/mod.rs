@@ -747,6 +747,43 @@ Your job: implement the SPEC exactly. Use tools to read existing files and write
             .collect::<Vec<_>>()
             .join("\n");
 
+        // ── Ground-truth gate (#2) ──────────────────────────────────────────
+        // Before asking an LLM for its opinion, actually BUILD/TEST the
+        // workspace (explicit `verify_command`, else an auto-detected runner).
+        // A real failure is REWORK with no LLM override — the compiler outranks
+        // the model. A real pass is fed into the review so the LLM judges spec
+        // and style on top of a known-green baseline instead of guessing.
+        let ground_truth = crate::project_test::run_verification(
+            &workspace.root,
+            self.config.defaults.verify_command.as_deref(),
+        )
+        .await;
+        let build_test_block = match &ground_truth {
+            Some(o) if !o.passed => {
+                let _ = event_tx.send(Event::AgentStatus {
+                    run: parent_run.clone(),
+                    role: "verifier".into(),
+                    status: AgentStatus::Working,
+                    note: format!("ground-truth `{}` FAILED → rework", o.command),
+                });
+                return Ok((
+                    Verdict::Rework {
+                        findings: vec![format!(
+                            "Ground-truth check `{}` FAILED — fix this before anything else:\n{}",
+                            o.command, o.summary
+                        )],
+                    },
+                    0.0,
+                    TokenUsage {
+                        input: 0,
+                        output: 0,
+                    },
+                ));
+            }
+            Some(o) => format!("## BUILD / TEST (ground truth)\n`{}` PASSED ✓\n", o.command),
+            None => "## BUILD / TEST (ground truth)\nNo build/test command available — this review is best-effort (no executable signal).\n".to_string(),
+        };
+
         let tools = swarm_tool_registry(workspace, false);
         let read_tool = tools.get("fs_read");
         let mut files_to_check = Vec::new();
@@ -789,6 +826,11 @@ Your job: implement the SPEC exactly. Use tools to read existing files and write
 
 {personality}
 
+The BUILD / TEST section is ground truth — it actually ran. If it PASSED, the
+code compiles and tests are green: do NOT invent build/compile failures; focus on
+spec compliance, correctness, edge cases, and style. If it's best-effort (no
+runner), be extra careful about correctness yourself.
+
 Your job: review the coder's implementation against the SPEC.
 - For each spec requirement, check if it's satisfied.
 - Find bugs, style issues, missing edge cases, spec violations.
@@ -810,8 +852,8 @@ or:
         );
 
         let context = format!(
-            "## SPEC\n{}\n\n## CHANGED FILES\n{}\n\n## FILE CONTENTS\n{}",
-            spec, diff_summary, files_context,
+            "{}\n## SPEC\n{}\n\n## CHANGED FILES\n{}\n\n## FILE CONTENTS\n{}",
+            build_test_block, spec, diff_summary, files_context,
         );
 
         let messages = vec![Msg {
