@@ -302,21 +302,6 @@ struct CheckpointNode {
     current: bool,
 }
 
-// ─── Embers (background particles) ───────────────────────────────────────────
-
-#[derive(Debug, Clone)]
-struct Ember {
-    x: u16,
-    y: f32,
-    vy: f32,
-    /// true = amber, false = coral
-    amber: bool,
-    life: u32,
-    max_life: u32,
-    /// char from the bird theme
-    glyph: char,
-}
-
 // ─── Toast (skill learned, etc.) ─────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
@@ -363,8 +348,6 @@ pub struct Tui {
     pending_diffs: std::collections::VecDeque<DiffEntry>,
     /// Checkpoint timeline nodes.
     checkpoints: Vec<CheckpointNode>,
-    /// Drifting embers in the scroll area.
-    embers: Vec<Ember>,
     /// Centered overlay toast (skill learned, etc.).
     toast: Option<Toast>,
     /// Cost flash counter (frames remaining of bold cost).
@@ -445,7 +428,6 @@ impl Tui {
             swarm_lanes: None,
             pending_diffs: std::collections::VecDeque::new(),
             checkpoints: Vec::new(),
-            embers: Self::spawn_embers(),
             toast: None,
             cost_flash_frames: 0,
             last_cost: 0.0,
@@ -644,22 +626,6 @@ impl Tui {
             LogStyle::Accent,
             0,
         );
-    }
-
-    fn spawn_embers() -> Vec<Ember> {
-        // Deterministic-ish initial spread (no rand dep): use position + idx as seed.
-        let glyphs = ['·', '•', '∘', '◦'];
-        (0..10u16)
-            .map(|i| Ember {
-                x: 4 + (i * 13) % 90,
-                y: 4.0 + ((i as f32) * 2.7) % 20.0,
-                vy: 0.10 + ((i as f32) * 0.037) % 0.25,
-                amber: i % 2 == 0,
-                life: ((i as u32) * 17) % 180,
-                max_life: 180 + ((i as u32) * 11) % 90,
-                glyph: glyphs[(i as usize) % glyphs.len()],
-            })
-            .collect()
     }
 
     /// Snapshot current input as a single joined string.
@@ -1641,14 +1607,6 @@ impl Tui {
                 self.toast = None;
             }
         }
-        for ember in &mut self.embers {
-            ember.y -= ember.vy;
-            ember.life = ember.life.saturating_add(1);
-            if ember.life >= ember.max_life || ember.y < 0.0 {
-                ember.y = 28.0 + (ember.x % 7) as f32;
-                ember.life = 0;
-            }
-        }
     }
 
     fn drain_engine_events(&mut self) {
@@ -1681,17 +1639,17 @@ impl Tui {
             self.render_boot(f, area);
             return;
         }
-        // Input height = lines + 2 (border) + 1 (autocomplete row if any)
+        // Input height = lines + 1 (top rail) + 1 (autocomplete row if any)
         let suggestions = self.autocomplete_matches();
-        let input_height = (self.input_lines.len() as u16 + 2).max(3)
+        let input_height = (self.input_lines.len() as u16 + 1).max(2)
             + if !suggestions.is_empty() { 1 } else { 0 };
-        let swarm_height = if self.swarm_lanes.is_some() { 5 } else { 0 };
+        let swarm_height = if self.swarm_lanes.is_some() { 4 } else { 0 };
         let diff_height = if self.pending_diffs.is_empty() { 0 } else { 12 };
         let checkpoint_height = if self.checkpoints.is_empty() { 0 } else { 2 };
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3),
+                Constraint::Length(2),
                 Constraint::Length(swarm_height),
                 Constraint::Min(0),
                 Constraint::Length(diff_height),
@@ -1851,10 +1809,10 @@ impl Tui {
             ),
         ]);
 
-        // Draw the frame once, then split its interior so the right HUD gets a
-        // reserved, right-aligned column and the left zone takes the rest.
+        // Draw a single rail instead of a boxed panel so the TUI reads like a
+        // code assistant cockpit rather than a decorative terminal frame.
         let block = Block::default()
-            .borders(Borders::ALL)
+            .borders(Borders::BOTTOM)
             .border_style(Style::default().fg(self.theme.line));
         let inner = block.inner(area);
         f.render_widget(block, area);
@@ -1921,21 +1879,22 @@ impl Tui {
         let Some(lanes) = &self.swarm_lanes else {
             return;
         };
-        let cols = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(33),
-                Constraint::Percentage(34),
-                Constraint::Percentage(33),
-            ])
-            .split(area);
         let age = self.frame.saturating_sub(lanes.started_at_frame);
         let items = [
             ("planner", &lanes.planner, self.theme.planner),
             ("coder", &lanes.coder, self.theme.agent),
             ("verifier", &lanes.verifier, self.theme.verifier),
         ];
-        for (idx, (role, lane, color)) in items.iter().enumerate() {
+        let mut lines = vec![Line::from(vec![
+            Span::styled("agents", Style::default().fg(self.theme.dimmer)),
+            Span::styled(" · ", Style::default().fg(self.theme.dimmer)),
+            Span::styled(
+                format!("swarm {}s", age.min(99)),
+                Style::default().fg(self.theme.dimmer),
+            ),
+        ])];
+
+        for (role, lane, color) in items {
             let working = lane.status == "Working" || lane.status == "Thinking";
             let icon = match lane.status.as_str() {
                 "Done" => "✓",
@@ -1949,33 +1908,52 @@ impl Tui {
             } else {
                 ""
             };
-            let note_width = cols[idx].width.saturating_sub(4) as usize;
+            let fixed_width = 2 + 10 + 20 + 14;
+            let note_width = area.width.saturating_sub(fixed_width) as usize;
             let note = truncate_for_width(&lane.note, note_width);
-            let lines = vec![
-                Line::from(Span::styled(
-                    format!("{}  {}", role.to_uppercase(), lane.model),
-                    Style::default().fg(*color).add_modifier(Modifier::BOLD),
-                )),
-                Line::from(Span::styled(
-                    format!("{}  {}{}", icon, lane.status, caret),
-                    Style::default().fg(if working { self.theme.gold } else { *color }),
-                )),
-                Line::from(Span::styled(note, Style::default().fg(self.theme.fg))),
-            ];
-            f.render_widget(
-                Paragraph::new(Text::from(lines)).block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title(format!("swarm {}", age.min(99)))
-                        .border_style(Style::default().fg(*color)),
+            lines.push(Line::from(vec![
+                Span::styled("  ", Style::default().fg(self.theme.dimmer)),
+                Span::styled(
+                    format!("{} ", icon),
+                    Style::default().fg(if working { self.theme.gold } else { color }),
                 ),
-                cols[idx],
-            );
+                Span::styled(
+                    format!("{:<9}", role),
+                    Style::default().fg(color).add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    truncate_for_width(&lane.model, 18),
+                    Style::default().fg(self.theme.dim),
+                ),
+                Span::styled(" · ", Style::default().fg(self.theme.dimmer)),
+                Span::styled(
+                    format!("{}{}", lane.status.to_lowercase(), caret),
+                    Style::default().fg(if working {
+                        self.theme.gold
+                    } else {
+                        self.theme.dim
+                    }),
+                ),
+                Span::styled(" · ", Style::default().fg(self.theme.dimmer)),
+                Span::styled(note, Style::default().fg(self.theme.fg)),
+            ]));
         }
+
+        f.render_widget(
+            Paragraph::new(Text::from(lines)).block(Block::default().padding(
+                ratatui::widgets::Padding {
+                    left: 1,
+                    right: 1,
+                    top: 0,
+                    bottom: 0,
+                },
+            )),
+            area,
+        );
     }
 
     fn render_scroll(&self, f: &mut Frame, area: Rect) {
-        let max_lines = area.height.saturating_sub(2) as usize;
+        let max_lines = area.height.saturating_sub(1) as usize;
         if max_lines == 0 {
             return;
         }
@@ -2031,53 +2009,27 @@ impl Tui {
 
         let total = rendered.len();
         let skip = (self.scroll as usize).min(total.saturating_sub(1));
-        let show_logo = self.frame.saturating_sub(70) < 120 && self.scroll == 0;
-        let logo_lines: Vec<Line> = if show_logo {
-            theme::ascii_sparrow_at_frame(self.frame)
-                .lines()
-                .map(|line| {
-                    Line::from(Span::styled(
-                        line.to_string(),
-                        Style::default().fg(self.theme.brand),
-                    ))
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
-        let remaining = max_lines.saturating_sub(logo_lines.len());
-        let mut text_lines: Vec<Line> = logo_lines;
+        let mut text_lines: Vec<Line> = Vec::new();
+        text_lines.push(Line::from(vec![
+            Span::styled("SPARROW", Style::default().fg(self.theme.brand)),
+            Span::styled(" › ", Style::default().fg(self.theme.dimmer)),
+            Span::styled("session", Style::default().fg(self.theme.dim)),
+        ]));
+        let remaining = max_lines.saturating_sub(text_lines.len());
         let start = total.saturating_sub(skip).saturating_sub(remaining);
         let end = total.saturating_sub(skip);
         text_lines.extend(rendered[start..end].iter().cloned());
         f.render_widget(
-            Paragraph::new(Text::from(text_lines)).block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(self.theme.line)),
-            ),
+            Paragraph::new(Text::from(text_lines)).block(Block::default().padding(
+                ratatui::widgets::Padding {
+                    left: 1,
+                    right: 1,
+                    top: 0,
+                    bottom: 0,
+                },
+            )),
             area,
         );
-        self.render_embers(f, area);
-    }
-
-    fn render_embers(&self, f: &mut Frame, area: Rect) {
-        if area.width < 3 || area.height < 3 {
-            return;
-        }
-        for ember in &self.embers {
-            let x = area.x + 1 + (ember.x % area.width.saturating_sub(2));
-            let y_offset = (ember.y.max(0.0) as u16) % area.height.saturating_sub(2);
-            let y = area.y + 1 + y_offset;
-            let color = if ember.amber {
-                self.theme.gold
-            } else {
-                self.theme.rem
-            };
-            if let Some(cell) = f.buffer_mut().cell_mut((x, y)) {
-                cell.set_char(ember.glyph).set_fg(color);
-            }
-        }
     }
 
     fn render_diff(&self, f: &mut Frame, area: Rect) {
@@ -2119,8 +2071,7 @@ impl Tui {
         f.render_widget(
             Paragraph::new(Text::from(lines)).block(
                 Block::default()
-                    .borders(Borders::ALL)
-                    .title("diff")
+                    .borders(Borders::TOP)
                     .border_style(Style::default().fg(self.theme.line)),
             ),
             area,
@@ -2204,12 +2155,14 @@ impl Tui {
     fn render_keyboard_hints(&self, f: &mut Frame, area: Rect) {
         let hints = if area.width < 72 {
             "Esc quit  Tab complete  / commands  Ctrl+L clear"
+        } else if area.width < 112 {
+            "Esc/Ctrl+C quit  Tab complete  / commands  Ctrl+L clear  PgUp/PgDn scroll"
         } else {
             "Esc/Ctrl+C quit  Tab complete/agents  / commands  Ctrl+L clear  Ctrl+I inject  PgUp/PgDn scroll"
         };
         let line = Line::from(Span::styled(hints, Style::default().fg(self.theme.dimmer)));
         f.render_widget(
-            Paragraph::new(line).alignment(ratatui::layout::Alignment::Center),
+            Paragraph::new(line).alignment(ratatui::layout::Alignment::Left),
             area,
         );
     }
@@ -2283,7 +2236,7 @@ impl Tui {
         f.render_widget(
             Paragraph::new(Text::from(text_lines)).block(
                 Block::default()
-                    .borders(Borders::ALL)
+                    .borders(Borders::TOP)
                     .border_style(Style::default().fg(self.theme.line)),
             ),
             area,

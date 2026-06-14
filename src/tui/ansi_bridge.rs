@@ -25,15 +25,19 @@ pub fn ansi_to_spans(text: &str, base_style: Style) -> Vec<Span<'static>> {
             }
             i += 1;
             style = apply_sgr_codes(&params, style);
-        } else if bytes[i] == b'\n' {
-            if !current.is_empty() {
-                spans.push(Span::styled(std::mem::take(&mut current), style));
-            }
-            spans.push(Span::styled("\n".to_string(), base_style));
-            i += 1;
         } else {
-            current.push(bytes[i] as char);
-            i += 1;
+            let Some(ch) = text[i..].chars().next() else {
+                break;
+            };
+            if ch == '\n' {
+                if !current.is_empty() {
+                    spans.push(Span::styled(std::mem::take(&mut current), style));
+                }
+                spans.push(Span::styled("\n".to_string(), base_style));
+            } else {
+                current.push(ch);
+            }
+            i += ch.len_utf8();
         }
     }
 
@@ -97,5 +101,22 @@ pub fn render_line(text: &str, base_style: Style) -> Line<'static> {
         Line::from("")
     } else {
         Line::from(spans)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ansi_bridge_preserves_utf8_glyphs() {
+        let line = render_line("Coût → route · ●", Style::default());
+        let rendered = line
+            .spans
+            .iter()
+            .map(|span| span.content.as_ref())
+            .collect::<String>();
+
+        assert_eq!(rendered, "Coût → route · ●");
     }
 }
