@@ -2050,9 +2050,13 @@ impl Engine {
                                         usd: cost_usd + estimated_cost_unconfirmed,
                                     });
                                 }
+                                // `text` is owned and this is its last use (already
+                                // accumulated into assistant_text above) — move it
+                                // into the event instead of cloning, saving one heap
+                                // allocation per streamed token.
                                 let _ = event_tx.send(Event::ThinkingDelta {
                                     run: run_id.clone(),
-                                    text: text.clone(),
+                                    text,
                                 });
                             }
                             BrainEvent::ReasoningDelta(rtext) => {
