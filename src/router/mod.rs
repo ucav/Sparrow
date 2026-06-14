@@ -396,3 +396,236 @@ impl Router for BasicRouter {
         None
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::provider::{BrainStream, ModelCaps};
+
+    // ─── Mock brain ──────────────────────────────────────────────────────────
+    struct MockBrain {
+        id: String,
+        caps: ModelCaps,
+    }
+
+    #[async_trait::async_trait]
+    impl Brain for MockBrain {
+        fn id(&self) -> &str {
+            &self.id
+        }
+        fn caps(&self) -> ModelCaps {
+            self.caps.clone()
+        }
+        async fn complete(&self, _req: BrainRequest) -> anyhow::Result<BrainStream> {
+            // Routing never calls complete(); only id()/caps() are exercised.
+            anyhow::bail!("mock brain does not complete")
+        }
+    }
+
+    fn free_caps() -> ModelCaps {
+        ModelCaps {
+            cost_input_per_mtok: 0.0,
+            cost_output_per_mtok: 0.0,
+            tools: true,
+            ..Default::default()
+        }
+    }
+
+    fn brain(id: &str) -> Arc<dyn Brain> {
+        Arc::new(MockBrain {
+            id: id.into(),
+            caps: free_caps(),
+        })
+    }
+
+    fn medium_need() -> RoutingNeed {
+        RoutingNeed {
+            tier: TaskTier::Medium,
+            required_tools: false,
+            required_vision: false,
+            prefer_local: false,
+        }
+    }
+
+    fn ample_budget() -> BudgetState {
+        BudgetState {
+            daily_limit_usd: 100.0,
+            daily_spent_usd: 0.0,
+            session_limit_usd: 100.0,
+            session_spent_usd: 0.0,
+        }
+    }
+
+    fn router(providers: HashMap<String, Vec<Arc<dyn Brain>>>) -> BasicRouter {
+        BasicRouter::new(&Config::default(), providers)
+    }
+
+    // ─── on_error: error → Retry classification (fallback policy) ─────────────
+    #[test]
+    fn on_error_classifies_every_brain_error() {
+        let r = router(HashMap::new());
+        let b = brain("x:y");
+
+        // Short rate-limit → wait and retry the SAME provider.
+        assert_eq!(
+            r.on_error(
+                b.as_ref(),
+                &BrainError::RateLimit {
+                    retry_after: Some(5)
+                }
+            ),
+            Retry::WaitAndRetry(5)
+        );
+        // Long rate-limit → don't block, fall through the chain.
+        assert_eq!(
+            r.on_error(
+                b.as_ref(),
+                &BrainError::RateLimit {
+                    retry_after: Some(60)
+                }
+            ),
+            Retry::NextInChain
+        );
+        assert_eq!(
+            r.on_error(b.as_ref(), &BrainError::RateLimit { retry_after: None }),
+            Retry::NextInChain
+        );
+        // 5xx server errors → next provider.
+        assert_eq!(
+            r.on_error(
+                b.as_ref(),
+                &BrainError::ServerError {
+                    status: 503,
+                    body: String::new()
+                }
+            ),
+            Retry::NextInChain
+        );
+        // Timeout → next provider.
+        assert_eq!(
+            r.on_error(b.as_ref(), &BrainError::Timeout),
+            Retry::NextInChain
+        );
+        // Explicit model refusal → abort (retrying won't help).
+        assert_eq!(
+            r.on_error(b.as_ref(), &BrainError::Refusal("nope".into())),
+            Retry::Abort
+        );
+        // Unknown → conservatively try the next provider.
+        assert_eq!(
+            r.on_error(b.as_ref(), &BrainError::Unknown("boom".into())),
+            Retry::NextInChain
+        );
+    }
+
+    // ─── select: budget exhaustion forces the free/local lane ─────────────────
+    #[test]
+    fn select_budget_exhausted_returns_only_local() {
+        let mut providers: HashMap<String, Vec<Arc<dyn Brain>>> = HashMap::new();
+        providers.insert("local".into(), vec![brain("local:tiny")]);
+        providers.insert("nvidia".into(), vec![brain("nvidia:big")]);
+        let r = router(providers);
+
+        let exhausted = BudgetState {
+            daily_limit_usd: 1.0,
+            daily_spent_usd: 1.0,
+            session_limit_usd: 1.0,
+            session_spent_usd: 1.0,
+        };
+        let chain = r.select(&medium_need(), &exhausted);
+        assert_eq!(chain.len(), 1);
+        assert_eq!(chain[0].id(), "local:tiny");
+    }
+
+    // ─── select: manual mode pins exactly one model, never falls back ─────────
+    #[test]
+    fn select_manual_mode_pins_exact_model() {
+        let mut providers: HashMap<String, Vec<Arc<dyn Brain>>> = HashMap::new();
+        providers.insert(
+            "nvidia".into(),
+            vec![brain("nvidia:m1"), brain("nvidia:m2")],
+        );
+
+        let mut config = Config::default();
+        config.routing.routing_mode = "manual".into();
+        config.routing.preferred_model = Some("nvidia:m2".into());
+        let r = BasicRouter::new(&config, providers);
+
+        let chain = r.select(&medium_need(), &ample_budget());
+        assert_eq!(chain.len(), 1);
+        assert_eq!(chain[0].id(), "nvidia:m2");
+    }
+
+    #[test]
+    fn select_manual_mode_missing_model_is_empty() {
+        let mut providers: HashMap<String, Vec<Arc<dyn Brain>>> = HashMap::new();
+        providers.insert("nvidia".into(), vec![brain("nvidia:m1")]);
+
+        let mut config = Config::default();
+        config.routing.routing_mode = "manual".into();
+        config.routing.preferred_model = Some("nvidia:does-not-exist".into());
+        let r = BasicRouter::new(&config, providers);
+
+        assert!(r.select(&medium_need(), &ample_budget()).is_empty());
+    }
+
+    // ─── select: the chain stays provider-diverse so one dead provider can't
+    //     fill every fallback slot (PER_PROVIDER_CAP / MAX_CHAIN contract) ─────
+    #[test]
+    fn select_chain_is_provider_diverse() {
+        let mut providers: HashMap<String, Vec<Arc<dyn Brain>>> = HashMap::new();
+        providers.insert(
+            "opencode".into(),
+            (0..5).map(|i| brain(&format!("opencode:m{i}"))).collect(),
+        );
+        providers.insert(
+            "nvidia".into(),
+            (0..2).map(|i| brain(&format!("nvidia:m{i}"))).collect(),
+        );
+        let r = router(providers);
+
+        let chain = r.select(&medium_need(), &ample_budget());
+        // 5 + 2 = 7 candidates, capped to MAX_CHAIN.
+        assert_eq!(chain.len(), 6);
+        // Both providers must be represented (no monopoly by opencode).
+        let nvidia = chain
+            .iter()
+            .filter(|b| b.id().starts_with("nvidia:"))
+            .count();
+        let opencode = chain
+            .iter()
+            .filter(|b| b.id().starts_with("opencode:"))
+            .count();
+        assert_eq!(
+            nvidia, 2,
+            "all nvidia fallbacks must survive the per-provider cap"
+        );
+        assert_eq!(opencode, 4);
+        // No duplicate model ids in the chain.
+        let mut ids: Vec<&str> = chain.iter().map(|b| b.id()).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), chain.len());
+    }
+
+    // ─── select: prefer_local drops cloud providers entirely ──────────────────
+    #[test]
+    fn select_prefer_local_excludes_cloud() {
+        let mut providers: HashMap<String, Vec<Arc<dyn Brain>>> = HashMap::new();
+        providers.insert("ollama".into(), vec![brain("ollama:llama")]);
+        providers.insert("nvidia".into(), vec![brain("nvidia:big")]);
+        let r = router(providers);
+
+        let need = RoutingNeed {
+            prefer_local: true,
+            ..medium_need()
+        };
+        let chain = r.select(&need, &ample_budget());
+        assert!(!chain.is_empty());
+        assert!(
+            chain.iter().all(|b| b.id().starts_with("ollama:")),
+            "prefer_local must exclude cloud providers, got: {:?}",
+            chain.iter().map(|b| b.id()).collect::<Vec<_>>()
+        );
+    }
+}
