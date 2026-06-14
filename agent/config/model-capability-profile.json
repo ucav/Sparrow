@@ -1,0 +1,68 @@
+{
+  "description": "Capability scorecard for the underlying model. Each axis is scored 1-5 (see evals/scoring-rubric.md). The aggregate drives Model Adaptation: how much external structure the agent imposes to compensate.",
+
+  "axes": {
+    "reasoning":            { "score": null, "weight": 0.20, "notes": "depth, multi-step logic, abstraction" },
+    "context_memory":       { "score": null, "weight": 0.12, "notes": "retention + use of long context" },
+    "code":                 { "score": null, "weight": 0.16, "notes": "correctness, idiom, integration" },
+    "tool_use":             { "score": null, "weight": 0.16, "notes": "selects, sequences, reacts to tools" },
+    "hallucination_resist": { "score": null, "weight": 0.16, "notes": "doesn't fabricate; calibrates uncertainty" },
+    "instruction_following":{ "score": null, "weight": 0.08, "notes": "honors constraints + format" },
+    "long_task_stability":  { "score": null, "weight": 0.08, "notes": "no drift over many steps" },
+    "self_correction":      { "score": null, "weight": 0.04, "notes": "detects + fixes own errors" }
+  },
+
+  "aggregate": {
+    "method": "weighted_mean",
+    "score": null,
+    "band": null,
+    "bands": {
+      "1.0-1.9": "small",
+      "2.0-2.9": "small-medium",
+      "3.0-3.4": "medium",
+      "3.5-4.4": "strong",
+      "4.5-5.0": "frontier"
+    }
+  },
+
+  "adaptation_directives": {
+    "small": {
+      "task_length": "very short, one sub-goal at a time",
+      "autonomy": "low — validate after each step",
+      "verification_passes": "high",
+      "decomposition": "fine-grained checklists",
+      "guidance": "explicit, restated",
+      "tool_use": "one action at a time, confirm output",
+      "summary_frequency": "after every step"
+    },
+    "medium": {
+      "task_length": "moderate, phased",
+      "autonomy": "medium",
+      "verification_passes": "standard",
+      "decomposition": "by phase",
+      "guidance": "structured",
+      "tool_use": "mandatory for empirical claims",
+      "summary_frequency": "per phase"
+    },
+    "strong": {
+      "task_length": "long",
+      "autonomy": "high",
+      "verification_passes": "extended + adversarial",
+      "decomposition": "objective + sub-objectives",
+      "guidance": "light",
+      "tool_use": "orchestrated, parallel where independent",
+      "summary_frequency": "per milestone"
+    },
+    "frontier": {
+      "task_length": "long-horizon, multi-session",
+      "autonomy": "full within safety",
+      "verification_passes": "systemic, multi-pass",
+      "decomposition": "strategic",
+      "guidance": "minimal",
+      "tool_use": "multiple tools in concert",
+      "summary_frequency": "at meaningful milestones"
+    }
+  },
+
+  "rule": "The LOWER the aggregate, the MORE external structure the agent imposes (decomposition, checklists, validation frequency) to do the work the model can't do internally. The agent's reliability target is constant; only the scaffolding scales."
+}

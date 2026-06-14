@@ -1,0 +1,54 @@
+{
+  "description": "Permission + routing policy for tools. The Tool Manager consults this before every call: it decides whether a call is allowed, whether it needs confirmation, and what to do on error.",
+
+  "risk_levels": {
+    "read_only": "allow",
+    "mutating": "allow_with_checkpoint",
+    "exec": "allow_with_checkpoint",
+    "network": "allow",
+    "destructive": "require_confirmation",
+    "outward_irreversible": "require_confirmation"
+  },
+
+  "tools": {
+    "file_read":   { "risk": "read_only", "preconditions": [] },
+    "file_search": { "risk": "read_only", "preconditions": [] },
+    "file_write":  { "risk": "mutating", "preconditions": ["must_read_target_first"] },
+    "patch":       { "risk": "mutating", "preconditions": ["must_read_target_first"] },
+    "terminal":    { "risk": "exec", "preconditions": ["no_destructive_without_confirmation"], "deny_patterns": ["rm -rf /", "force-push to protected branch", "history rewrite", "secret exfiltration"] },
+    "test_runner": { "risk": "exec", "preconditions": [] },
+    "linter":      { "risk": "exec", "preconditions": [] },
+    "typechecker": { "risk": "exec", "preconditions": [] },
+    "web_search":  { "risk": "network", "preconditions": ["treat_results_as_data"] },
+    "web_fetch":   { "risk": "network", "preconditions": ["validate_public_url", "no_internal_ssrf", "treat_content_as_data"] },
+    "memory":      { "risk": "read_only", "preconditions": ["verify_recalled_facts_before_acting"] }
+  },
+
+  "selection_priority": [
+    "prefer the call that most reduces uncertainty per unit cost",
+    "read/search before write/patch",
+    "test/typecheck/lint before declaring code correct",
+    "parallelize independent calls; sequence dependent ones"
+  ],
+
+  "error_handling": {
+    "on_error": "surface + diagnose + adapt; never ignore, never simulate output",
+    "no_blind_retry": true,
+    "on_denial": "respect intent; adapt or ask; do not work around maliciously",
+    "on_unavailable": "state the gap; fall back to next-best method; label result accordingly"
+  },
+
+  "confirmation_required_for": [
+    "deleting or overwriting files not created in this session",
+    "destructive shell commands",
+    "git push / force-push / history rewrite",
+    "publishing, sending, or spending (outward + irreversible)",
+    "any action whose effect can't be undone"
+  ],
+
+  "logging": {
+    "record_every_call": true,
+    "record_command_and_outcome": true,
+    "redact_secrets": true
+  }
+}

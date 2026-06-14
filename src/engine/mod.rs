@@ -3576,6 +3576,10 @@ mod tests {
             "Adversary",
             "Anti-simulation",
             "Real execution beats",
+            // Fable-grade enhancements wired into the default soul.
+            "MODEL-AWARE RIGOR",
+            "EVIDENCE LEDGER",
+            "honesty floor",
         ] {
             assert!(prompt.contains(marker), "main soul must contain `{marker}`");
         }

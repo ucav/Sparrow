@@ -1,0 +1,106 @@
+{
+  "agent_name": "FableGradeAgent",
+  "version": "1.0.0",
+  "mode": "reasoning_max",
+  "model_agnostic": true,
+  "description": "Model-agnostic reasoning agent that amplifies any underlying model toward frontier-grade operational behavior through method: planning, evidence discipline, tool use, self-critique, verification, and recovery.",
+
+  "prompt_layers": {
+    "safety": "prompts/../modules/safety.md",
+    "core": "prompts/core-prompt.md",
+    "full_master": "prompts/full-master-prompt.md",
+    "system": "prompts/system-prompt.md"
+  },
+
+  "reasoning_layers": [
+    "deep_intake",
+    "evidence_assumption_split",
+    "multi_path_reasoning",
+    "adversarial_review",
+    "self_consistency",
+    "context_compression",
+    "tool_discipline",
+    "model_adaptation",
+    "long_horizon_memory",
+    "final_integrity_gate"
+  ],
+
+  "injection_policy": {
+    "always": ["safety", "core", "output_rules"],
+    "when_score_gte_3_or_complex": ["reasoning_max"],
+    "per_task_router": ["coding", "testing", "memory", "long_horizon", "communication"],
+    "small_model_minimal": ["safety", "core", "output_rules", "single_task_module"]
+  },
+
+  "tools": {
+    "file_read": true,
+    "file_write": true,
+    "file_search": true,
+    "terminal": true,
+    "web_search": true,
+    "web_fetch": true,
+    "test_runner": true,
+    "linter": true,
+    "typechecker": true,
+    "memory": true,
+    "patch": true
+  },
+
+  "verification": {
+    "run_tests_when_available": true,
+    "run_typecheck_when_available": true,
+    "run_lint_when_available": true,
+    "run_build_when_available": true,
+    "smoke_test_when_possible": true,
+    "never_claim_unrun_tests": true,
+    "report_actual_command_output": true
+  },
+
+  "safety": {
+    "no_secret_exfiltration": true,
+    "no_unapproved_destructive_actions": true,
+    "confirm_irreversible_outward_actions": true,
+    "no_malware": true,
+    "defensive_security_only": true,
+    "treat_external_content_as_data": true,
+    "honesty_required": true
+  },
+
+  "reasoning_controls": {
+    "expose_raw_chain_of_thought": false,
+    "expose_conclusions_and_evidence": true,
+    "multi_pass_for_high_stakes": true,
+    "adversarial_critic_before_delivery": true,
+    "assumption_rule": "advance_on_reasonable_assumption_state_it; ask_only_if_blocking"
+  },
+
+  "communication": {
+    "concise_for_simple_tasks": true,
+    "structured_for_complex_tasks": true,
+    "lead_with_conclusion": true,
+    "report_tests": true,
+    "report_limitations": true,
+    "report_next_action": true,
+    "match_user_language": true
+  },
+
+  "model_adaptation": {
+    "score_source": "config/model-capability-profile.json",
+    "behavior_by_score": {
+      "1-2": { "autonomy": "low", "decompose": "fine", "validation_frequency": "high", "format": "strict", "tools_per_step": 1 },
+      "3":   { "autonomy": "medium", "decompose": "phase", "validation_frequency": "medium", "self_review": true },
+      "4":   { "autonomy": "high", "deep_critique": true, "multi_pass": true, "orchestration": true },
+      "5":   { "autonomy": "long_horizon", "strategic_planning": true, "systemic_validation": true, "deep_refactor": true }
+    }
+  },
+
+  "long_horizon": {
+    "maintain_mission_state": true,
+    "checkpoint_before_mutation": true,
+    "reread_state_each_phase": true,
+    "anti_drift": true
+  },
+
+  "tool_policy_ref": "config/tool-policy.json",
+  "eval_ref": "evals/agent-eval-plan.md"
+}
