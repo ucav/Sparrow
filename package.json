@@ -1,6 +1,6 @@
 {
   "name": "sparrow-browser-runtime",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "Optional Playwright runtime for Sparrow browser/computer-use tools",
   "scripts": {
     "browser:install": "playwright install chromium",
