@@ -57,6 +57,7 @@ pub use sparrow_config::humanize;
 pub mod instructions;
 pub mod intel_cli;
 pub use sparrow_memory as memory;
+pub mod nl_router;
 pub mod onboarding;
 pub mod orchestrator;
 pub use sparrow_config::permissions;

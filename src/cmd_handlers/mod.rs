@@ -5,6 +5,7 @@ pub mod handle_auth_login_cmd;
 pub mod handle_chat_cmd;
 pub mod handle_compact_cmd;
 pub mod handle_daemon_cmd;
+pub mod handle_do_cmd;
 pub mod handle_gateway_cmd;
 pub mod handle_github_cmd;
 pub mod handle_init_cmd;

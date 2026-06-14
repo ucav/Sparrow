@@ -98,6 +98,7 @@ fn command_wants_model_discovery(cmd: &Option<Commands>) -> bool {
             | Whatis { .. }
             | Budget { .. }
             | Mode { .. }
+            | Do { .. }
             | Doctor
             | Setup
             | Init
@@ -812,6 +813,9 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         Some(Commands::Reason { task }) => {
             sparrow::cmd_handlers::handle_reason_cmd::handle_reason(&config, memory.clone(), &task)
                 .await?;
+        }
+        Some(Commands::Do { request, dry_run }) => {
+            sparrow::cmd_handlers::handle_do_cmd::handle_do(&request, dry_run)?;
         }
         Some(Commands::Agent { action }) => {
             sparrow::cmd_handlers::handle_agent_cmd::handle_agent(

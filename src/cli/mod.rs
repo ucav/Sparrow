@@ -232,6 +232,18 @@ pub enum Commands {
         problem: Vec<String>,
     },
 
+    /// Dis ce que tu veux en langage naturel — Sparrow choisit la commande.
+    /// « sparrow do "corrige le build" » · « sparrow do "montre la console" ».
+    /// Pas besoin d'apprendre les commandes : décris, Sparrow comprend.
+    #[command(visible_aliases = ["fais"])]
+    Do {
+        /// Ta demande, avec tes mots.
+        request: Vec<String>,
+        /// Montre seulement la commande choisie, sans l'exécuter.
+        #[arg(long)]
+        dry_run: bool,
+    },
+
     /// Expliquer un fichier, une erreur ou un concept en langage simple.
     /// « sparrow explique src/main.rs » · « sparrow explique "borrow checker" »
     #[command(visible_aliases = ["explain"])]
