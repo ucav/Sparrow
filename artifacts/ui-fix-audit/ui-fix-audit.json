@@ -1,0 +1,39 @@
+{
+  "checks": {
+    "desktop_tour_overlaps_bottom_ui": false,
+    "desktop_cmdk_box": {
+      "x": 767.09375,
+      "y": 8,
+      "width": 100.203125,
+      "height": 32
+    },
+    "desktop_palette_rows": 40,
+    "desktop_palette_text": "/agent\nBUILTIN\nManage persistent Sparrow agents.\nUsage: /agent <create|list|show|delete|edit|export|import|default|route",
+    "desktop_kbd_visible": 1,
+    "desktop_overflow": {
+      "doc": 0,
+      "body": 0,
+      "chrome": 0
+    },
+    "desktop_rightbar_open": true,
+    "mobile_tour_overlaps_bottom_ui": false,
+    "mobile_cmdk_box": {
+      "x": 158.5625,
+      "y": 7,
+      "width": 100.203125,
+      "height": 36
+    },
+    "mobile_palette_rows": 40,
+    "mobile_palette_text": "/agent\nBUILTIN\nManage persistent Sparrow agents.\nUsage: /agent <create|list|show|delete|edit|export|import|default|route",
+    "mobile_kbd_visible": 1,
+    "mobile_overflow": {
+      "doc": 0,
+      "body": 0,
+      "chrome": 0
+    },
+    "mobile_rightbar_open": true
+  },
+  "errors": [
+    "mobile console: loadConfig failed TypeError: Failed to fetch\n    at loadConfig (http://127.0.0.1:9888/:5631:55)\n    at ws.onopen (http://127.0.0.1:9888/:3245:5)"
+  ]
+}

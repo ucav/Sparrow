@@ -1,0 +1,710 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sparrow typography proposals v0.9.2</title>
+<style>
+  :root {
+    --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, Roboto, Arial, sans-serif;
+    --mono: "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, monospace;
+    --ink: #111827;
+    --muted: #6b7280;
+    --soft: #f5f7fb;
+    --line: #d9dee8;
+    --blue: #2563eb;
+    --teal: #0f8f83;
+    --amber: #b7791f;
+    --green: #16803c;
+    --red: #c2413a;
+    --violet: #7357d8;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px;
+    background: #eef1f6;
+    color: var(--ink);
+    font-family: var(--ui);
+  }
+  .page-title {
+    width: 1180px;
+    margin: 0 auto 18px;
+    font-size: 18px;
+    font-weight: 720;
+  }
+  .stack {
+    display: grid;
+    gap: 28px;
+    justify-content: center;
+  }
+  .proposal {
+    width: 1180px;
+    height: 760px;
+    overflow: hidden;
+    border: 1px solid #cfd6e3;
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 24px 70px rgba(15, 23, 42, .14);
+  }
+  .mock {
+    width: 100%;
+    height: 100%;
+    display: grid;
+    grid-template-rows: 48px minmax(0, 1fr) 82px;
+  }
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 22px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(255,255,255,.92);
+  }
+  .brand {
+    font-weight: 720;
+    font-size: 14px;
+    letter-spacing: 0;
+  }
+  .crumb {
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .topbar .grow { flex: 1; }
+  .seg {
+    display: inline-flex;
+    padding: 2px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #f8fafc;
+    gap: 2px;
+  }
+  .seg span {
+    display: inline-flex;
+    height: 28px;
+    align-items: center;
+    padding: 0 10px;
+    border-radius: 6px;
+    color: #6b7280;
+    font-size: 12px;
+  }
+  .seg .on {
+    color: #111827;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(15,23,42,.08);
+  }
+  .composer {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 22px;
+    border-top: 1px solid var(--line);
+    background: #fff;
+  }
+  .icon-btn {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    color: #556070;
+    background: #fff;
+    font-size: 16px;
+  }
+  .input {
+    height: 44px;
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    border: 1px solid #cfd6e3;
+    border-radius: 10px;
+    color: #8a93a3;
+    font-size: 15px;
+    line-height: 1.4;
+    background: #fff;
+  }
+  .run {
+    height: 36px;
+    border: 0;
+    border-radius: 8px;
+    padding: 0 16px;
+    color: #fff;
+    background: #111827;
+    font-weight: 650;
+  }
+  .meter {
+    width: 132px;
+    display: grid;
+    gap: 5px;
+    color: #6b7280;
+    font: 11px/1.2 var(--mono);
+  }
+  .track { height: 5px; border-radius: 999px; background: #e5e7eb; overflow: hidden; }
+  .fill { display: block; height: 100%; width: 18%; border-radius: inherit; background: linear-gradient(90deg, var(--teal), var(--blue)); }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 7px;
+    border-radius: 6px;
+    border: 1px solid #d7dde8;
+    background: #f8fafc;
+    color: #4b5563;
+    font: 12px/1.25 var(--mono);
+    white-space: nowrap;
+  }
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+  .role {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 680;
+    letter-spacing: 0;
+  }
+  .role .ring {
+    width: 9px;
+    height: 9px;
+    border: 1.5px solid currentColor;
+    border-radius: 50%;
+  }
+  .meta {
+    color: #8a93a3;
+    font: 12px/1.35 var(--mono);
+  }
+  .prose p {
+    margin: 0 0 13px;
+  }
+  .prose strong {
+    font-weight: 720;
+  }
+  .prose code {
+    font-family: var(--mono);
+    font-size: .92em;
+    padding: 1px 5px;
+    border: 1px solid #d8deea;
+    border-radius: 5px;
+    background: #f3f6fb;
+    color: #223044;
+  }
+  .h2 {
+    margin: 22px 0 10px;
+    color: #163b7a;
+    font-size: 15px;
+    line-height: 1.35;
+    font-weight: 760;
+    letter-spacing: 0;
+  }
+  .tool {
+    border: 1px solid #d9dfeb;
+    border-radius: 9px;
+    background: #fff;
+    overflow: hidden;
+  }
+  .tool-head {
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 12px;
+    color: #263142;
+    font-size: 13px;
+  }
+  .tool-head .status {
+    margin-left: auto;
+    color: #667085;
+    font: 12px/1 var(--mono);
+  }
+  .table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    border: 1px solid #d8deea;
+    border-radius: 9px;
+    overflow: hidden;
+    font-size: 13px;
+  }
+  .table th {
+    text-align: left;
+    padding: 8px 11px;
+    background: #f1f5fb;
+    color: #374151;
+    font-size: 11px;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+  }
+  .table td {
+    padding: 9px 11px;
+    border-top: 1px solid #e6eaf2;
+    vertical-align: top;
+  }
+  .table td:first-child {
+    font-weight: 650;
+  }
+  .codebox {
+    margin-top: 10px;
+    border: 1px solid #d7dde8;
+    border-radius: 9px;
+    overflow: hidden;
+    background: #0f172a;
+  }
+  .codebox .code-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 11px;
+    color: #cbd5e1;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+    font: 12px/1.2 var(--mono);
+  }
+  .codebox pre {
+    margin: 0;
+    padding: 12px 14px;
+    color: #dbeafe;
+    white-space: pre-wrap;
+    font: 12.5px/1.6 var(--mono);
+  }
+
+  /* A. Reading first */
+  .a .body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 270px;
+    min-height: 0;
+  }
+  .a .stream {
+    overflow: hidden;
+    padding: 32px max(34px, calc((100% - 820px) / 2)) 26px;
+    background: #fbfcff;
+  }
+  .a .article {
+    max-width: 820px;
+    margin: 0 auto;
+    color: #141a24;
+    font-size: 15.5px;
+    line-height: 1.66;
+  }
+  .a .step {
+    display: grid;
+    grid-template-columns: 120px minmax(0, 1fr);
+    gap: 16px;
+    margin: 0 0 20px;
+  }
+  .a .side {
+    border-left: 1px solid #e1e6ef;
+    background: #f8fafd;
+    padding: 18px;
+    color: #5f6b7a;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .a .side h3 {
+    margin: 0 0 12px;
+    color: #111827;
+    font-size: 13px;
+  }
+  .a .side-card {
+    padding: 12px;
+    border: 1px solid #e0e6ef;
+    border-radius: 9px;
+    background: #fff;
+    margin-bottom: 10px;
+  }
+
+  /* B. Operational compact */
+  .b.mock {
+    grid-template-rows: 46px 46px minmax(0, 1fr) 76px;
+    background: #101827;
+  }
+  .b .topbar {
+    background: #111827;
+    border-bottom-color: #253044;
+    color: #e5e7eb;
+  }
+  .b .crumb { color: #9aa7ba; }
+  .b .seg {
+    border-color: #303b4f;
+    background: #0b1220;
+  }
+  .b .seg span { color: #9aa7ba; }
+  .b .seg .on { background: #1f2937; color: #f9fafb; box-shadow: none; }
+  .b .lanes {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    border-bottom: 1px solid #253044;
+    background: #0d1523;
+  }
+  .b .lane {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 0 18px;
+    border-right: 1px solid #253044;
+    color: #cbd5e1;
+    font-size: 13px;
+  }
+  .b .lane:last-child { border-right: 0; }
+  .b .lane span:last-child {
+    color: #8fa1b7;
+    margin-left: auto;
+    font: 11px/1 var(--mono);
+  }
+  .b .body {
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr) 300px;
+    min-height: 0;
+  }
+  .b .rail {
+    display: grid;
+    align-content: start;
+    gap: 10px;
+    padding: 14px;
+    border-right: 1px solid #253044;
+    background: #0b1220;
+  }
+  .b .rail div {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    color: #94a3b8;
+    border: 1px solid #263247;
+  }
+  .b .rail .on {
+    color: #fff;
+    background: #2563eb;
+    border-color: #2563eb;
+  }
+  .b .stream {
+    overflow: hidden;
+    padding: 18px 24px;
+    color: #e5e7eb;
+  }
+  .b .event {
+    display: grid;
+    grid-template-columns: 112px minmax(0, 1fr);
+    gap: 14px;
+    padding: 13px 0;
+    border-bottom: 1px solid #202b3e;
+    font-size: 14px;
+    line-height: 1.55;
+  }
+  .b .event .role { color: #7dd3fc; }
+  .b .event .meta { color: #748196; }
+  .b .event p { margin: 0 0 9px; color: #e8edf5; }
+  .b .event code {
+    font-family: var(--mono);
+    font-size: .92em;
+    color: #dbeafe;
+    background: #182238;
+    border: 1px solid #2b3b56;
+    border-radius: 5px;
+    padding: 1px 5px;
+  }
+  .b .tool {
+    border-color: #2b3b56;
+    background: #121b2d;
+  }
+  .b .tool-head { color: #dbeafe; }
+  .b .tool-head .status { color: #9aa7ba; }
+  .b .inspector {
+    border-left: 1px solid #253044;
+    padding: 16px;
+    background: #0d1523;
+    color: #cbd5e1;
+    font-size: 13px;
+  }
+  .b .inspector h3 {
+    margin: 0 0 12px;
+    color: #f9fafb;
+    font-size: 13px;
+  }
+  .b .metric {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    padding: 9px 0;
+    border-bottom: 1px solid #253044;
+  }
+  .b .metric span:first-child { color: #8fa1b7; }
+  .b .composer {
+    border-top-color: #253044;
+    background: #0b1220;
+  }
+  .b .input, .b .icon-btn {
+    background: #111827;
+    border-color: #303b4f;
+    color: #9aa7ba;
+  }
+  .b .run { background: #2563eb; }
+  .b .meter { color: #8fa1b7; }
+  .b .track { background: #1f2937; }
+
+  /* C. Hybrid document and activity */
+  .c .body {
+    display: grid;
+    grid-template-columns: 250px minmax(0, 1fr);
+    min-height: 0;
+    background: #f6f8fc;
+  }
+  .c .outline {
+    border-right: 1px solid var(--line);
+    padding: 20px 16px;
+    background: #fff;
+  }
+  .c .outline h3 {
+    margin: 0 0 14px;
+    color: #111827;
+    font-size: 13px;
+  }
+  .c .nav-item {
+    display: grid;
+    grid-template-columns: 10px minmax(0,1fr);
+    gap: 9px;
+    padding: 8px 7px;
+    border-radius: 8px;
+    color: #687385;
+    font-size: 13px;
+    line-height: 1.35;
+  }
+  .c .nav-item.on {
+    color: #111827;
+    background: #eff6ff;
+  }
+  .c .nav-item .bar {
+    width: 3px;
+    border-radius: 999px;
+    background: transparent;
+  }
+  .c .nav-item.on .bar { background: #2563eb; }
+  .c .stream {
+    padding: 28px 34px;
+    overflow: hidden;
+  }
+  .c .answer-card {
+    max-width: 760px;
+    margin: 0 auto 16px;
+    border: 1px solid #dde4ef;
+    border-radius: 12px;
+    background: #fff;
+    box-shadow: 0 12px 34px rgba(15, 23, 42, .06);
+  }
+  .c .answer-head {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 15px 18px;
+    border-bottom: 1px solid #e5eaf2;
+  }
+  .c .answer-body {
+    padding: 18px;
+    color: #1f2937;
+    font-size: 15px;
+    line-height: 1.68;
+  }
+  .c .status-strip {
+    max-width: 760px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
+  .c .mini {
+    border: 1px solid #dce3ee;
+    border-radius: 10px;
+    background: #fff;
+    padding: 11px 12px;
+    font-size: 12px;
+    color: #657184;
+  }
+  .c .mini b {
+    display: block;
+    margin-bottom: 5px;
+    color: #111827;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+<div class="page-title">Sparrow WebView typography proposals, v0.9.2</div>
+<main class="stack">
+  <section id="proposal-a" class="proposal">
+    <div class="mock a">
+      <header class="topbar">
+        <div class="brand">Sparrow</div>
+        <div class="crumb">/ GitHub overview</div>
+        <div class="grow"></div>
+        <div class="seg"><span class="on">Focus</span><span>Cockpit</span></div>
+      </header>
+      <div class="body">
+        <div class="stream">
+          <article class="article prose">
+            <div class="step">
+              <div class="meta">planner<br>route set</div>
+              <div>
+                <p><strong>Lecture du cockpit Sparrow.</strong> Je pars du WebView existant pour corriger le rendu sans ajouter une nouvelle surface. Le probleme principal n'est pas le contenu, c'est la hierarchie visuelle.</p>
+                <p>La reponse doit rester proche de Claude : texte a <code>15.5px</code>, interligne a <code>1.66</code>, largeur de ligne limitee, logs internes repousses en details.</p>
+              </div>
+            </div>
+            <div class="step">
+              <div class="meta">coder<br>running</div>
+              <div>
+                <div class="tool">
+                  <div class="tool-head"><span class="dot" style="color:var(--teal)"></span><strong>glob</strong><span class="status">running...</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="step">
+              <div class="meta">sparrow<br>response</div>
+              <div>
+                <p>Voici le diagnostic : les titres markdown sont trop visibles, les metadata prennent la meme importance que le texte, et les tableaux/code chips perturbent la lecture. Je propose une grille simple.</p>
+                <div class="h2">Architecture du cockpit</div>
+                <table class="table">
+                  <thead><tr><th>Element</th><th>Traitement propose</th></tr></thead>
+                  <tbody>
+                    <tr><td>Texte principal</td><td>Largeur 820px, pas de letter spacing, interligne stable.</td></tr>
+                    <tr><td>Code inline</td><td>Chip discret, meme hauteur que la ligne, sans effet bouton.</td></tr>
+                    <tr><td>Tools</td><td>Cartes compactes, ouvertes seulement si utile.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </article>
+        </div>
+        <aside class="side">
+          <h3>Lecture calme</h3>
+          <div class="side-card"><strong>Best for</strong><br>Mode Focus par defaut, conversation longue, audit produit.</div>
+          <div class="side-card"><strong>Typo</strong><br>15.5px / 1.66, max 820px, aucun letter spacing sur le texte.</div>
+          <div class="side-card"><strong>Signal</strong><br>Les details techniques restent visibles mais ne dominent pas.</div>
+        </aside>
+      </div>
+      <footer class="composer">
+        <div class="icon-btn">+</div>
+        <div class="input">Demande a Sparrow de corriger le rendu typographique...</div>
+        <div class="meter"><span>context 18%</span><div class="track"><span class="fill"></span></div></div>
+        <button class="run">Run</button>
+      </footer>
+    </div>
+  </section>
+
+  <section id="proposal-b" class="proposal">
+    <div class="mock b">
+      <header class="topbar">
+        <div class="brand">Sparrow</div>
+        <div class="crumb">/ Cockpit</div>
+        <div class="grow"></div>
+        <div class="seg"><span>Focus</span><span class="on">Cockpit</span></div>
+      </header>
+      <div class="lanes">
+        <div class="lane"><span class="role" style="color:#60a5fa"><span class="ring"></span>planner</span><span>route set</span></div>
+        <div class="lane"><span class="role" style="color:#2dd4bf"><span class="ring"></span>coder</span><span>running</span></div>
+        <div class="lane"><span class="role" style="color:#fbbf24"><span class="ring"></span>verifier</span><span>waiting</span></div>
+      </div>
+      <div class="body">
+        <nav class="rail"><div class="on">T</div><div>D</div><div>$</div><div>G</div></nav>
+        <div class="stream">
+          <div class="event">
+            <div class="meta">turn #5<br>sent 2,483 tok</div>
+            <div>
+              <p><strong>Plan valide.</strong> Je reduis le bruit de routage a une ligne compacte, puis je reserve l'espace central aux messages utiles.</p>
+              <div class="tool">
+                <div class="tool-head"><span class="dot" style="color:#2dd4bf"></span><strong>read console.html</strong><span class="status">complete</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="event">
+            <div class="meta">sparrow<br>analysis</div>
+            <div>
+              <p>Le cockpit garde les signaux d'execution, mais chaque ligne a un role clair. Les mots importants ne grossissent plus arbitrairement, les stats n'ont pas la couleur du texte principal.</p>
+              <p>Les gros contenus passent dans des blocs plies, avec un apercu court et stable.</p>
+              <div class="codebox">
+                <div class="code-head">console.html <span style="margin-left:auto">preview</span></div>
+                <pre>#term { font-size: 14px; line-height: 1.58; }
+.md-prose { max-width: 780px; }
+.verbose { opacity: .64; }</pre>
+              </div>
+            </div>
+          </div>
+        </div>
+        <aside class="inspector">
+          <h3>Run inspector</h3>
+          <div class="metric"><span>Route</span><strong>planner -> coder</strong></div>
+          <div class="metric"><span>Cost</span><strong>$0.0007</strong></div>
+          <div class="metric"><span>Context</span><strong>4%</strong></div>
+          <div class="metric"><span>Density</span><strong>Compact</strong></div>
+          <p style="margin:18px 0 0;color:#8fa1b7;line-height:1.55">Cette direction est plus technique : parfaite pour devs, audits et gros runs avec beaucoup d'outils.</p>
+        </aside>
+      </div>
+      <footer class="composer">
+        <div class="icon-btn">+</div>
+        <div class="input">Type a task and press Enter...</div>
+        <div class="meter"><span>context 4%</span><div class="track"><span class="fill" style="width:4%"></span></div></div>
+        <button class="run">Run</button>
+      </footer>
+    </div>
+  </section>
+
+  <section id="proposal-c" class="proposal">
+    <div class="mock c">
+      <header class="topbar">
+        <div class="brand">Sparrow</div>
+        <div class="crumb">/ Review session</div>
+        <div class="grow"></div>
+        <span class="chip"><span class="dot" style="color:var(--green)"></span>live</span>
+        <div class="seg"><span class="on">Review</span><span>Details</span></div>
+      </header>
+      <div class="body">
+        <aside class="outline">
+          <h3>Conversation</h3>
+          <div class="nav-item on"><span class="bar"></span><span>Diagnostic typographique</span></div>
+          <div class="nav-item"><span class="bar"></span><span>Tableau cockpit</span></div>
+          <div class="nav-item"><span class="bar"></span><span>Commandes et outils</span></div>
+          <div class="nav-item"><span class="bar"></span><span>Patch possible</span></div>
+        </aside>
+        <div class="stream">
+          <section class="answer-card">
+            <header class="answer-head">
+              <span class="role" style="color:var(--teal)"><span class="ring"></span>Sparrow</span>
+              <span class="meta">message propre, details repliees</span>
+              <span class="chip" style="margin-left:auto">copy</span>
+            </header>
+            <div class="answer-body prose">
+              <p>Je propose une surface hybride : la reponse est traitee comme un document lisible, pendant que l'activite du run reste accessible dans le panneau de gauche.</p>
+              <p>Les headings descendent d'un cran : <strong>pas de gros bleu systematique</strong>. Les tableaux deviennent des cartes de donnees. Les chemins comme <code>scripts/audit-webview.mjs</code> restent lisibles sans devenir des boutons geants.</p>
+              <div class="h2">Ce que le cockpit expose</div>
+              <table class="table">
+                <thead><tr><th>Zone</th><th>Regle visuelle</th></tr></thead>
+                <tbody>
+                  <tr><td>Reponse</td><td>15px / 1.68, marges verticales de 12 a 18px.</td></tr>
+                  <tr><td>Details</td><td>Metadata repliees, opacite reduite, jamais en bleu plein.</td></tr>
+                  <tr><td>Composer</td><td>Hauteur fixe 44px, controles alignes, pas de collision.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+          <div class="status-strip">
+            <div class="mini"><b>planner</b>route selected, hidden by default</div>
+            <div class="mini"><b>coder</b>consulting model, one compact line</div>
+            <div class="mini"><b>verifier</b>ready after patch preview</div>
+          </div>
+        </div>
+      </div>
+      <footer class="composer">
+        <div class="icon-btn">+</div>
+        <div class="input">Valide une direction puis je l'applique au WebView...</div>
+        <div class="meter"><span>context 12%</span><div class="track"><span class="fill" style="width:12%"></span></div></div>
+        <button class="run">Run</button>
+      </footer>
+    </div>
+  </section>
+</main>
+</body>
+</html>

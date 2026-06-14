@@ -1619,6 +1619,14 @@
 
 <script>
 const term=document.getElementById('term');
+// Clickable file/artifact links in chat → open the dedicated right-side viewer.
+if(term)term.addEventListener('click',e=>{
+  const link=e.target.closest&&e.target.closest('.file-link[data-file-preview]');
+  if(!link)return;
+  e.preventDefault();
+  const path=link.getAttribute('data-file-preview');
+  if(path&&typeof loadFileInPanel==='function')loadFileInPanel(path);
+});
 const $=id=>document.getElementById(id);
 let costV=0,tokV=0,tokInV=0,tokOutV=0,sessionTok=0,sessionCost=0;
 let runStartMs=0,runDiffsApplied=0,runCheckpoints=0;
@@ -3699,6 +3707,28 @@ function _markdownify(src){
   }
   return out.join('\n');
 }
+// Turn file/artifact paths in rendered prose into clickable links that open
+// the file in the dedicated right-side viewer (loadFileInPanel). Operates on
+// already-rendered inline HTML; skips anything inside <code> or <a> so existing
+// code spans and links are never touched. Matches paths with at least one
+// separator and a file extension (./artifacts/report.md, src/main.rs, a/b/c.txt)
+// to avoid linkifying ordinary words.
+const _FILE_PATH_RE=/((?:\.{1,2}[\/\\])?(?:[\w.\-]+[\/\\])+[\w.\-]+\.[A-Za-z0-9]{1,8})/g;
+function _linkifyFilePaths(html){
+  let inCode=0,inA=0;
+  return html.replace(/(<[^>]+>)|([^<]+)/g,(m,tag,txt)=>{
+    if(tag){
+      if(/^<code\b/i.test(tag))inCode++;
+      else if(/^<\/code>/i.test(tag))inCode=Math.max(0,inCode-1);
+      else if(/^<a\b/i.test(tag))inA++;
+      else if(/^<\/a>/i.test(tag))inA=Math.max(0,inA-1);
+      return tag;
+    }
+    if(inCode>0||inA>0)return txt;
+    return txt.replace(_FILE_PATH_RE,p=>
+      `<a href="#" class="file-link" data-file-preview="${p}" title="Aperçu de ${p}">${p}</a>`);
+  });
+}
 function _inlineMd(s){
   if(!s)return '';
   // Inline code (must come before bold/italic so ` won't be eaten)
@@ -3718,6 +3748,8 @@ function _inlineMd(s){
   // Checkboxes - [ ] / - [x]
   s=s.replace(/\[ \]/g,'<span class="md-cb">☐</span>');
   s=s.replace(/\[x\]/gi,'<span class="md-cb done">☑</span>');
+  // File/artifact paths → clickable preview links (skips code spans + links).
+  s=_linkifyFilePaths(s);
   return s;
 }
 
@@ -4990,6 +5022,10 @@ document.addEventListener('DOMContentLoaded',()=>{
     .md-prose del{color:var(--dimmer);text-decoration:line-through}
     .md-prose .md-ic{display:inline;font-family:var(--mono-font);background:color-mix(in srgb,var(--fg) 6%,transparent);color:var(--fg);padding:1px 5px;border-radius:5px;font-size:13px;line-height:1.25;border:1px solid color-mix(in srgb,var(--fg) 16%,transparent);letter-spacing:0}
     .md-prose a{color:var(--planner);text-decoration:underline dotted;text-underline-offset:2px}
+    /* Clickable file/artifact paths in chat → open the right-side viewer. */
+    .file-link{color:var(--add);text-decoration:underline dotted;text-underline-offset:2px;cursor:pointer;font-family:var(--mono-font);font-size:.95em;border-radius:4px;padding:0 2px}
+    .file-link:hover{background:color-mix(in srgb,var(--add) 14%,transparent);text-decoration-style:solid}
+    .file-link::before{content:"◇ ";opacity:.6;font-size:.85em}
     .md-prose a:hover{color:var(--coral)}
     .md-prose .md-hr{border:0;height:1px;background:linear-gradient(90deg,transparent,var(--line-hot),transparent);margin:14px 0}
     .md-prose .md-bq{margin:12px 0;padding:9px 12px;border-left:3px solid var(--brand);background:color-mix(in srgb,var(--brand) 5%,transparent);color:var(--dim);font-style:italic;border-radius:0 7px 7px 0}

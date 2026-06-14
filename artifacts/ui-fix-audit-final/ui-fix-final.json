@@ -1,0 +1,18 @@
+{
+  "focusState": {
+    "drawerOpen": false,
+    "tour": true
+  },
+  "cockpitState": {
+    "drawerOpen": false,
+    "tour": false,
+    "overflow": 0
+  },
+  "rightbarState": {
+    "rightbarOpen": true,
+    "tour": false
+  },
+  "errors": [
+    "loadConfig failed TypeError: Failed to fetch\n    at loadConfig (http://127.0.0.1:9888/:5635:55)\n    at ws.onopen (http://127.0.0.1:9888/:3248:5)"
+  ]
+}

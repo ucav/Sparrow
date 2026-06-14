@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sparrow text zone typography proposal</title>
+<style>
+  :root {
+    --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Inter, Roboto, Arial, sans-serif;
+    --mono: "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, monospace;
+    --ink: #111827;
+    --muted: #7a8494;
+    --faint: #a1aab8;
+    --line: #dce2ec;
+    --panel: #f7f9fc;
+    --blue: #1f5fd1;
+    --teal: #07877f;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 28px;
+    background: #eef1f6;
+    color: var(--ink);
+    font-family: var(--ui);
+  }
+
+  .wrap {
+    width: 1120px;
+    margin: 0 auto;
+    display: grid;
+    gap: 24px;
+  }
+
+  .title {
+    font-size: 17px;
+    font-weight: 730;
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
+  .card {
+    min-height: 620px;
+    border: 1px solid #cfd7e5;
+    border-radius: 12px;
+    background: #fff;
+    overflow: hidden;
+    box-shadow: 0 18px 50px rgba(15, 23, 42, .12);
+  }
+
+  .label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: 44px;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--line);
+    background: #fbfcff;
+    font-size: 13px;
+    font-weight: 720;
+  }
+
+  .label span {
+    color: var(--muted);
+    font: 11px/1 var(--mono);
+    font-weight: 500;
+  }
+
+  .zone {
+    height: 576px;
+    overflow: hidden;
+    background: #fff;
+  }
+
+  .line {
+    display: grid;
+    grid-template-columns: var(--rail) minmax(0, 1fr);
+    column-gap: var(--gap);
+    padding: 0 var(--pad-x);
+  }
+
+  .meta {
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: var(--meta-size);
+    line-height: var(--meta-lh);
+    white-space: pre-line;
+  }
+
+  .content {
+    color: var(--ink);
+    font-size: var(--text-size);
+    line-height: var(--text-lh);
+    letter-spacing: 0;
+  }
+
+  .content p {
+    margin: 0 0 var(--p-gap);
+  }
+
+  .content strong {
+    font-weight: 720;
+  }
+
+  .content code {
+    font-family: var(--mono);
+    font-size: var(--inline-code-size);
+    line-height: 1.25;
+    padding: 1px 5px;
+    border: 1px solid #d7dde8;
+    border-radius: 5px;
+    background: #f3f6fb;
+    color: #243043;
+  }
+
+  .h {
+    margin: var(--h-top) 0 var(--h-bottom);
+    color: var(--blue);
+    font-size: var(--h-size);
+    line-height: 1.35;
+    font-weight: 760;
+    letter-spacing: 0;
+  }
+
+  .tool {
+    display: flex;
+    align-items: center;
+    min-height: var(--tool-h);
+    margin: var(--tool-gap) 0;
+    padding: 0 var(--tool-pad);
+    border: 1px solid #d7deeb;
+    border-radius: 9px;
+    background: #fff;
+    font-size: var(--tool-size);
+  }
+
+  .tool b {
+    margin-left: 8px;
+  }
+
+  .tool .status {
+    margin-left: auto;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: var(--tool-meta);
+  }
+
+  .dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--teal);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin: var(--table-gap) 0;
+    border: 1px solid #d8deea;
+    border-radius: 9px;
+    overflow: hidden;
+    font-size: var(--table-size);
+  }
+
+  th {
+    padding: var(--cell-y) var(--cell-x);
+    text-align: left;
+    background: #f1f5fb;
+    color: #374151;
+    font-size: var(--th-size);
+    line-height: 1.25;
+    text-transform: uppercase;
+    letter-spacing: .02em;
+  }
+
+  td {
+    padding: var(--cell-y) var(--cell-x);
+    border-top: 1px solid #e6eaf2;
+    vertical-align: top;
+    line-height: 1.45;
+  }
+
+  td:first-child {
+    font-weight: 680;
+  }
+
+  .codeblock {
+    margin: var(--code-gap) 0;
+    border: 1px solid #d7dde8;
+    border-radius: 9px;
+    overflow: hidden;
+    background: #0f172a;
+  }
+
+  .codehead {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 10px;
+    border-bottom: 1px solid rgba(255,255,255,.1);
+    color: #cbd5e1;
+    font-family: var(--mono);
+    font-size: var(--code-head-size);
+    line-height: 1.2;
+  }
+
+  pre {
+    margin: 0;
+    padding: var(--pre-y) var(--pre-x);
+    color: #dbeafe;
+    white-space: pre-wrap;
+    font-family: var(--mono);
+    font-size: var(--code-size);
+    line-height: var(--code-lh);
+  }
+
+  .current {
+    --pad-x: 18px;
+    --rail: 82px;
+    --gap: 18px;
+    --text-size: 12.5px;
+    --text-lh: 1.5;
+    --meta-size: 10px;
+    --meta-lh: 1.35;
+    --p-gap: 9px;
+    --h-size: 14px;
+    --h-top: 26px;
+    --h-bottom: 64px;
+    --inline-code-size: 11px;
+    --tool-h: 38px;
+    --tool-gap: 28px;
+    --tool-pad: 10px;
+    --tool-size: 12px;
+    --tool-meta: 10px;
+    --table-gap: 8px;
+    --table-size: 12px;
+    --th-size: 10px;
+    --cell-y: 8px;
+    --cell-x: 10px;
+    --code-gap: 28px;
+    --pre-y: 8px;
+    --pre-x: 10px;
+    --code-head-size: 10px;
+    --code-size: 11px;
+    --code-lh: 1.35;
+  }
+
+  .balanced {
+    --pad-x: 26px;
+    --rail: 92px;
+    --gap: 18px;
+    --text-size: 15px;
+    --text-lh: 1.62;
+    --meta-size: 11px;
+    --meta-lh: 1.35;
+    --p-gap: 12px;
+    --h-size: 15px;
+    --h-top: 18px;
+    --h-bottom: 10px;
+    --inline-code-size: 13px;
+    --tool-h: 38px;
+    --tool-gap: 12px;
+    --tool-pad: 12px;
+    --tool-size: 13px;
+    --tool-meta: 11px;
+    --table-gap: 10px;
+    --table-size: 13px;
+    --th-size: 10.5px;
+    --cell-y: 9px;
+    --cell-x: 11px;
+    --code-gap: 12px;
+    --pre-y: 11px;
+    --pre-x: 13px;
+    --code-head-size: 11px;
+    --code-size: 12.5px;
+    --code-lh: 1.55;
+  }
+
+  .roomy {
+    --pad-x: 34px;
+    --rail: 104px;
+    --gap: 20px;
+    --text-size: 15.5px;
+    --text-lh: 1.72;
+    --meta-size: 11px;
+    --meta-lh: 1.45;
+    --p-gap: 14px;
+    --h-size: 15.5px;
+    --h-top: 22px;
+    --h-bottom: 12px;
+    --inline-code-size: 13px;
+    --tool-h: 42px;
+    --tool-gap: 14px;
+    --tool-pad: 13px;
+    --tool-size: 13.5px;
+    --tool-meta: 11px;
+    --table-gap: 12px;
+    --table-size: 13.3px;
+    --th-size: 10.5px;
+    --cell-y: 10px;
+    --cell-x: 12px;
+    --code-gap: 14px;
+    --pre-y: 12px;
+    --pre-x: 14px;
+    --code-head-size: 11px;
+    --code-size: 12.5px;
+    --code-lh: 1.62;
+  }
+
+  .sample {
+    padding-top: 34px;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="title">Zone de texte uniquement : correction taille, marges, interligne, espacement</div>
+  <div class="row">
+    <section class="card current">
+      <div class="label">Actuel problématique <span>trop petit / gaps incohérents</span></div>
+      <div class="zone sample">
+        <div class="line">
+          <div class="meta">planner
+route set</div>
+          <div class="content">
+            <p><strong>Voyons ce que contient le cockpit Sparrow</strong> pour que je puisse t'aider efficacement. La taille du texte est basse, les marges internes sont faibles, et les blocs semblent flotter sans rythme stable.</p>
+          </div>
+        </div>
+        <div class="line">
+          <div class="meta">coder
+running</div>
+          <div class="content">
+            <div class="tool"><span class="dot"></span><b>glob</b><span class="status">running...</span></div>
+          </div>
+        </div>
+        <div class="line">
+          <div class="meta">sparrow
+response</div>
+          <div class="content">
+            <p>Les headings deviennent trop dominants, puis creent de grands trous. Les chemins comme <code>scripts/audit-webview.mjs</code> prennent trop de place visuelle.</p>
+            <div class="h">Architecture du cockpit</div>
+            <table>
+              <thead><tr><th>Element</th><th>Fichier</th></tr></thead>
+              <tbody>
+                <tr><td>Mockup statique</td><td><code>sparrow-cockpit-v0.9.0-mockup.html</code></td></tr>
+                <tr><td>Audit automatise</td><td><code>scripts/audit-webview.mjs</code></td></tr>
+              </tbody>
+            </table>
+            <div class="codeblock">
+              <div class="codehead"><span>content</span><span>copy</span></div>
+              <pre>import { chromium } from 'playwright';
+// Audit Sparrow WebView Cockpit</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card balanced">
+      <div class="label">Proposition recommandée <span>15px / 1.62</span></div>
+      <div class="zone sample">
+        <div class="line">
+          <div class="meta">planner
+route set</div>
+          <div class="content">
+            <p><strong>Voyons ce que contient le cockpit Sparrow</strong> pour que je puisse t'aider efficacement. Le texte reprend une taille de lecture normale, avec une largeur et des marges internes plus stables.</p>
+          </div>
+        </div>
+        <div class="line">
+          <div class="meta">coder
+running</div>
+          <div class="content">
+            <div class="tool"><span class="dot"></span><b>glob</b><span class="status">running...</span></div>
+          </div>
+        </div>
+        <div class="line">
+          <div class="meta">sparrow
+response</div>
+          <div class="content">
+            <p>Les headings restent visibles sans casser le rythme. Les chemins comme <code>scripts/audit-webview.mjs</code> restent lisibles, mais ne deviennent pas des boutons disproportionnes.</p>
+            <div class="h">Architecture du cockpit</div>
+            <table>
+              <thead><tr><th>Element</th><th>Fichier</th></tr></thead>
+              <tbody>
+                <tr><td>Mockup statique</td><td><code>sparrow-cockpit-v0.9.0-mockup.html</code></td></tr>
+                <tr><td>Audit automatise</td><td><code>scripts/audit-webview.mjs</code></td></tr>
+              </tbody>
+            </table>
+            <div class="codeblock">
+              <div class="codehead"><span>content</span><span>copy</span></div>
+              <pre>import { chromium } from 'playwright';
+// Audit Sparrow WebView Cockpit</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card roomy">
+      <div class="label">Version plus aérée <span>15.5px / 1.72</span></div>
+      <div class="zone sample">
+        <div class="line">
+          <div class="meta">planner
+route set</div>
+          <div class="content">
+            <p><strong>Voyons ce que contient le cockpit Sparrow</strong> pour que je puisse t'aider efficacement. Cette variante donne plus de respiration aux longues reponses et se rapproche davantage d'une lecture type Claude.</p>
+          </div>
+        </div>
+        <div class="line">
+          <div class="meta">coder
+running</div>
+          <div class="content">
+            <div class="tool"><span class="dot"></span><b>glob</b><span class="status">running...</span></div>
+          </div>
+        </div>
+        <div class="line">
+          <div class="meta">sparrow
+response</div>
+          <div class="content">
+            <p>Les headings sont calmes, les tableaux respirent mieux, et les blocs code n'ecrasent plus le texte autour. Les marges internes sont plus premium, mais on perd un peu de densite.</p>
+            <div class="h">Architecture du cockpit</div>
+            <table>
+              <thead><tr><th>Element</th><th>Fichier</th></tr></thead>
+              <tbody>
+                <tr><td>Mockup statique</td><td><code>sparrow-cockpit-v0.9.0-mockup.html</code></td></tr>
+                <tr><td>Audit automatise</td><td><code>scripts/audit-webview.mjs</code></td></tr>
+              </tbody>
+            </table>
+            <div class="codeblock">
+              <div class="codehead"><span>content</span><span>copy</span></div>
+              <pre>import { chromium } from 'playwright';
+// Audit Sparrow WebView Cockpit</pre>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+</body>
+</html>
