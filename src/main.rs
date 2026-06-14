@@ -63,6 +63,54 @@ fn main() -> anyhow::Result<()> {
         .map_err(|_| anyhow::anyhow!("sparrow main thread panicked"))?
 }
 
+/// Whether a command consults a model catalogue and therefore benefits from the
+/// boot-time background model discovery (Ollama probe + per-provider discovery).
+///
+/// Read-only / local-only commands (listing auth, memory, checkpoints, config,
+/// running the doctor, …) never touch a catalogue, so kicking off discovery for
+/// them just wastes startup and — worse for a trust-sensitive tool — opens a
+/// stray network connection (e.g. an Ollama probe on `localhost:11434`) that the
+/// user never asked for. This is a conservative DENYLIST: anything not listed
+/// keeps the previous behaviour (discovery on), so no model-consuming command
+/// can silently regress to an empty catalogue.
+fn command_wants_model_discovery(cmd: &Option<Commands>) -> bool {
+    use Commands::*;
+    match cmd {
+        // Bare `sparrow` opens the cockpit → wants the catalogue.
+        None => true,
+        Some(
+            Auth { .. }
+            | Memory { .. }
+            | Checkpoint { .. }
+            | Rewind { .. }
+            | Replay { .. }
+            | Sessions { .. }
+            | Permissions { .. }
+            | Profile { .. }
+            | Config { .. }
+            | Skills { .. }
+            | Plugins { .. }
+            | Tools { .. }
+            | Security { .. }
+            | Hook { .. }
+            | Mcp { .. }
+            | Import { .. }
+            | Whatis { .. }
+            | Budget { .. }
+            | Mode { .. }
+            | Doctor
+            | Setup
+            | Init
+            | Status
+            | Update
+            | Share,
+        ) => false,
+        // Everything else (run, chat, plan, model, route, console, launch,
+        // gateway, agent, swarm, …) keeps boot discovery.
+        Some(_) => true,
+    }
+}
+
 async fn async_main(cli: Cli) -> anyhow::Result<()> {
     // Quiet by default so structured logs (e.g. "Transcript saved") never
     // interleave with the user-facing answer on stdout. Logs go to stderr;
@@ -163,7 +211,7 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
     // For every provider with an environment key or stored credential but an
     // empty model cache, kick off a silent background discovery so `sparrow
     // model --list` and the router see the full catalogue on first run.
-    if !fast_console {
+    if !fast_console && command_wants_model_discovery(&cli.command) {
         let memory_for_discovery: Arc<dyn Memory> = memory.clone();
         let auth_for_discovery =
             sparrow::auth::store::ChainedAuthStore::new(config.config_dir.clone());
