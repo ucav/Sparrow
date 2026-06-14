@@ -28,7 +28,10 @@ fn natural_language_resolves_to_the_right_command() {
 #[test]
 fn empty_request_is_rejected() {
     let out = sparrow().args(["do", ""]).output().expect("run sparrow");
-    assert!(!out.status.success(), "empty request must not silently succeed");
+    assert!(
+        !out.status.success(),
+        "empty request must not silently succeed"
+    );
     let err = String::from_utf8_lossy(&out.stderr).to_lowercase();
     assert!(err.contains("langage naturel"), "stderr: {err}");
 }
