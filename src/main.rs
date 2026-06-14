@@ -111,6 +111,36 @@ fn command_wants_model_discovery(cmd: &Option<Commands>) -> bool {
     }
 }
 
+/// One-time, non-blocking informed-consent notice shown on first launch so the
+/// user knows what autonomy level Sparrow will run at before granting it any
+/// tools. The default is `Trusted` (auto-runs exec/network with notification);
+/// this surfaces that plainly and tells the user how to dial it down. Reads the
+/// real configured level so it stays accurate if the user has changed it.
+fn autonomy_consent_notice(config: &sparrow::config::Config) -> String {
+    use sparrow::event::AutonomyLevel;
+    let (level, detail) = match config.defaults.autonomy {
+        AutonomyLevel::Supervised => (
+            "Supervised",
+            "Sparrow asks before every shell command, file change, and network call.",
+        ),
+        AutonomyLevel::Trusted => (
+            "Trusted",
+            "Sparrow runs shell commands and network tools automatically — you are \
+             notified, not asked. Destructive actions always ask first, and a Git \
+             checkpoint is taken before changes (`sparrow rewind` undoes them).",
+        ),
+        AutonomyLevel::Autonomous => (
+            "Autonomous",
+            "Sparrow runs shell commands and network tools without prompting.",
+        ),
+    };
+    format!(
+        "\n  ⚙  Autonomy: {level}. {detail}\n\
+         \x20    Change it: run with `--autonomy supervised`, or set `defaults.autonomy` in config.toml.\n\
+         \x20    Safety & sandbox details: SECURITY.md\n"
+    )
+}
+
 async fn async_main(cli: Cli) -> anyhow::Result<()> {
     // Quiet by default so structured logs (e.g. "Transcript saved") never
     // interleave with the user-facing answer on stdout. Logs go to stderr;
@@ -299,6 +329,20 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         config.config_dir = active_config_dir.clone();
         config.state_dir = active_state_dir.clone();
         println!("{}", sparrow::onboarding::zero_question::ready_message());
+    }
+
+    // Informed consent (#10a): on first launch, on the interactive entry points,
+    // tell the user plainly what autonomy level they're about to grant. Printed
+    // once (config.toml doesn't exist yet on first run) and never blocks.
+    if is_first_launch
+        && matches!(
+            cli.command,
+            None | Some(Commands::Launch { .. })
+                | Some(Commands::Tui)
+                | Some(Commands::Console { .. })
+        )
+    {
+        println!("{}", autonomy_consent_notice(&config));
     }
 
     match cli.command {
@@ -2123,4 +2167,40 @@ async fn handle_webview(
     server.serve().await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod consent_tests {
+    use super::autonomy_consent_notice;
+    use sparrow::event::AutonomyLevel;
+
+    fn config_with(level: AutonomyLevel) -> sparrow::config::Config {
+        let mut c = sparrow::config::Config::default();
+        c.defaults.autonomy = level;
+        c
+    }
+
+    #[test]
+    fn trusted_notice_is_honest_about_auto_exec() {
+        let notice = autonomy_consent_notice(&config_with(AutonomyLevel::Trusted));
+        assert!(notice.contains("Trusted"));
+        // Must state that exec/network run automatically, and how to dial down.
+        assert!(notice.contains("automatically"));
+        assert!(notice.contains("--autonomy supervised"));
+        assert!(notice.contains("SECURITY.md"));
+    }
+
+    #[test]
+    fn supervised_notice_says_it_asks() {
+        let notice = autonomy_consent_notice(&config_with(AutonomyLevel::Supervised));
+        assert!(notice.contains("Supervised"));
+        assert!(notice.contains("asks before"));
+    }
+
+    #[test]
+    fn default_autonomy_is_trusted_so_consent_is_warranted() {
+        // If the default ever changes, this notice's framing must be revisited.
+        let notice = autonomy_consent_notice(&sparrow::config::Config::default());
+        assert!(notice.contains("Trusted"));
+    }
 }
