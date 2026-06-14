@@ -16,6 +16,13 @@ exclude = [
     "scripts/launch-*",
     "scripts/webview-card.html",
     "ROADMAP.md",
+    "artifacts/*.png",
+    "artifacts/**/*.png",
+    "artifacts/*.log",
+    "artifacts/*.pid",
+    "artifacts/*.html",
+    "artifacts/*.err.log",
+    "artifacts/*.out.log",
 ]
 
 [[bin]]
