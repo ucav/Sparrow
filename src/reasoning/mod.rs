@@ -1,5 +1,11 @@
 use crate::provider::{ContentBlock, Msg};
 
+// Inference-time reasoning amplification (best-of-N, self-refine, reason_max):
+// test-time compute that lets a smaller model approach frontier single-pass
+// quality on verifiable tasks.
+pub mod inference_scaling;
+pub use inference_scaling::{ReasoningBudget, best_of_n, reason_max, self_refine_from};
+
 // ─── Reasoning depth ───────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
