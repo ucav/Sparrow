@@ -698,13 +698,24 @@ impl Tui {
         }
     }
 
+    fn clear_log_state(&mut self) {
+        self.lines.clear();
+        self.groups.clear();
+        self.current_group = None;
+        self.focus_group = None;
+    }
+
     /// Match autocomplete candidates for the current input.
     fn autocomplete_matches(&self) -> Vec<&'static str> {
-        let line = &self.input_lines[0];
+        let line = self
+            .input_lines
+            .get(self.cursor_row)
+            .map(String::as_str)
+            .unwrap_or("");
         if line.starts_with('/') {
             return SLASH_COMMANDS
                 .iter()
-                .filter(|c| c.starts_with(line.as_str()) && **c != line.as_str())
+                .filter(|c| c.starts_with(line) && **c != line)
                 .copied()
                 .take(5)
                 .collect();
@@ -1327,9 +1338,9 @@ impl Tui {
                             self.rebuild_replay();
                         }
 
-                        // Ctrl+L → clear log buffer
+                        // Ctrl+L → clear log buffer and related group state
                         KeyCode::Char('l') if ctrl => {
-                            self.lines.clear();
+                            self.clear_log_state();
                         }
                         // Ctrl+I → next Enter sends as mid-run injection
                         KeyCode::Char('i') if ctrl => {
@@ -1381,7 +1392,11 @@ impl Tui {
 
                         // Tab → autocomplete or toggle agent
                         KeyCode::Tab => {
-                            let line = &self.input_lines[0];
+                            let line = self
+                                .input_lines
+                                .get(self.cursor_row)
+                                .map(String::as_str)
+                                .unwrap_or("");
                             // @agent → toggle, not insert
                             if let Some(rest) = line.strip_prefix('@') {
                                 let name = &rest.trim().to_string();
@@ -1394,8 +1409,12 @@ impl Tui {
                             } else {
                                 let matches = self.autocomplete_matches();
                                 if let Some(first) = matches.first() {
-                                    self.input_lines = vec![first.to_string()];
-                                    self.cursor_row = 0;
+                                    if let Some(line) = self.input_lines.get_mut(self.cursor_row) {
+                                        *line = first.to_string();
+                                    } else {
+                                        self.input_lines = vec![first.to_string()];
+                                        self.cursor_row = 0;
+                                    }
                                     self.cursor_col = first.len();
                                 }
                             }
@@ -1438,10 +1457,7 @@ impl Tui {
                                 // Handle in-TUI commands
                                 match task.as_str() {
                                     "/clear" => {
-                                        self.lines.clear();
-                                        self.groups.clear();
-                                        self.current_group = None;
-                                        self.focus_group = None;
+                                        self.clear_log_state();
                                     }
                                     "/collapse" => {
                                         for g in &mut self.groups {
@@ -1459,9 +1475,16 @@ impl Tui {
                                         for c in SLASH_COMMANDS {
                                             self.add_line(c, LogStyle::Dim, 1);
                                         }
+                                        self.add_line("Local shortcuts:", LogStyle::Brand, 0);
                                         self.add_line(
-                                            "Ctrl+I inject · Ctrl+L clear · Ctrl+↑/↓ focus task · Ctrl+O fold/unfold · Shift+Enter newline · Up/Down history",
-                                            LogStyle::Dim, 0,
+                                            "Esc/Ctrl+C quit · Ctrl+I inject · Ctrl+L clear · Ctrl+↑/↓ focus task · Ctrl+O fold/unfold",
+                                            LogStyle::Dim,
+                                            1,
+                                        );
+                                        self.add_line(
+                                            "Shift+Enter newline · Up/Down history · PgUp/PgDn scroll · Tab autocomplete/agent toggle",
+                                            LogStyle::Dim,
+                                            1,
                                         );
                                         self.add_line(
                                             "/collapse · /expand — fold/unfold all tasks",
@@ -2179,8 +2202,11 @@ impl Tui {
     }
 
     fn render_keyboard_hints(&self, f: &mut Frame, area: Rect) {
-        let hints =
-            format!("Esc:quit  Tab:agents  /:search  @:skills  Ctrl+R:run  Ctrl+C:stop  F1:help",);
+        let hints = if area.width < 72 {
+            "Esc quit  Tab complete  / commands  Ctrl+L clear"
+        } else {
+            "Esc/Ctrl+C quit  Tab complete/agents  / commands  Ctrl+L clear  Ctrl+I inject  PgUp/PgDn scroll"
+        };
         let line = Line::from(Span::styled(hints, Style::default().fg(self.theme.dimmer)));
         f.render_widget(
             Paragraph::new(line).alignment(ratatui::layout::Alignment::Center),

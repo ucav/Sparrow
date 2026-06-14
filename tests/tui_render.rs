@@ -84,6 +84,17 @@ fn cockpit_renders_core_hud() {
 }
 
 #[test]
+fn keyboard_hints_match_implemented_tui_shortcuts() {
+    let mut tui = busy_cockpit();
+    let text = joined(&tui.render_to_lines(100, 30));
+    assert!(text.contains("Ctrl+L clear"), "clear hint missing:\n{text}");
+    assert!(
+        !text.contains("F1:help") && !text.contains("Ctrl+R:run") && !text.contains("@:skills"),
+        "keyboard hints expose unsupported shortcuts:\n{text}"
+    );
+}
+
+#[test]
 fn swarm_lanes_render_all_three_roles() {
     let mut tui = busy_cockpit();
     let r = run();

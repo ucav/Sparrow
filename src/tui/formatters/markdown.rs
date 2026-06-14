@@ -174,11 +174,11 @@ pub fn render_markdown_with_theme(md: &str, syntax_theme: &str) -> String {
                 }
                 Tag::Link {
                     link_type: _,
-                    dest_url: _,
+                    dest_url,
                     title: _,
                     id: _,
                 } => {
-                    // Links will be rendered when we hit the End tag
+                    current_link_url = Some(dest_url.to_string());
                 }
                 Tag::Image {
                     link_type: _,
@@ -256,11 +256,20 @@ pub fn render_markdown_with_theme(md: &str, syntax_theme: &str) -> String {
                 }
                 _ => {}
             },
-            Event::Text(text) | Event::Code(text) => {
+            Event::Text(text) => {
                 if in_code_block {
                     code_buf.push_str(&text);
                 } else {
                     out.push_str(&text);
+                }
+            }
+            Event::Code(text) => {
+                if in_code_block {
+                    code_buf.push_str(&text);
+                } else {
+                    out.push_str(styles.code_inline);
+                    out.push_str(&text);
+                    out.push_str(styles.reset);
                 }
             }
             Event::Html(raw) => {
@@ -353,4 +362,23 @@ fn highlight_code_block(
     }
 
     out.trim_end_matches('\n').to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn inline_code_uses_code_style() {
+        let rendered = render_markdown("Run `cargo test` now.");
+        assert!(rendered.contains("\x1b[48;2;22;18;13;38;2;242;201;76m"));
+        assert!(rendered.contains("cargo test"));
+    }
+
+    #[test]
+    fn links_keep_their_url() {
+        let rendered = render_markdown("[docs](https://example.com/docs)");
+        assert!(rendered.contains("docs"));
+        assert!(rendered.contains("(https://example.com/docs)"));
+    }
 }

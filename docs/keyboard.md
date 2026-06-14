@@ -7,14 +7,15 @@
 | `Enter` | Submit current input |
 | `Shift+Enter` | Insert newline in the input box |
 | `Up` / `Down` | Walk through command history (oldest ↔ freshest) |
-| `Tab` | Slash-command autocomplete (first match) |
+| `Tab` | Slash-command autocomplete, or toggle a typed `@agent` when it matches a known agent |
 | `Ctrl+I` | Inject text into the running run (no new turn) |
-| `Ctrl+L` | Clear the cockpit pane |
+| `Ctrl+L` | Clear the cockpit pane and task grouping state |
 | `Ctrl+O` | Fold / unfold tool activity for the focused task |
 | `Ctrl+↑` / `Ctrl+↓` | Move focus between tasks/swarm lanes |
 | `/collapse` | Fold all tasks |
 | `/expand` | Unfold all tasks |
-| `q` or `Esc` (in fallback view) | Quit the TUI |
+| `Esc` / `Ctrl+C` | Quit the TUI |
+| `q` | Quit replay mode only |
 
 ## WebView console (`sparrow console`)
 

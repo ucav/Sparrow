@@ -2085,6 +2085,39 @@ fn transcripts_dir() -> std::path::PathBuf {
         .join("transcripts")
 }
 
+fn redact_ui_summary(input: &str, max_len: usize) -> String {
+    let mut out = input.split_whitespace().collect::<Vec<_>>().join(" ");
+    let patterns = [
+        (
+            r"(?i)\b([A-Z0-9_]*(?:API|TOKEN|SECRET|KEY|PASSWORD|PASS|AUTH|BEARER)[A-Z0-9_]*\s*[:=]\s*)[^\s,;]+",
+            "$1[redacted]",
+        ),
+        (
+            r"\b(?:sk|pk|ghp|gho|github_pat|xox[baprs])-[-_A-Za-z0-9]{12,}\b",
+            "[redacted]",
+        ),
+        (
+            r"(?i)\bBearer\s+[-._~+/A-Za-z0-9]+=*\b",
+            "Bearer [redacted]",
+        ),
+    ];
+    for (pat, replacement) in patterns {
+        if let Ok(re) = regex::Regex::new(pat) {
+            out = re.replace_all(&out, replacement).into_owned();
+        }
+    }
+    if out.chars().count() > max_len {
+        let mut truncated = out
+            .chars()
+            .take(max_len.saturating_sub(1))
+            .collect::<String>();
+        truncated.push('…');
+        truncated
+    } else {
+        out
+    }
+}
+
 #[derive(serde::Deserialize)]
 struct ReplayQuery {
     #[serde(default)]
@@ -2113,7 +2146,7 @@ async fn list_replays() -> axum::extract::Json<serde_json::Value> {
                 .unwrap_or_default();
             serde_json::json!({
                 "run_id": id,
-                "task": task,
+                "task": redact_ui_summary(&task, 140),
                 "event_count": meta.get("event_count").cloned().unwrap_or(0.into()),
                 "created_at": meta.get("created_at").cloned().unwrap_or("".into()),
             })
@@ -2152,7 +2185,7 @@ async fn list_runs() -> axum::extract::Json<serde_json::Value> {
                 .unwrap_or_default();
             serde_json::json!({
                 "run_id": id,
-                "task": task,
+                "task": redact_ui_summary(&task, 140),
                 "status": "recorded",
                 "active": false,
                 "event_count": meta.get("event_count").cloned().unwrap_or(0.into()),
@@ -2650,6 +2683,18 @@ mod tests {
             webview_cli_args("/run analyse le repo github").unwrap(),
             vec!["run".to_string(), "analyse le repo github".to_string()]
         );
+    }
+
+    #[test]
+    fn ui_run_summaries_redact_and_truncate_sensitive_text() {
+        let summary = redact_ui_summary(
+            "deploy with OPENAI_API_KEY=sk-super-secret-token-1234567890 and continue with a very long task description that should not flood the right sidebar",
+            80,
+        );
+        assert!(summary.contains("OPENAI_API_KEY=[redacted]"));
+        assert!(!summary.contains("sk-super-secret"));
+        assert!(summary.ends_with('…'));
+        assert!(summary.chars().count() <= 80);
     }
 
     #[test]

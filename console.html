@@ -35,17 +35,17 @@
     box-shadow:0 44px 130px -34px rgba(0,0,0,.86),0 0 0 1px rgba(242,169,60,.04),inset 0 1px 0 rgba(255,255,255,.03);
     animation:rise .7s cubic-bezier(.2,.8,.2,1) both}
   @keyframes rise{from{opacity:0;transform:translateY(14px) scale(.99)}to{opacity:1;transform:none}}
-  .chrome{display:flex;align-items:center;gap:9px;padding:11px 15px;border-bottom:1px solid var(--line);
+  .chrome{display:flex;align-items:center;gap:9px;min-height:46px;padding:8px 15px;border-bottom:1px solid var(--line);
     background:linear-gradient(180deg,#1a150f,#15110b)}
   .dot{width:11px;height:11px;border-radius:50%}
   .dot.r{background:#e15a52}.dot.y{background:#e0a93a}.dot.g{background:#62b85a}
   .chrome .nm{margin-left:8px;color:var(--dim);font-size:12.5px}.chrome .nm b{color:var(--brand)}
-  .chrome .right{margin-left:auto;display:flex;gap:8px;align-items:center}
+  .chrome .right{margin-left:auto;display:flex;gap:8px;align-items:center;justify-content:flex-end;min-width:0}
   .btn{font-family:var(--mono-font);font-size:11px;letter-spacing:.5px;color:var(--brand);cursor:pointer;
     background:color-mix(in srgb,var(--brand) 10%,transparent);border:1px solid color-mix(in srgb,var(--brand) 40%,transparent);
-    padding:4px 12px;border-radius:7px;transition:.15s}
+    min-height:32px;padding:5px 12px;border-radius:7px;transition:.15s;display:inline-flex;align-items:center;justify-content:center}
   .btn:hover{background:color-mix(in srgb,var(--brand) 22%,transparent)}
-  .btn.sm{font-size:10px;padding:2px 8px}
+  .btn.sm{font-size:10px;padding:5px 10px}
 
   .cockpit{display:grid;grid-template-columns:minmax(190px,auto) minmax(220px,1fr) repeat(5,max-content) max-content;align-items:center;gap:0;padding:0 clamp(16px,2vw,30px);
     border-bottom:1px solid var(--line);background:linear-gradient(180deg,#1b150d,#161108);font-size:12px;min-width:0;overflow:hidden}
@@ -191,7 +191,7 @@
     overflow:hidden;pointer-events:none;color:transparent}
   .composer-ghost .g-rest{color:var(--dimmer);opacity:.85}
   html[data-view="focus"] .composer-ghost{font-size:15px;padding:11px 13px;border-radius:8px}
-  .input-bar button{font-family:inherit;font-size:11px;padding:6px 14px;cursor:pointer}
+  .input-bar button{font-family:inherit;font-size:11px;min-height:32px;padding:6px 14px;cursor:pointer}
   .attach-btn{display:inline-flex;align-items:center;justify-content:center;width:34px;height:31px;border-radius:7px;color:var(--steel);
     border:1px solid var(--line);background:var(--panel);cursor:pointer;transition:.15s}
   .attach-btn:hover{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 45%,var(--line))}
@@ -321,6 +321,22 @@
     .rail-logo{width:28px;height:28px}
     body.drawer-open .drawer{width:min(280px,calc(100vw - 42px))}
   }
+  @media(max-width:640px){
+    .win{grid-template-columns:42px minmax(0,1fr)}
+    .win .main{grid-column:2;grid-template-rows:auto auto minmax(0,1fr) auto auto}
+    .win .rightbar{grid-column:2}
+    .cockpit{display:flex;gap:0;overflow-x:auto;overscroll-behavior-x:contain;padding:0 8px}
+    .cockpit::-webkit-scrollbar{height:4px}
+    .cockpit::-webkit-scrollbar-thumb{background:var(--line-hot);border-radius:999px}
+    .cmark,.route-stat,.stat{flex:0 0 auto;min-height:40px;border-bottom:0}
+    .cmark{min-width:150px}
+    .route-stat{min-width:210px}
+    .stat{padding:8px 10px}
+    .swarm-cockpit{max-height:128px}
+    .lane{flex:1 1 100%;min-width:100%;max-width:none;border-right:0}
+    .input-bar{grid-template-columns:auto minmax(0,1fr) auto;padding:8px 10px 10px}
+    .context-side{display:none}
+  }
 
   /* ─── v0.9 : right tools sidebar (Preview · Diff · Terminal · Files · Tasks · Plan) ── */
   .rightbar{
@@ -336,7 +352,7 @@
   .rb-head .rb-title{flex:1;font-size:11px;letter-spacing:1.6px;text-transform:uppercase;color:var(--dim);font-weight:700;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .rb-head button{border:none;background:transparent;color:var(--dimmer);cursor:pointer;font-size:14px;
-    padding:3px 7px;border-radius:6px;font-family:inherit;transition:.12s;line-height:1}
+    min-width:32px;min-height:32px;padding:5px 8px;border-radius:6px;font-family:inherit;transition:.12s;line-height:1}
   .rb-head button:hover{color:var(--fg);background:var(--panel2)}
   .rb-head .rb-pin.on{color:var(--brand)}
   .rb-body{flex:1;overflow-y:auto;min-height:0;padding:10px 12px}
@@ -401,7 +417,7 @@
     background:color-mix(in srgb,var(--brand) 6%,var(--panel2));border:1px solid color-mix(in srgb,var(--brand) 25%,var(--line))}
   .rb-objective .ob-label{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:var(--dimmer);margin-bottom:3px}
   .rb-preview-frame{width:100%;height:46vh;border:1px solid var(--line);border-radius:8px;background:#fff;margin-top:8px}
-  .rb-btn{font-family:inherit;font-size:10.5px;padding:4px 10px;border-radius:6px;cursor:pointer;transition:.13s;
+  .rb-btn{font-family:inherit;font-size:10.5px;min-height:30px;padding:5px 10px;border-radius:6px;cursor:pointer;transition:.13s;
     color:var(--brand);background:color-mix(in srgb,var(--brand) 9%,transparent);
     border:1px solid color-mix(in srgb,var(--brand) 35%,transparent)}
   .rb-btn:hover{background:color-mix(in srgb,var(--brand) 18%,transparent)}
@@ -497,9 +513,9 @@
   :root[data-theme="paper"] .context-track{background:color-mix(in srgb,var(--line-hot) 42%,var(--bg));height:4px}
 
   /* chrome chips */
-  .chip-btn{font-family:inherit;font-size:11px;padding:3px 9px;border-radius:6px;
+  .chip-btn{font-family:inherit;font-size:11px;min-height:32px;padding:5px 10px;border-radius:6px;
     background:transparent;color:var(--dim);border:1px solid var(--line);cursor:pointer;
-    display:inline-flex;align-items:center;gap:5px;transition:.15s;letter-spacing:.3px}
+    display:inline-flex;align-items:center;justify-content:center;gap:5px;transition:.15s;letter-spacing:.3px;white-space:nowrap}
   .chip-btn:hover{color:var(--fg);border-color:var(--line-hot);background:color-mix(in srgb,var(--brand) 5%, transparent)}
   .chip-btn.solid{background:color-mix(in srgb,var(--brand) 9%,transparent);
     border-color:color-mix(in srgb,var(--brand) 32%,transparent);color:var(--brand)}
@@ -877,10 +893,10 @@
   .learn-toast{animation:learnpop 4.2s ease}
   @keyframes learnpop{0%{opacity:0;transform:translateY(5px)}10%{opacity:1;transform:none}82%{opacity:1}100%{opacity:0;transform:translateY(-5px)}}
   /* v0.9 Focus mode: one-column, readable, no cockpit noise. */
-  .view-toggle{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:2px}
-  .view-toggle button{font-family:inherit;font-size:10.5px;border:0;border-radius:6px;background:transparent;color:var(--dim);padding:4px 9px;cursor:pointer}
+  .view-toggle{display:inline-flex;align-items:center;gap:4px;min-height:32px;border:1px solid var(--line);border-radius:8px;background:var(--panel);padding:2px}
+  .view-toggle button{font-family:inherit;font-size:10.5px;min-height:26px;border:0;border-radius:6px;background:transparent;color:var(--dim);padding:5px 10px;cursor:pointer}
   .view-toggle button[aria-pressed="true"]{color:var(--brand);background:color-mix(in srgb,var(--brand) 16%,transparent)}
-  .focus-actions{display:none;align-items:center;justify-content:center;gap:10px;padding:10px clamp(16px,2vw,30px);border-top:1px solid var(--line);background:linear-gradient(180deg,#17120d,#120f0b)}
+  .focus-actions{display:none;align-items:center;justify-content:center;gap:10px;padding:10px clamp(16px,2vw,30px);border-top:1px solid var(--line);background:color-mix(in srgb,var(--panel) 88%,var(--bg))}
   .focus-actions button{min-width:104px;font-size:12px;padding:7px 14px}
   .focus-actions .ok-action{color:var(--add);background:color-mix(in srgb,var(--add) 12%,transparent);border-color:color-mix(in srgb,var(--add) 44%,var(--line))}
   .focus-actions .undo-action{color:var(--rem);background:color-mix(in srgb,var(--rem) 10%,transparent);border-color:color-mix(in srgb,var(--rem) 44%,var(--line))}
@@ -909,8 +925,15 @@
   html[data-view="focus"] .context-side{display:none}
   html[data-view="focus"] .input-bar textarea{min-height:46px;font-size:15px;padding:11px 13px;border-radius:8px}
   @media(max-width:720px){
-    html[data-view="focus"] .chrome .right{gap:4px;overflow-x:auto}
-    html[data-view="focus"] .chrome .nm{display:none}
+    .chrome{align-items:flex-start;gap:6px;padding:7px 9px}
+    .chrome .right{margin-left:0;flex:1 1 auto;gap:5px;overflow-x:auto;flex-wrap:nowrap;max-width:calc(100vw - 42px);justify-content:flex-start;padding-bottom:2px}
+    .chrome .right::-webkit-scrollbar{height:4px}
+    .chrome .right::-webkit-scrollbar-thumb{background:var(--line-hot);border-radius:999px}
+    .chrome .nm{display:none}
+    .chip-btn,.btn,.view-toggle{flex:0 0 auto}
+    .chip-btn,.btn{min-height:36px}
+    .view-toggle{min-height:36px}
+    .view-toggle button{min-height:30px}
     html[data-view="focus"] .input-bar{grid-template-columns:auto auto minmax(0,1fr) auto}
     .focus-actions{gap:6px}.focus-actions button{min-width:0;flex:1;padding:7px 9px}
   }
@@ -944,20 +967,20 @@
   /* ─── Compact cards & syntax highlighting ─────────────────────────── */
   /* Message cards in the term area */
   .ln{white-space:pre-wrap;word-break:break-word;animation:in .18s ease;
-    padding:6px 0;line-height:1.5;max-width:820px}
-  .ln+.ln{margin-top:2px}
+    padding:5px 0;line-height:1.62;max-width:900px;letter-spacing:0}
+  .ln+.ln{margin-top:4px}
 
   /* Sender labels */
-  .ln .user{color:var(--brand);font-weight:600;font-size:11.5px;letter-spacing:.3px}
-  .ln .agent{color:var(--agent);font-weight:600;font-size:11.5px;letter-spacing:.3px}
-  .ln .muted{color:var(--dimmer);font-weight:400;font-size:10.5px}
+  .ln .user{color:var(--brand);font-weight:600;font-size:12px;letter-spacing:0}
+  .ln .agent{color:var(--agent);font-weight:600;font-size:12px;letter-spacing:0}
+  .ln .muted{color:var(--dimmer);font-weight:400;font-size:11px;letter-spacing:0}
   .ln b{color:var(--fg);font-weight:600}
 
   /* Code blocks */
-  .ln code,.code-block{font-family:var(--mono-font);font-size:11.5px;
+  .ln > code:not(.md-ic),.code-block{font-family:var(--mono-font);font-size:12.5px;
     background:var(--panel2);border-left:2px solid var(--brand);
-    padding:8px 12px;margin:6px 0;display:block;border-radius:0 6px 6px 0;
-    overflow-x:auto;line-height:1.55;color:var(--steel)}
+    padding:11px 13px;margin:12px 0;display:block;border-radius:0 7px 7px 0;
+    overflow-x:auto;line-height:1.55;color:var(--steel);letter-spacing:0}
   .code-block .kw{color:var(--planner)}   /* keywords */
   .code-block .fn{color:var(--agent)}     /* functions */
   .code-block .str{color:var(--add)}      /* strings */
@@ -979,10 +1002,10 @@
 
   /* Tool call card */
   .tool-call{background:var(--panel);border:1px solid var(--line);
-    border-radius:8px;padding:8px 12px;margin:6px 0;max-width:720px}
-  .tool-call .tool-name{color:var(--planner);font-weight:700;font-size:11px;
-    letter-spacing:.5px;text-transform:uppercase}
-  .tool-call .tool-args{color:var(--dim);font-size:11px;font-family:var(--mono-font)}
+    border-radius:9px;padding:10px 12px;margin:12px 0;max-width:900px}
+  .tool-call .tool-name{color:var(--planner);font-weight:700;font-size:11.5px;
+    letter-spacing:0;text-transform:uppercase}
+  .tool-call .tool-args{color:var(--dim);font-size:11.5px;line-height:1.5;font-family:var(--mono-font)}
 
   /* Reduce vertical spacing in swarm cards */
   .lane{padding:4px 10px;gap:1px}
@@ -997,23 +1020,34 @@
   .approval-card p{font-size:11px!important}
   .approval-card button{font-size:11px!important;padding:6px 12px!important}
 
-  /* Compact the term area */
-  #term{padding:12px clamp(14px,2vw,24px) 16px;font-size:12.5px;line-height:1.5}
-  /* ─── Compact density — cards collapsed by default, tight spacing ─── */
-  .ln{padding:1px 0;min-height:unset}
+  /* Recommended text-zone rhythm: 15px / 1.62 with stable internal margins. */
+  #term{padding:20px clamp(24px,2.6vw,34px) 22px;font-size:15px;line-height:1.62;letter-spacing:0}
+  html[data-view="focus"] #term{font-size:calc(15px * var(--read-scale,1));line-height:1.62;padding:26px max(26px,calc((100% - 920px)/2)) 24px}
+  html[data-view="focus"] .ln{max-width:920px}
+  /* ─── Compact density — cards collapsed by default, with readable text rhythm ─── */
+  .ln{padding:5px 0;min-height:unset;line-height:1.62;max-width:900px;letter-spacing:0}
   .ln+.ln{border-top:none}
-  .ln .prompt{color:var(--brand);font-weight:600;font-size:11px}
-  .ln .cmd{color:var(--fg);font-weight:400;font-size:12px}
-  .ln .muted{color:var(--dimmer);font-size:10px}
+  .ln .prompt{color:var(--brand);font-weight:600;font-size:12px;letter-spacing:0}
+  .ln .cmd{color:var(--fg);font-weight:400;font-size:15px;line-height:1.62;letter-spacing:0}
+  .ln .muted{color:var(--dimmer);font-size:11px;line-height:1.45;letter-spacing:0}
   /* Tool cards: compact when idle, only expand when user clicks */
-  .code-card summary,.code-block summary{padding:4px 8px;font-size:10.5px}
-  .code-card pre,.code-block .cb-body{padding:6px 10px;font-size:11px;max-height:300px;overflow:auto}
-  .code-card:not([open]){margin:2px 0;padding:0}
+  .tool-card{margin:12px 0;border-radius:9px}
+  .tool-card summary{min-height:38px;padding:0 12px;font-size:13px;letter-spacing:0}
+  .tool-card summary .nm{font-size:13px}
+  .tool-card summary .ok{font-size:11px}
+  .tool-card .det{padding:10px 12px;font-size:11.5px;line-height:1.5}
+  .code-card,.code-block{margin:12px 0;border-radius:9px}
+  .code-card summary,.code-block summary{min-height:34px;padding:0 10px;font-size:11.5px;letter-spacing:0}
+  .code-card pre,.code-block .cb-body{padding:11px 13px;font-size:12.5px;max-height:340px;overflow:auto}
+  .code-card code,.code-block .cb-body code{font-size:12.5px;line-height:1.55;letter-spacing:0}
+  .code-card:not([open]){margin:8px 0;padding:0}
   /* Diff cards: tighter */
-  .diff-card{margin:3px 0;font-size:11px}
-  .diff-card pre{padding:4px 8px;font-size:10.5px;line-height:1.3;max-height:200px;overflow:auto}
-  /* Verbose lines: small, dim, one-liner */
-  .verbose{font-size:10px;color:var(--dimmer);padding:1px 0;border:none}
+  .diff-card{margin:10px 0;font-size:12px}
+  .diff-card pre{padding:9px 11px;font-size:12px;line-height:1.45;max-height:260px;overflow:auto}
+  /* Reasoning / verbose lines: compact and dim so they do not consume the page. */
+  .verbose{font-size:11px;line-height:1.35;color:var(--dimmer);padding:2px 0;border:none;opacity:.78}
+  .verbose-tick{font-size:11px;line-height:1.35;margin:3px 0;opacity:.72}
+  .agent-activity{font-size:11px;line-height:1.35;padding:1px 7px;margin-left:7px}
   /* Swarm lanes: hide idle agents, compact working ones */
   .lane.idle-card{display:none}
   .lane{flex:0 0 auto;min-width:unset;max-width:unset;padding:2px 6px}
@@ -1301,6 +1335,7 @@
         <button id="cockpitModeBtn" type="button" aria-pressed="false">Cockpit</button>
       </span>
       <button class="chip-btn" id="cmdkBtn" title="Cmd+K commands">⌘K commands</button>
+      <button class="chip-btn" id="kbdBtn" title="Keyboard shortcuts" aria-label="Keyboard shortcuts">⌘/</button>
       <button class="chip-btn solid" id="replayBtn" title="Replay last run">▸ replay</button>
       <button class="chip-btn" id="abortChromeBtn" title="Abort the running task" style="display:none;color:var(--rem);background:color-mix(in srgb,var(--rem) 12%,transparent);border-color:color-mix(in srgb,var(--rem) 50%,transparent)">◼ abort</button>
       <button class="chip-btn" id="soundBtn" title="Cmd+M mute sounds">🔊</button>
@@ -2163,7 +2198,7 @@ function toggleReplayPicker(anchor){
     if(!items.length){host.innerHTML='<div style="padding:12px 14px;color:var(--dimmer);font-size:11px">No recorded runs yet — finish a task and it appears here.</div>';return;}
     host.innerHTML=items.map(it=>
       `<div class="mp-item" data-replay-id="${escAttr(it.run_id)}">
-        <span class="mp-name" title="${escAttr(it.task||it.run_id)}">${esc((it.task||it.run_id).slice(0,60)||it.run_id)}</span>
+        <span class="mp-name" title="${escAttr(rbShortText(it.task||it.run_id,140))}">${esc(rbShortText(it.task||it.run_id,60)||it.run_id)}</span>
         <span class="mp-ctx">${esc(String(it.event_count||0))} ev</span>
         <span class="mp-cost">${esc((it.created_at||'').slice(5,16))}</span>
       </div>`).join('');
@@ -2183,6 +2218,7 @@ function bindChromeChips(){
   if(focusBtn)focusBtn.addEventListener('click',()=>setViewMode('focus'));
   if(cockpitBtn)cockpitBtn.addEventListener('click',()=>setViewMode('cockpit'));
   const cmdk=document.getElementById('cmdkBtn');if(cmdk)cmdk.addEventListener('click',()=>{chirp(1000,.04);paletteOpen()});
+  const kbd=document.getElementById('kbdBtn');if(kbd)kbd.addEventListener('click',()=>{chirp(900,.04);toggleKbdHelp();});
   const rb=document.getElementById('replayBtn');if(rb)rb.addEventListener('click',async()=>{
     chirp(800,.05);setTimeout(()=>chirp(1200,.05),80);
     toggleReplayPicker(rb);
@@ -2221,6 +2257,7 @@ function bindChromeChips(){
 
 function setViewMode(mode){
   mode=mode==='cockpit'?'cockpit':'focus';
+  if(mode!=='focus'&&typeof window.__sparrowDismissFocusTour==='function')window.__sparrowDismissFocusTour();
   document.documentElement.dataset.view=mode;
   localStorage.setItem('sparrow-view-mode',mode);
   const focusBtn=document.getElementById('focusModeBtn');
@@ -2310,21 +2347,48 @@ function initFocusTour(){
   document.body.appendChild(pop);
   function done(){
     localStorage.setItem('sparrow-focus-tour-done','1');
+    window.removeEventListener('resize',render);
+    window.removeEventListener('scroll',render,true);
     pop.remove();
+  }
+  window.__sparrowDismissFocusTour=done;
+  function placeTour(target){
+    const r=target.getBoundingClientRect();
+    const margin=12;
+    const guards=['.focus-actions','.input-bar']
+      .map(sel=>document.querySelector(sel)?.getBoundingClientRect())
+      .filter(rect=>rect&&rect.height>0&&rect.top>0)
+      .map(rect=>rect.top);
+    const bottomGuard=(guards.length?Math.min(...guards):window.innerHeight)-margin;
+    const popW=Math.min(300,window.innerWidth-28);
+    const popH=Math.min(190,pop.offsetHeight||150);
+    const candidates=[
+      {top:r.top,left:r.right+margin},
+      {top:r.bottom+margin,left:r.left},
+      {top:r.top,left:r.left-popW-margin},
+      {top:r.top-popH-margin,left:r.left},
+    ];
+    let best=candidates.find(p=>
+      p.left>=margin&&p.left+popW<=window.innerWidth-margin&&
+      p.top>=margin&&p.top+popH<=bottomGuard
+    )||candidates[0];
+    best.left=Math.min(window.innerWidth-popW-margin,Math.max(margin,best.left));
+    best.top=Math.min(bottomGuard-popH,Math.max(margin,best.top));
+    if(!Number.isFinite(best.top)||best.top<margin)best.top=margin;
+    pop.style.left=best.left+'px';
+    pop.style.top=best.top+'px';
   }
   function render(){
     const [sel,title,body]=steps[i];
     const target=document.querySelector(sel);
     if(!target){done();return;}
-    const r=target.getBoundingClientRect();
     pop.innerHTML=`<b>${escHtml(title)}</b><div>${escHtml(body)}</div><div class="tour-actions"><button type="button" data-tour="skip">Skip</button><button class="primary" type="button" data-tour="next">${i===steps.length-1?'Done':'Next'}</button></div>`;
-    const top=Math.min(window.innerHeight-150,Math.max(12,r.top-12));
-    const left=Math.min(window.innerWidth-314,Math.max(12,r.left+r.width+12));
-    pop.style.top=top+'px';
-    pop.style.left=(left<20?20:left)+'px';
+    placeTour(target);
     pop.querySelector('[data-tour="skip"]').addEventListener('click',done);
     pop.querySelector('[data-tour="next"]').addEventListener('click',()=>{i++;if(i>=steps.length)done();else render();});
   }
+  window.addEventListener('resize',render);
+  window.addEventListener('scroll',render,true);
   setTimeout(render,650);
 }
 
@@ -2376,9 +2440,10 @@ const PANEL_LOADERS={
   security:loadSecurityPanel,
   artifacts:loadArtifactsPanel,
 };
-function openPanel(name){
+function openPanel(name,opts){
+  opts=opts||{};
   // On narrow viewport, the drawer is fixed/overlay. Toggle visibility.
-  if(window.innerWidth<=980)document.body.classList.add('drawer-open');
+  if(opts.reveal!==false&&window.innerWidth<=980)document.body.classList.add('drawer-open');
   // Highlight the matching rail icon + drawer section.
   document.querySelectorAll('.rail .ico').forEach(b=>b.classList.toggle('active',b.dataset.panel===name));
   document.querySelectorAll('.drawer .panel').forEach(p=>p.classList.toggle('active',p.dataset.panelBody===name));
@@ -2396,7 +2461,7 @@ document.addEventListener('click',e=>{
 function restoreActivePanel(){
   const stored=localStorage.getItem('sparrow-active-panel');
   const name=(stored&&PANEL_LOADERS[stored])?stored:'sessions';
-  openPanel(name);
+  openPanel(name,{reveal:window.innerWidth>980});
   // Belt-and-suspenders: pre-fetch data for every panel so switching tabs
   // is instant, but make ABSOLUTELY sure exactly one panel has .active set
   // after we're done — guard against any race that might add .active to
@@ -2776,11 +2841,15 @@ let PALETTE_CMDS=[];     // cached `/commands` payload
 let PALETTE_AGENTS=[];   // cached `/agents` payload (also used by @-picker)
 let PALETTE_FILTERED=[];
 let PALETTE_SEL=0;
+let PALETTE_LOADING=null;
+let PALETTE_ERROR='';
 async function loadCommandsCache(){
   try{
     const r=await fetch('/commands');const j=await r.json();
     PALETTE_CMDS=Array.isArray(j.commands)?j.commands:[];
-  }catch(_){}
+  }catch(_){
+    PALETTE_ERROR='commands unavailable';
+  }
 }
 async function loadAgentsCache(){
   try{
@@ -2795,6 +2864,14 @@ async function loadAgentsCache(){
       {name:'verifier',role:'verifier',description:'adversarial review',status:'idle',msg:'',color_key:'verifier'},
     ];
   }
+}
+async function ensurePaletteData(){
+  if(PALETTE_CMDS.length&&PALETTE_AGENTS.length)return;
+  if(!PALETTE_LOADING){
+    PALETTE_ERROR='';
+    PALETTE_LOADING=Promise.all([loadCommandsCache(),loadAgentsCache()]).finally(()=>{PALETTE_LOADING=null;});
+  }
+  await PALETTE_LOADING;
 }
 async function loadHistoryCache(){
   try{
@@ -2885,12 +2962,15 @@ document.addEventListener('click',e=>{
   }
 });
 // ──────────────────────────────────────────────────────────────────────────
-function paletteOpen(){
+async function paletteOpen(){
   document.getElementById('palette').classList.add('open');
   const inp=document.getElementById('paletteInput');
   const source=document.getElementById('taskInput')?.value||'';
   inp.value=source.startsWith('/')?source:'';
   PALETTE_SEL=0;
+  const host=document.getElementById('paletteResults');
+  if(host)host.innerHTML='<div class="pempty">Loading commands…</div>';
+  await ensurePaletteData();
   paletteFilter(inp.value);
   setTimeout(()=>inp.focus(),20);
 }
@@ -2926,6 +3006,8 @@ function paletteFilter(q){
 }
 function paletteRender(){
   const host=document.getElementById('paletteResults');
+  if(PALETTE_LOADING){host.innerHTML='<div class="pempty">Loading commands…</div>';return;}
+  if(PALETTE_ERROR&&!PALETTE_CMDS.length&&!PALETTE_AGENTS.length){host.innerHTML=`<div class="pempty">${escHtml(PALETTE_ERROR)}</div>`;return;}
   if(!PALETTE_FILTERED.length){host.innerHTML='<div class="pempty">No matches.</div>';return;}
   host.innerHTML=PALETTE_FILTERED.map((it,i)=>{
     const bucket=paletteKindBucket(it.kind);
@@ -3929,7 +4011,7 @@ function setVerbose(on){
 }
 function verboseLine(text,cls){
   if(!VERBOSE)return;
-  line(`<span class="muted" style="font-size:10px;opacity:.85">${cls?`<span class="${cls}">`:''}∙ ${esc(text)}${cls?'</span>':''}</span>`);
+  line(`<span class="muted verbose" style="font-size:11px;line-height:1.35;opacity:.78">${cls?`<span class="${cls}">`:''}∙ ${esc(text)}${cls?'</span>':''}</span>`);
 }
 
 // Coalesce high-frequency token-estimate ticks into a single live row so the
@@ -4014,9 +4096,18 @@ function rbIsExec(name,args){
   return RB_EXEC_NAMES.has(String(name||'').toLowerCase())||!!(args&&typeof args==='object'&&args.command);
 }
 function rbNow(){return new Date().toLocaleTimeString('en-US',{hour12:false})}
+function rbShortText(value,max=120){
+  let s=String(value||'').replace(/\s+/g,' ').trim();
+  if(!s)return '';
+  s=s.replace(/([A-Z0-9_]*(?:API|TOKEN|SECRET|KEY|PASSWORD|PASS|AUTH|BEARER)[A-Z0-9_]*\s*[:=]\s*)[^\s,;]+/gi,'$1[redacted]');
+  s=s.replace(/\b(?:sk|pk|ghp|gho|github_pat|xox[baprs])-[-_A-Za-z0-9]{12,}\b/g,'[redacted]');
+  s=s.replace(/\bBearer\s+[-._~+/A-Za-z0-9]+=*\b/gi,'Bearer [redacted]');
+  return s.length>max?s.slice(0,max-1)+'…':s;
+}
 
 // ── open / close / toggle ──
 function openRightSidebar(tab,reason){
+  if(typeof window.__sparrowDismissFocusTour==='function')window.__sparrowDismissFocusTour();
   if(tab&&!RB_TABS[tab])tab=null;
   RB.isOpen=true;
   if(tab!==undefined)RB.activeTab=tab;
@@ -4073,7 +4164,10 @@ function rbSyncChrome(){
     btn.classList.toggle('solid',RB.isOpen);
   }
   const bar=document.getElementById('rightbar');
-  if(bar)bar.setAttribute('aria-hidden',String(!RB.isOpen));
+  if(bar){
+    bar.setAttribute('aria-hidden',String(!RB.isOpen));
+    try{bar.inert=!RB.isOpen;}catch(_){}
+  }
 }
 
 // ── rendering ──
@@ -4225,7 +4319,10 @@ async function rbFetchIntelDigests(){
   catch(_){RB_INTEL_DIGESTS=RB_INTEL_DIGESTS||[];}
 }
 async function rbFetchRuns(){
-  try{const j=await fetch('/runs').then(r=>r.json());RB_RUNS=Array.isArray(j.runs)?j.runs:[];}
+  try{
+    const j=await fetch('/runs').then(r=>r.json());
+    RB_RUNS=(Array.isArray(j.runs)?j.runs:[]).map(r=>Object.assign({},r,{task:rbShortText(r.task||r.run_id||'run',90)}));
+  }
   catch(_){RB_RUNS=RB_RUNS||[];}
 }
 function rbRenderRoadmap(body){
@@ -4233,9 +4330,9 @@ function rbRenderRoadmap(body){
     const items=RB_INTEL_BACKLOG||[];
     if(!items.length){body.innerHTML='<div class="rb-empty">No scored intel backlog yet.<br><span style="font-size:10.5px">Run `sparrow intel scan` with opt-in public sources, then reopen this panel.</span></div>';return;}
     body.innerHTML=items.map(t=>
-      `<div class="rb-row"><div class="r-top"><span class="r-name">${esc(t.title||'ticket')}</span><span class="rb-st waiting">${esc(String(t.score||0))}</span></div>
-      <div class="r-meta"><span>${esc(t.reason||'')}</span></div>
-      <div class="r-meta"><span>${esc(t.source||'')}</span><span>${esc(t.url||'')}</span></div></div>`).join('');
+      `<div class="rb-row"><div class="r-top"><span class="r-name" title="${escAttr(t.title||'ticket')}">${esc(rbShortText(t.title||'ticket',78))}</span><span class="rb-st waiting">${esc(String(t.score||0))}</span></div>
+      <div class="r-meta"><span>${esc(rbShortText(t.reason||'',150))}</span></div>
+      <div class="r-meta"><span>${esc(t.source||'')}</span><span>${esc(rbShortText(t.url||'',100))}</span></div></div>`).join('');
   };
   if(RB_INTEL_BACKLOG===null){body.innerHTML='<div class="rb-empty">loading roadmap…</div>';rbFetchIntelBacklog().then(draw);}else draw();
 }
@@ -4245,8 +4342,8 @@ function rbRenderReleases(body){
     if(!items.length){body.innerHTML='<div class="rb-empty">No watched releases cached yet.<br><span style="font-size:10.5px">The WebView reads the local intel cache only; scanning stays opt-in.</span></div>';return;}
     body.innerHTML=items.map(d=>
       `<div class="rb-row"><div class="r-top"><span class="r-name">${esc(d.source||'source')} ${esc(d.version||'')}</span><span class="r-meta">${esc((d.date||'').slice(0,10))}</span></div>
-      <div class="r-meta"><span>${esc(d.title||'')}</span></div>
-      <div style="font-size:10.5px;color:var(--dim);line-height:1.45;margin-top:4px">${esc(d.summary||'')}</div></div>`).join('');
+      <div class="r-meta"><span>${esc(rbShortText(d.title||'',120))}</span></div>
+      <div style="font-size:10.5px;color:var(--dim);line-height:1.45;margin-top:4px">${esc(rbShortText(d.summary||'',220))}</div></div>`).join('');
   };
   if(RB_INTEL_DIGESTS===null){body.innerHTML='<div class="rb-empty">loading releases…</div>';rbFetchIntelDigests().then(draw);}else draw();
 }
@@ -4266,7 +4363,10 @@ function rbRenderRuns(body){
     }
     body.innerHTML=html;
   };
-  if(RB_RUNS===null){body.innerHTML='<div class="rb-empty">loading runs…</div>';rbFetchRuns().then(draw);}else draw();
+  if(RB_RUNS===null){
+    body.innerHTML='<div class="rb-empty">loading runs…</div>';
+    rbFetchRuns().then(draw).catch(()=>{body.innerHTML='<div class="rb-empty">Runs unavailable.</div>';});
+  }else draw();
 }
 function rbRenderDiff(body){
   if(!RB_DIFFS.size){body.innerHTML='<div class="rb-empty">No changes yet.</div>';return;}
@@ -4302,17 +4402,25 @@ function rbRenderFiles(body){
         <div class="r-meta"><span>${esc(file)}</span></div>
       </div>`).join('');
   }
-  html+='<div class="rb-sec">attachments</div><div id="rbFilesUploads"><div class="rb-empty" style="padding:8px">loading…</div></div>';
+  html+='<div class="rb-sec">attachments and artifacts</div><input id="rbFilesFilter" type="search" placeholder="filter files" spellcheck="false" style="width:100%;margin:0 0 8px;padding:6px 8px;border-radius:6px;border:1px solid var(--line);background:var(--panel2);color:var(--fg);font-family:inherit;font-size:11px"><div id="rbFilesUploads"><div class="rb-empty" style="padding:8px">loading…</div></div>';
   if(!written.length&&!html)html='<div class="rb-empty">No files yet.</div>';
   body.innerHTML=html||'<div class="rb-empty">No files yet.</div>';
   body.querySelectorAll('[data-rb-file]').forEach(r=>r.addEventListener('click',()=>loadFileInPanel(r.dataset.rbFile)));
-  fetch('/artifacts').then(r=>r.json()).then(j=>{
+  const renderArtifacts=(items,filter='')=>{
     const host=document.getElementById('rbFilesUploads');if(!host)return;
+    const q=filter.trim().toLowerCase();
+    const filtered=items.filter(it=>!q||String(it.name||'').toLowerCase().includes(q)||String(it.kind||'').toLowerCase().includes(q));
+    const limited=filtered.slice(0,60);
+    host.innerHTML=limited.length?limited.map(it=>
+      `<div class="rb-row"><div class="r-top"><span class="r-name" title="${escAttr(it.name)}">${esc(rbShortText(it.name,70))}</span></div>
+       <div class="r-meta"><span>${esc(it.kind||'file')}</span><span>${Math.round((it.size||0)/1024)} KB</span></div></div>`).join('')+
+      (filtered.length>limited.length?`<div class="rb-empty" style="padding:8px">${filtered.length-limited.length} more hidden by panel limit.</div>`:'')
+      :'<div class="rb-empty" style="padding:8px">no matching files</div>';
+  };
+  fetch('/artifacts').then(r=>r.json()).then(j=>{
     const items=Array.isArray(j.items)?j.items:[];
-    host.innerHTML=items.length?items.map(it=>
-      `<div class="rb-row"><div class="r-top"><span class="r-name">${esc(it.name)}</span></div>
-       <div class="r-meta"><span>${esc(it.kind||'file')}</span><span>${Math.round((it.size||0)/1024)} KB</span></div></div>`).join('')
-      :'<div class="rb-empty" style="padding:8px">no attachments · drag a file onto the page to upload</div>';
+    renderArtifacts(items);
+    document.getElementById('rbFilesFilter')?.addEventListener('input',e=>renderArtifacts(items,e.target.value));
   }).catch(()=>{
     const host=document.getElementById('rbFilesUploads');
     if(host)host.innerHTML='<div class="rb-empty" style="padding:8px">attachments unavailable</div>';
@@ -4871,34 +4979,35 @@ document.addEventListener('DOMContentLoaded',()=>{
   st.textContent=`
     @keyframes abort-pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--rem) 55%,transparent)}50%{box-shadow:0 0 0 6px color-mix(in srgb,var(--rem) 0%,transparent)}}
     /* Inline markdown rendering — applied to streamed prose */
-    .md-prose .md-h{font-weight:700;letter-spacing:.4px;margin:6px 0 4px}
+    .md-prose{font-size:15px;line-height:1.62;letter-spacing:0}
+    .md-prose .md-h{font-weight:700;letter-spacing:0;margin:18px 0 10px;line-height:1.35}
     .md-prose .md-h1{font-size:16px;color:var(--brand)}
-    .md-prose .md-h2{font-size:14px;color:var(--coral)}
-    .md-prose .md-h3{font-size:13px;color:var(--planner)}
-    .md-prose .md-h4,.md-prose .md-h5,.md-prose .md-h6{font-size:12.5px;color:var(--agent)}
+    .md-prose .md-h2{font-size:15px;color:var(--coral)}
+    .md-prose .md-h3{font-size:15px;color:var(--planner)}
+    .md-prose .md-h4,.md-prose .md-h5,.md-prose .md-h6{font-size:14px;color:var(--agent)}
     .md-prose strong{color:var(--fg);font-weight:700}
     .md-prose em{color:var(--coral);font-style:italic}
     .md-prose del{color:var(--dimmer);text-decoration:line-through}
-    .md-prose .md-ic{background:color-mix(in srgb,var(--brand) 10%,transparent);color:var(--brand);padding:1px 6px;border-radius:4px;font-family:inherit;font-size:.95em;border:1px solid color-mix(in srgb,var(--brand) 25%,transparent)}
+    .md-prose .md-ic{display:inline;font-family:var(--mono-font);background:color-mix(in srgb,var(--fg) 6%,transparent);color:var(--fg);padding:1px 5px;border-radius:5px;font-size:13px;line-height:1.25;border:1px solid color-mix(in srgb,var(--fg) 16%,transparent);letter-spacing:0}
     .md-prose a{color:var(--planner);text-decoration:underline dotted;text-underline-offset:2px}
     .md-prose a:hover{color:var(--coral)}
-    .md-prose .md-hr{border:0;height:1px;background:linear-gradient(90deg,transparent,var(--line-hot),transparent);margin:8px 0}
-    .md-prose .md-bq{margin:6px 0;padding:6px 10px;border-left:3px solid var(--brand);background:color-mix(in srgb,var(--brand) 5%,transparent);color:var(--dim);font-style:italic;border-radius:0 6px 6px 0}
-    .md-prose .md-ul,.md-prose .md-ol{margin:4px 0 4px 16px;padding:0}
-    .md-prose .md-ul li,.md-prose .md-ol li{margin:2px 0;color:var(--fg)}
+    .md-prose .md-hr{border:0;height:1px;background:linear-gradient(90deg,transparent,var(--line-hot),transparent);margin:14px 0}
+    .md-prose .md-bq{margin:12px 0;padding:9px 12px;border-left:3px solid var(--brand);background:color-mix(in srgb,var(--brand) 5%,transparent);color:var(--dim);font-style:italic;border-radius:0 7px 7px 0}
+    .md-prose .md-ul,.md-prose .md-ol{margin:8px 0 10px 20px;padding:0}
+    .md-prose .md-ul li,.md-prose .md-ol li{margin:4px 0;color:var(--fg);line-height:1.55}
     .md-prose .md-ul li::marker{color:var(--brand)}
     .md-prose .md-ol li::marker{color:var(--coral);font-weight:600}
     .md-prose .md-cb{color:var(--brand);font-size:1.1em;margin-right:4px}
     .md-prose .md-cb.done{color:var(--add)}
-    .md-prose .md-tbl{border-collapse:collapse;margin:6px 0;font-size:11.5px;border:1px solid var(--line-hot);border-radius:6px;overflow:hidden}
-    .md-prose .md-tbl th{background:color-mix(in srgb,var(--brand) 12%,var(--panel));color:var(--brand);font-weight:700;text-align:left;padding:5px 10px;border-bottom:1px solid var(--line-hot);font-size:10.5px;letter-spacing:.5px;text-transform:uppercase}
-    .md-prose .md-tbl td{padding:4px 10px;border-top:1px solid var(--line);color:var(--fg)}
+    .md-prose .md-tbl{width:100%;max-width:900px;border-collapse:collapse;margin:10px 0 12px;font-size:13px;border:1px solid var(--line-hot);border-radius:9px;overflow:hidden}
+    .md-prose .md-tbl th{background:color-mix(in srgb,var(--brand) 10%,var(--panel));color:var(--brand);font-weight:700;text-align:left;padding:9px 11px;border-bottom:1px solid var(--line-hot);font-size:10.5px;letter-spacing:.02em;text-transform:uppercase}
+    .md-prose .md-tbl td{padding:9px 11px;border-top:1px solid var(--line);color:var(--fg);line-height:1.45}
     .md-prose .md-tbl tr:nth-child(odd) td{background:color-mix(in srgb,var(--panel2) 70%,transparent)}
     /* Verbose flood: collapse repeated streamed-output-estimate ticks into 1 live row */
-    .verbose-tick{font-size:10px;color:var(--dimmer);opacity:.7;letter-spacing:.3px;padding:1px 8px;border-left:2px solid var(--line);background:color-mix(in srgb,var(--planner) 4%,transparent)}
+    .verbose-tick{font-size:11px;line-height:1.35;color:var(--dimmer);opacity:.72;letter-spacing:0;padding:2px 8px;border-left:2px solid var(--line);background:color-mix(in srgb,var(--planner) 4%,transparent)}
     .verbose-tick b{color:var(--brand);font-variant-numeric:tabular-nums}
     /* Live activity line near agent spinner */
-    .agent-activity{display:inline-block;margin-left:8px;padding:1px 8px;border-radius:4px;background:color-mix(in srgb,var(--brand) 10%,transparent);color:var(--brand);font-size:10.5px;font-style:italic;animation:pulse-act 1.6s ease-in-out infinite}
+    .agent-activity{display:inline-block;margin-left:7px;padding:1px 7px;border-radius:5px;background:color-mix(in srgb,var(--brand) 10%,transparent);color:var(--brand);font-size:11px;line-height:1.35;font-style:italic;animation:pulse-act 1.6s ease-in-out infinite}
     @keyframes pulse-act{0%,100%{opacity:.85}50%{opacity:.45}}
     /* Caret animation (spinner dot) — only on currently active line */
     .caret{display:inline-block;margin-left:6px;animation:caret-bl 1s steps(1) infinite;color:var(--brand)}
