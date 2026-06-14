@@ -84,47 +84,38 @@ See [`docs/comparison/vs-competitors.md`](docs/comparison/vs-competitors.md) for
 
 ---
 
-## ✨ What's New — v0.9 « Anyone »
+## ✨ What's New — v0.10 « The Reasoner »
 
-> **Radical accessibility.** Anyone should understand and use Sparrow — a child, a grandparent, a teacher, a mechanic, an engineer. The engine doesn't change; the **surface** does. Focus mode for humans, Cockpit for pros. Same power, two depths.
+> **Inference-time scaling meets natural language.** Sparrow now understands plain speech (`sparrow do "fix my site"`), scales reasoning at inference time (best-of-N + Reflexion), and verifies with ground truth (build/test > LLM opinion). New agent framework with 10+ pluggable modules.
 
-**🗣️ Zero jargon — Mode Simple / Pro**
-- `sparrow mode simple|pro|auto` — choose how Sparrow talks to you, persisted in config
-- Every engine `Event` now has a human-language phrase (FR/EN) — no more `run a3f2 · route · tier T1`
-- Exhaustive match at compile time: adding a new event without a human phrase **fails to compile** — anti-regression lock
+**🧠 Reasoning Engine**
+- `sparrow reason` — live inference-time scaling: best-of-N, Reflexion loops, reason_max
+- Full Reasoning-Max integrated into default soul — 27B models now think like frontier models
+- Fable-Grade reasoning framework: 10+ pluggable agent modules (coding, safety, memory, self-correction…)
 
-**🔧 `sparrow fix` — the universal fixer**
-- Paste an error message, describe a problem, or just run `sparrow fix` — it scans your directory, diagnoses in one sentence, and proposes a fix
-- Automatic checkpoint before any change, one-word undo: `sparrow annule`
+**🗣️ Natural Language (no command word needed)**
+- `sparrow do "fix the login bug"` — describe what you want, Sparrow routes it
+- Bare-text front door — just type naturally, no prefix needed
 
-**👋 `sparrow bonjour` — the warm welcome**
-- Detects your context (git conflict, uninstalled project, photo folder) and suggests the best next action
-- No jargon, no flags — just "What are we fixing today?"
+**🦾 Ground-Truth Swarm Verifier**
+- Build/test results now outrank LLM opinion — objective verification over vibes
+- Swarm pipeline: parallel agents → ground-truth gate → merge
 
-**💡 `sparrow idees` — the idea gallery**
-- 50+ concrete recipes organized by persona: teacher, grandparent, child, artisan, builder, developer
-- Pick a recipe, press Enter, watch Sparrow work — the recipe IS the tutorial
+**⚡ Performance**
+- Boot ~30% faster: skip model-discovery for read-only commands
+- Streaming micro-opt: move tokens instead of cloning
 
-**🖥️ Focus / Cockpit — one console, two views**
-- **Focus** (default): one column, large text, three buttons — `[✅ Okay] [↩️ Undo] [❓ Explain]`
-- **Cockpit**: full 3-column view with swarm lanes, config, routing — zero power lost
-- **Right-side tools panel**: Preview, Diff, Terminal, Files, Background tasks, Plan — every panel fed by **real events**, never mock data. Opens manually (`Ctrl/⌘+Shift+S`) or auto-opens on diffs, failed tasks, and plan updates with priority rules that never nag.
-- **Live preview detection**: probes common dev ports (3000, 4200, 5173, 8080…) and embeds your running app in an iframe — or type any URL.
-- **Replay, finally one click**: `▸ replay` lists your recorded runs and re-renders any transcript — no more pasting run IDs.
-- **Ghost-text autocomplete**: fish-style inline suggestion from your real command history — `Tab` to accept.
-- **Rich Markdown in chat**: streamed prose renders bold, headings, lists, tables, links, and inline code.
-- **Keyboard cheat-sheet**: `Ctrl/⌘+/` shows every shortcut, grouped and platform-aware.
-- New **white theme** alongside Captain and Paper — clean, high-contrast light UI.
+**🖥️ UI**
+- Clickable file/artifact links → right-side viewer in WebView cockpit
+- WebView/TUI overhaul in progress (typography, mobile, tablet)
 
-**🛡️ Safety net**
-- `sparrow budget 2€` — set spending cap in human language
-- `sparrow annule` — one-word undo, back to last checkpoint
-- Contract displayed before ANY file modification: "I'll modify 2 files. Checkpoint created ✓. Proceed?"
+**🛡️ Security**
+- Landlock sandbox design for Linux
+- First-run autonomy consent notice
 
 **Install & distribution**
-- **`cargo install sparrow-cli` v0.9.2** on crates.io
+- **`cargo install sparrow-cli` v0.10.0** on crates.io
 - **Pre-built binaries** for Linux, macOS, Windows on every release
-- **`sparrow launch`** — zero-question first launch with free/local fallbacks; `--pro` keeps the expert wizard
 
 **What was already here (v0.5.x)**
 - Agentic engine with planner → coder → verifier pipeline, swarm orchestrator, git checkpoints + rewind.
