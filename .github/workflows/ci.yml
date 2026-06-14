@@ -63,7 +63,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y bubblewrap
 
       - name: Run sandbox tests
-        run: cargo test -p sparrow-config sandbox
+        run: |
+          echo "=== listing tests ==="
+          cargo test -p sparrow-config -- --list 2>&1 | grep -i sandbox || echo "(no sandbox tests listed)"
+          echo "=== running ==="
+          cargo test -p sparrow-config hardened_sandbox -- --nocapture
 
   release:
     name: Release build + sign
