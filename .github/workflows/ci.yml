@@ -47,6 +47,24 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
+  sandbox-linux:
+    name: Linux sandbox (HardenedSandbox via bubblewrap)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      # The real userspace-isolation path: with bwrap present, HardenedSandbox
+      # wraps commands (FS scoped to the workspace, network denied). This is the
+      # cfg(target_os="linux") code that cannot be compiled on the Windows dev
+      # host, so CI is where it gets exercised.
+      - name: Install bubblewrap
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+
+      - name: Run sandbox tests
+        run: cargo test -p sparrow-config sandbox
+
   release:
     name: Release build + sign
     if: startsWith(github.ref, 'refs/tags/v')
