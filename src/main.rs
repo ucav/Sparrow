@@ -52,7 +52,31 @@ fn main() -> anyhow::Result<()> {
             // spin-up was the dominant wasted cost in `sparrow --version` /
             // `help` startup (see artifacts/perf-report.md, Plan B). Parsing on
             // the 16 MB worker stack avoids the main-thread overflow.
-            let cli = Cli::parse();
+            // Natural-language front door: if clap can't parse the input as a
+            // known command (unknown subcommand, or an alias given extra words
+            // like `montre la console`), don't error — treat the WHOLE input as
+            // natural language and route it. The user never has to learn a
+            // command. `--help`/`--version`/usage still behave normally.
+            let cli = Cli::try_parse().unwrap_or_else(|e| {
+                use clap::error::ErrorKind;
+                if matches!(
+                    e.kind(),
+                    ErrorKind::DisplayHelp
+                        | ErrorKind::DisplayVersion
+                        | ErrorKind::DisplayHelpOnMissingArgumentOrSubcommand
+                ) {
+                    e.exit();
+                }
+                let raw: Vec<String> = std::env::args().skip(1).collect();
+                if raw.is_empty() {
+                    e.exit();
+                }
+                // Re-parse through the `do` front door, which collects the words
+                // and routes them. If that also fails, surface the original error.
+                let mut argv = vec!["sparrow".to_string(), "do".to_string()];
+                argv.extend(raw);
+                Cli::try_parse_from(argv).unwrap_or_else(|_| e.exit())
+            });
             let runtime = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()?;
@@ -99,6 +123,7 @@ fn command_wants_model_discovery(cmd: &Option<Commands>) -> bool {
             | Budget { .. }
             | Mode { .. }
             | Do { .. }
+            | Natural(_)
             | Doctor
             | Setup
             | Init
@@ -815,7 +840,24 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
                 .await?;
         }
         Some(Commands::Do { request, dry_run }) => {
-            sparrow::cmd_handlers::handle_do_cmd::handle_do(&request, dry_run)?;
+            sparrow::cmd_handlers::handle_do_cmd::handle_do(
+                &config,
+                memory.clone(),
+                &request,
+                dry_run,
+            )
+            .await?;
+        }
+        // The bare-text front door: `sparrow corrige le build` (no command word)
+        // arrives here as an unknown subcommand and is routed automatically.
+        Some(Commands::Natural(words)) => {
+            sparrow::cmd_handlers::handle_do_cmd::dispatch_natural_language(
+                &config,
+                memory.clone(),
+                &words.join(" "),
+                false,
+            )
+            .await?;
         }
         Some(Commands::Agent { action }) => {
             sparrow::cmd_handlers::handle_agent_cmd::handle_agent(

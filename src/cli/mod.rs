@@ -516,6 +516,13 @@ pub enum Commands {
         #[arg(default_value = "https://example.com")]
         url: String,
     },
+
+    /// Free-text front door: anything that isn't a known command is treated as
+    /// natural language and routed to the right command automatically. You never
+    /// have to learn a command — just say what you want.
+    /// e.g. `sparrow corrige le build` · `sparrow montre la console`.
+    #[command(external_subcommand)]
+    Natural(Vec<String>),
 }
 
 #[derive(Subcommand)]
