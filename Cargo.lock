@@ -2848,7 +2848,7 @@ dependencies = [
 
 [[package]]
 name = "sparrow-cli"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2914,7 +2914,7 @@ dependencies = [
 
 [[package]]
 name = "sparrow-config"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2938,7 +2938,7 @@ dependencies = [
 
 [[package]]
 name = "sparrow-core"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -2947,7 +2947,7 @@ dependencies = [
 
 [[package]]
 name = "sparrow-intel"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2963,7 +2963,7 @@ dependencies = [
 
 [[package]]
 name = "sparrow-memory"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2982,7 +2982,7 @@ dependencies = [
 
 [[package]]
 name = "sparrow-providers"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -3000,7 +3000,7 @@ dependencies = [
 
 [[package]]
 name = "sparrow-tools"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "async-trait",
