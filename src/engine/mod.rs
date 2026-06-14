@@ -3576,9 +3576,13 @@ mod tests {
             "Adversary",
             "Anti-simulation",
             "Real execution beats",
-            // Fable-grade enhancements wired into the default soul.
+            // Full Reasoning-Max layer wired into the default soul.
+            "REASONING-MAX LAYER",
             "MODEL-AWARE RIGOR",
             "EVIDENCE LEDGER",
+            "Self-consistency",
+            "Multi-pass",
+            "FINAL INTEGRITY GATE",
             "honesty floor",
         ] {
             assert!(prompt.contains(marker), "main soul must contain `{marker}`");
