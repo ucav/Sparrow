@@ -809,6 +809,10 @@ async fn async_main(cli: Cli) -> anyhow::Result<()> {
         Some(Commands::Chat) => {
             sparrow::cmd_handlers::handle_chat_cmd::handle_chat(&config, memory.clone()).await?;
         }
+        Some(Commands::Reason { task }) => {
+            sparrow::cmd_handlers::handle_reason_cmd::handle_reason(&config, memory.clone(), &task)
+                .await?;
+        }
         Some(Commands::Agent { action }) => {
             sparrow::cmd_handlers::handle_agent_cmd::handle_agent(
                 action,

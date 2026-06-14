@@ -159,6 +159,13 @@ pub enum Commands {
     /// Interactive multi-turn chat
     Chat,
 
+    /// Answer a reasoning-heavy task with inference-time scaling
+    /// (best-of-N + judge selection + self-refine) instead of one greedy pass.
+    Reason {
+        /// The task / question to reason about.
+        task: String,
+    },
+
     /// Launch TUI
     Tui,
 
