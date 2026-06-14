@@ -521,3 +521,62 @@ mod denied_path_tests {
         assert!(command_touches_denied_path("cat ~/.ssh/id_rsa", &[] as &[PathBuf]).is_none());
     }
 }
+
+// ─── Linux HardenedSandbox wiring (#10b) ─────────────────────────────────────
+// These run only on Linux. With firejail/bwrap installed (the CI `sandbox-linux`
+// job installs bubblewrap) the command is wrapped with FS scoped to the
+// workspace and network denied; without either tool it falls back to the
+// in-process LocalSandbox — so the test verifies the wiring either way and never
+// requires root. This is the path that could not be compiled on the Windows dev
+// host; CI is its home.
+#[cfg(all(test, target_os = "linux"))]
+mod hardened_linux_tests {
+    use super::{Command, HardenedSandbox, Limits, Sandbox};
+    use std::collections::HashMap;
+
+    fn limits() -> Limits {
+        Limits {
+            timeout_ms: 10_000,
+            max_output_bytes: 64 * 1024,
+        }
+    }
+
+    #[tokio::test]
+    async fn hardened_sandbox_runs_a_command_in_the_workspace() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        let sandbox = HardenedSandbox::new(root.clone());
+
+        // Policy contract: workspace is the only allowed path, network denied.
+        assert!(!sandbox.policy().allow_network);
+        assert_eq!(sandbox.root(), root.as_path());
+
+        let cmd = Command {
+            program: "sh".into(),
+            args: vec!["-c".into(), "echo sparrow-ok".into()],
+            env: HashMap::new(),
+            workdir: root.clone(),
+        };
+        let result = sandbox.exec(&cmd, &limits()).await.expect("exec");
+        assert_eq!(result.exit_code, 0, "stderr: {}", result.stderr);
+        assert!(
+            result.stdout.contains("sparrow-ok"),
+            "stdout was: {:?}",
+            result.stdout
+        );
+    }
+
+    #[tokio::test]
+    async fn hardened_sandbox_rejects_workdir_escape() {
+        let dir = tempfile::tempdir().unwrap();
+        let sandbox = HardenedSandbox::new(dir.path().to_path_buf());
+        let cmd = Command {
+            program: "sh".into(),
+            args: vec!["-c".into(), "echo nope".into()],
+            env: HashMap::new(),
+            workdir: std::path::PathBuf::from("/etc"), // outside the workspace root
+        };
+        // Routed through the inner LocalSandbox, which bails on a workdir escape.
+        assert!(sandbox.exec(&cmd, &limits()).await.is_err());
+    }
+}
