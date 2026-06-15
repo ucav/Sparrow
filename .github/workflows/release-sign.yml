@@ -8,6 +8,7 @@ jobs:
   sign:
     name: Sign release assets with cosign keyless
     runs-on: ubuntu-latest
+    continue-on-error: true  # non-blocking: binaries are still downloadable unsigned
     permissions:
       id-token: write     # required for keyless signing
       contents: write     # upload signed artifacts back to the release
