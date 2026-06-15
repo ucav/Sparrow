@@ -1,12 +1,12 @@
 [package]
 name = "sparrow-providers"
-version = "0.10.1"
+version = "0.10.2"
 edition = "2024"
 description = "Model provider adapters (Brain trait, OpenAI-compat, Anthropic, Ollama, Responses) for Sparrow"
 license = "MIT"
 
 [dependencies]
-sparrow-core = { version = "0.10.1", path = "../sparrow-core" }
+sparrow-core = { version = "0.10.2", path = "../sparrow-core" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 async-trait = "0.1"

@@ -1,14 +1,14 @@
 [package]
 name = "sparrow-config"
-version = "0.10.1"
+version = "0.10.2"
 edition = "2024"
 description = "Configuration, provider registry, auth/credential store, permissions, hooks, sandbox and humanize layer for Sparrow"
 license = "MIT"
 
 [dependencies]
-sparrow-core = { version = "0.10.1", path = "../sparrow-core" }
-sparrow-providers = { version = "0.10.1", path = "../sparrow-providers" }
-sparrow-intel = { version = "0.10.1", path = "../sparrow-intel" }
+sparrow-core = { version = "0.10.2", path = "../sparrow-core" }
+sparrow-providers = { version = "0.10.2", path = "../sparrow-providers" }
+sparrow-intel = { version = "0.10.2", path = "../sparrow-intel" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"

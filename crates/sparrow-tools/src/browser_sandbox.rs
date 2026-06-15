@@ -7,7 +7,7 @@ use std::process::Stdio;
 use crate::{Tool, ToolCtx, ToolResult};
 use sparrow_core::event::{Block, RiskLevel};
 
-const PLAYWRIGHT_DRIVER: &str = include_str!("../../../scripts/playwright-driver.mjs");
+const PLAYWRIGHT_DRIVER: &str = include_str!("../scripts/playwright-driver.mjs");
 
 /// Browser automation through a real Playwright Chromium runtime.
 ///
