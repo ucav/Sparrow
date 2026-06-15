@@ -1,0 +1,9 @@
+[advisories]
+ignore = [
+    "RUSTSEC-2025-0141",  # bincode: unmaintained (no vulns, consider replacing later)
+    "RUSTSEC-2024-0436",  # paste: unmaintained (no vulns)
+    "RUSTSEC-2024-0320",  # yaml-rust: unmaintained (no vulns)
+    "RUSTSEC-2026-0008",  # git2: unsound (patched in >=0.20.4, pending upgrade)
+    "RUSTSEC-2023-0086",  # lexical-core: unsound (patched in >=1.0.0, pending upgrade)
+    "RUSTSEC-2026-0002",  # lru: unsound (patched in >=0.16.3, pending upgrade)
+]
