@@ -1581,7 +1581,7 @@ async fn list_artifacts() -> axum::extract::Json<serde_json::Value> {
 /// `GET /skills` — return the local skill library so the drawer panel can list
 /// names + descriptions. Reads from the same dir the runtime uses.
 async fn list_skills() -> axum::extract::Json<serde_json::Value> {
-    use crate::capabilities::FsSkillLibrary;
+    use crate::capabilities::{FsSkillLibrary, is_unfit_for_skill};
     let skills_dir = dirs::config_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
         .join("sparrow")
@@ -1590,6 +1590,11 @@ async fn list_skills() -> axum::extract::Json<serde_json::Value> {
     let scanned = lib.scan();
     let skills: Vec<serde_json::Value> = scanned
         .into_iter()
+        .filter(|s| {
+            !is_unfit_for_skill(&s.name)
+                && !is_unfit_for_skill(&s.description)
+                && !is_unfit_for_skill(&s.body)
+        })
         .map(|s| {
             serde_json::json!({
                 "name": s.name,

@@ -112,6 +112,11 @@ pass('A+ increases reading size', afterFont.size > beforeFont, `${beforeFont} ->
 pass('Reading size persists', Number(afterFont.stored) > 1, String(afterFont.stored));
 
 const mainWidthBeforeRightbar = await page.evaluate(() => document.querySelector('.main')?.getBoundingClientRect().width || 0);
+const rightbarInitiallyOpen = await page.evaluate(() => document.body.classList.contains('rightbar-open'));
+if (rightbarInitiallyOpen) {
+  await page.click('#rbClose');
+  await page.waitForTimeout(120);
+}
 await page.click('#rightbarBtn');
 await page.waitForTimeout(180);
 const mainWidthAfterRightbar = await page.evaluate(() => ({

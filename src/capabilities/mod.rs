@@ -767,6 +767,7 @@ pub fn is_unfit_for_skill(text: &str) -> bool {
         "route set",
         "reusable pattern learned from",
         "metrics captured",
+        ".claude/worktrees",
     ];
     if UI_ARTIFACTS.iter().any(|m| lower.contains(m)) {
         return true;
@@ -959,6 +960,9 @@ mod tests {
         );
         assert!(is_unfit_for_skill(
             "coder ◌ consulting deepseek-v4-pro · parsing request…"
+        ));
+        assert!(is_unfit_for_skill(
+            "## Approach\n.claude/worktrees/tmp/src/main.rs"
         ));
         assert!(!is_unfit_for_skill(
             "Refactor the auth module by extracting the token parser into its own function."

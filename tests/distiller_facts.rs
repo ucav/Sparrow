@@ -59,3 +59,32 @@ async fn distiller_extracts_language_facts_from_tool_events() {
 
     let _ = std::fs::remove_file(&path);
 }
+
+#[tokio::test]
+async fn distiller_extracts_directives_from_initial_user_request() {
+    let path = temp_db("distiller-task-directive");
+    let memory: Arc<dyn Memory> = Arc::new(SqliteMemory::open(&path).unwrap());
+
+    Distiller::distill(
+        &memory,
+        &[],
+        "Souviens-toi que je préfère les réponses courtes en français.",
+    )
+    .await;
+
+    let facts = memory.all_facts();
+    assert!(
+        facts.iter().any(|f| {
+            f.key.starts_with("user:directive:")
+                && f.value == "Souviens-toi que je préfère les réponses courtes en français."
+        }),
+        "expected a durable directive from the initial task, got: {:?}",
+        facts.iter().map(|f| (&f.key, &f.value)).collect::<Vec<_>>()
+    );
+    assert!(
+        facts.iter().any(|f| f.key == "user:preference"),
+        "expected preference hints from the initial task"
+    );
+
+    let _ = std::fs::remove_file(&path);
+}

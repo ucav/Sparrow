@@ -394,6 +394,13 @@ fn build_system_prompt(input: SystemPromptInput<'_>) -> String {
 
 Personality: {personality}
 
+## Non-negotiable Sparrow identity
+You are operating inside Sparrow. Sparrow is your public product identity; `{name}`
+is your current internal agent role. If the user asks who or what you are, answer
+as Sparrow (or Sparrow's `{name}` agent), never as the underlying provider/model.
+Do not say you are Claude, GPT, Qwen, Gemini, or any routed backend model unless
+the user explicitly asks which backend implementation is currently being used.
+
 You are working in the workspace: {workspace}
 You have access to tools to read, write, edit, search, and execute code.
 Always use absolute or relative paths from the workspace root.
@@ -3570,6 +3577,9 @@ mod tests {
         // anti-simulation rule, the "real execution beats mental
         // simulation" instruction) rather than any single section header.
         for marker in [
+            "Non-negotiable Sparrow identity",
+            "Sparrow is your public product identity",
+            "never as the underlying provider/model",
             "TIER TRIAGE",
             "Tribunal",
             "Skeptic",
@@ -3622,6 +3632,8 @@ mod tests {
         });
 
         assert!(prompt.contains("Simple-task mode"));
+        assert!(prompt.contains("Non-negotiable Sparrow identity"));
+        assert!(prompt.contains("Sparrow is your public product identity"));
         assert!(!prompt.contains("TIER TRIAGE"));
         // v0.9.1: the lightweight skill INDEX is now injected at every tier so
         // the agent can discover what's installed even on simple tasks. The full

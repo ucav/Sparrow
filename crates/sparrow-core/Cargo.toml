@@ -1,6 +1,6 @@
 [package]
 name = "sparrow-core"
-version = "0.10.2"
+version = "0.10.3"
 edition = "2024"
 description = "Core event and runtime contracts for Sparrow"
 license = "MIT"

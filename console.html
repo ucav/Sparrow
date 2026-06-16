@@ -178,7 +178,7 @@
   .status{position:fixed;bottom:48px;right:16px;font-size:10px;color:var(--dimmer);z-index:10}
   .status.on{color:var(--add)}.status.off{color:var(--rem)}
 
-  .input-bar{display:grid;grid-template-columns:auto minmax(0,1fr) minmax(190px,270px) auto;gap:8px;padding:8px clamp(16px,2vw,30px) 12px;border-top:1px solid var(--line);align-items:end;background:linear-gradient(180deg,#15110c,#100d09)}
+  .input-bar{display:grid;grid-template-columns:auto auto minmax(280px,1fr) minmax(190px,270px) auto auto;gap:8px;padding:8px clamp(16px,2vw,30px) 12px;border-top:1px solid var(--line);align-items:end;background:linear-gradient(180deg,#15110c,#100d09)}
   .input-bar textarea{width:100%;min-height:32px;max-height:190px;background:var(--panel);border:1px solid var(--line);border-radius:7px;color:var(--fg);
     font-family:inherit;font-size:12px;line-height:1.45;padding:7px 10px;outline:none;resize:none;overflow-y:auto}
   .input-bar textarea:focus{border-color:var(--brand)}
@@ -192,6 +192,8 @@
   .composer-ghost .g-rest{color:var(--dimmer);opacity:.85}
   html[data-view="focus"] .composer-ghost{font-size:15px;padding:11px 13px;border-radius:8px}
   .input-bar button{font-family:inherit;font-size:11px;min-height:32px;padding:6px 14px;cursor:pointer}
+  #stopBtn{display:inline-flex;color:var(--rem);background:color-mix(in srgb,var(--rem) 11%,transparent);border-color:color-mix(in srgb,var(--rem) 45%,transparent)}
+  #stopBtn:disabled{opacity:.42;cursor:not-allowed;filter:saturate(.55)}
   .attach-btn{display:inline-flex;align-items:center;justify-content:center;width:34px;height:31px;border-radius:7px;color:var(--steel);
     border:1px solid var(--line);background:var(--panel);cursor:pointer;transition:.15s}
   .attach-btn:hover{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 45%,var(--line))}
@@ -210,7 +212,7 @@
   .drop-zone{position:fixed;inset:0;z-index:80;display:none;place-items:center;background:color-mix(in srgb,var(--bg) 68%,transparent);backdrop-filter:blur(8px);border:2px dashed color-mix(in srgb,var(--brand) 70%,var(--line));color:var(--brand);font-size:15px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase}
   .drop-zone.show{display:grid}
   @media(max-width:920px){
-    .input-bar{grid-template-columns:auto minmax(0,1fr) auto}
+    .input-bar{grid-template-columns:auto auto minmax(0,1fr) auto auto}
     .context-side{grid-column:1/-1;grid-row:2}
     .attachments{grid-row:3}
   }
@@ -334,7 +336,7 @@
     .stat{padding:8px 10px}
     .swarm-cockpit{max-height:128px}
     .lane{flex:1 1 100%;min-width:100%;max-width:none;border-right:0}
-    .input-bar{grid-template-columns:auto minmax(0,1fr) auto;padding:8px 10px 10px}
+    .input-bar{grid-template-columns:auto auto minmax(0,1fr) auto auto;padding:8px 10px 10px}
     .context-side{display:none}
   }
 
@@ -917,11 +919,11 @@
   html[data-view="focus"] #newConversation{display:none!important}
   html[data-view="focus"] .win .main{grid-column:1;grid-row:2;grid-template-rows:minmax(0,1fr) auto auto auto}
   html[data-view="focus"] .win .rightbar{grid-column:1;grid-row:2;justify-self:end;z-index:28}
-  html[data-view="focus"] #term{font-size:calc(16px * var(--read-scale,1));line-height:1.72;padding:28px max(22px,calc((100% - 860px)/2)) 24px}
-  html[data-view="focus"] .ln{max-width:860px;margin-left:auto;margin-right:auto}
+  html[data-view="focus"] #term{font-size:calc(15px * var(--read-scale,1));line-height:1.56;padding:22px clamp(28px,7vw,96px) 22px}
+  html[data-view="focus"] .ln{max-width:min(1040px,100%);margin-left:0;margin-right:auto;padding:2px 0;line-height:1.56}
   html[data-view="focus"] .composer-hints{display:none}
   html[data-view="focus"] .focus-actions{display:flex}
-  html[data-view="focus"] .input-bar{grid-template-columns:auto auto minmax(0,860px) auto;justify-content:center;padding:12px max(18px,calc((100% - 980px)/2)) 18px}
+  html[data-view="focus"] .input-bar{grid-template-columns:auto auto minmax(0,860px) auto auto;justify-content:center;padding:12px max(18px,calc((100% - 980px)/2)) 18px}
   html[data-view="focus"] .context-side{display:none}
   html[data-view="focus"] .input-bar textarea{min-height:46px;font-size:15px;padding:11px 13px;border-radius:8px}
   @media(max-width:720px){
@@ -934,7 +936,7 @@
     .chip-btn,.btn{min-height:36px}
     .view-toggle{min-height:36px}
     .view-toggle button{min-height:30px}
-    html[data-view="focus"] .input-bar{grid-template-columns:auto auto minmax(0,1fr) auto}
+    html[data-view="focus"] .input-bar{grid-template-columns:auto auto minmax(0,1fr) auto auto}
     .focus-actions{gap:6px}.focus-actions button{min-width:0;flex:1;padding:7px 9px}
   }
   .boot-line{opacity:0;animation:fin .35s ease forwards}
@@ -1022,10 +1024,10 @@
 
   /* Recommended text-zone rhythm: 15px / 1.62 with stable internal margins. */
   #term{padding:20px clamp(24px,2.6vw,34px) 22px;font-size:15px;line-height:1.62;letter-spacing:0}
-  html[data-view="focus"] #term{font-size:calc(15px * var(--read-scale,1));line-height:1.62;padding:26px max(26px,calc((100% - 920px)/2)) 24px}
-  html[data-view="focus"] .ln{max-width:920px}
+  html[data-view="focus"] #term{font-size:calc(15px * var(--read-scale,1));line-height:1.56;padding:22px clamp(28px,7vw,96px) 22px}
+  html[data-view="focus"] .ln{max-width:min(1040px,100%);margin-left:0;margin-right:auto;padding:2px 0;line-height:1.56}
   /* ─── Compact density — cards collapsed by default, with readable text rhythm ─── */
-  .ln{padding:5px 0;min-height:unset;line-height:1.62;max-width:900px;letter-spacing:0}
+  .ln{padding:4px 0;min-height:unset;line-height:1.58;max-width:900px;letter-spacing:0}
   .ln+.ln{border-top:none}
   .ln .prompt{color:var(--brand);font-weight:600;font-size:12px;letter-spacing:0}
   .ln .cmd{color:var(--fg);font-weight:400;font-size:15px;line-height:1.62;letter-spacing:0}
@@ -1045,8 +1047,17 @@
   .diff-card{margin:10px 0;font-size:12px}
   .diff-card pre{padding:9px 11px;font-size:12px;line-height:1.45;max-height:260px;overflow:auto}
   /* Reasoning / verbose lines: compact and dim so they do not consume the page. */
-  .verbose{font-size:11px;line-height:1.35;color:var(--dimmer);padding:2px 0;border:none;opacity:.78}
-  .verbose-tick{font-size:11px;line-height:1.35;margin:3px 0;opacity:.72}
+  .verbose-group{margin:3px 0 5px;color:var(--dimmer);font-size:11px;line-height:1.3}
+  .verbose-group summary{cursor:pointer;display:inline-flex;align-items:center;gap:7px;color:var(--dimmer);list-style:none;user-select:none}
+  .verbose-group summary::-webkit-details-marker{display:none}
+  .verbose-group summary::before{content:'▸';font-size:10px;color:var(--dimmer);transition:transform .16s ease}
+  .verbose-group[open] summary::before{transform:rotate(90deg)}
+  .verbose-group .verbose-body{margin-top:6px;border-left:1px solid var(--line);padding-left:9px;display:grid;gap:3px}
+  .verbose-item,.verbose-tick{font-size:11px;line-height:1.35;opacity:.76;overflow-wrap:anywhere}
+  .verbose-item.planner,.verbose-tick b{color:var(--planner)}
+  .verbose-item.coder{color:var(--agent)}
+  .verbose-item.verifier{color:var(--verifier)}
+  .verbose-item.rem{color:var(--rem)}
   .agent-activity{font-size:11px;line-height:1.35;padding:1px 7px;margin-left:7px}
   /* Swarm lanes: hide idle agents, compact working ones */
   .lane.idle-card{display:none}
@@ -1531,6 +1542,7 @@
       <div class="context-track"><span class="context-fill" id="contextFill"></span></div>
     </div>
     <button class="btn" id="runBtn">run</button>
+    <button class="btn" id="stopBtn" type="button" title="Abort the running task" aria-label="Abort the running task" disabled>abort</button>
     <div class="attachments" id="attachments"></div>
   </div>
 
@@ -2225,7 +2237,12 @@ function bindChromeChips(){
   const cockpitBtn=document.getElementById('cockpitModeBtn');
   if(focusBtn)focusBtn.addEventListener('click',()=>setViewMode('focus'));
   if(cockpitBtn)cockpitBtn.addEventListener('click',()=>setViewMode('cockpit'));
-  const cmdk=document.getElementById('cmdkBtn');if(cmdk)cmdk.addEventListener('click',()=>{chirp(1000,.04);paletteOpen()});
+  const cmdk=document.getElementById('cmdkBtn');if(cmdk)cmdk.addEventListener('click',()=>{
+    chirp(1000,.04);
+    const palette=document.getElementById('palette');
+    if(palette?.classList.contains('open'))paletteClose();
+    else paletteOpen();
+  });
   const kbd=document.getElementById('kbdBtn');if(kbd)kbd.addEventListener('click',()=>{chirp(900,.04);toggleKbdHelp();});
   const rb=document.getElementById('replayBtn');if(rb)rb.addEventListener('click',async()=>{
     chirp(800,.05);setTimeout(()=>chirp(1200,.05),80);
@@ -2773,7 +2790,7 @@ async function loadArtifactsPanel(){
     badge.textContent=String(items.length+written.length);
     if(!items.length && !written.length){host.innerHTML='<div class="drw-empty">_none yet_ · deliverables land in <b>./artifacts/</b>; drag a file onto the page to upload.</div>';return;}
     let html='';
-    const fileRow=(name,path,meta)=>`<div class="drw-row" title="${escHtml(path||name)}"><div class="ttl">${escHtml(name)}</div><div class="meta"><span>${escHtml(meta||'')}</span></div></div>`;
+    const fileRow=(name,path,meta)=>`<div class="drw-row" data-rb-file="${escAttr(path||name)}" title="Open ${escHtml(path||name)}"><div class="ttl">${escHtml(name)}</div><div class="meta"><span>${escHtml(meta||'')}</span></div></div>`;
     if(generated.length){
       html+='<div style="font-size:10px;color:var(--add);letter-spacing:1px;text-transform:uppercase;margin:4px 6px">deliverables · ./artifacts/</div>';
       html+=generated.map(it=>fileRow(it.name,it.path,`${it.kind||'file'} · ${Math.round((it.size||0)/1024)} KB`)).join('');
@@ -2787,6 +2804,7 @@ async function loadArtifactsPanel(){
       html+=uploads.map(it=>fileRow(it.name,it.path,`${it.kind||'file'} · ${Math.round((it.size||0)/1024)} KB`)).join('');
     }
     host.innerHTML=html;
+    host.querySelectorAll('[data-rb-file]').forEach(r=>r.addEventListener('click',()=>loadFileInPanel(r.dataset.rbFile)));
   }catch(_){host.innerHTML='<div class="drw-empty">_none yet_ · unable to load /artifacts</div>';}
 }
 
@@ -3458,6 +3476,13 @@ function openDiffPanel(ev){
 }
 function closeDiffPanel(){document.getElementById('diffPanel').classList.remove('open');}
 async function loadFileInPanel(path){
+  const dpPath=document.getElementById('dpPath');
+  if(dpPath){
+    dpPath.textContent=path;
+    dpPath.style.cursor='default';
+    dpPath.title=path;
+    dpPath.onclick=null;
+  }
   const body=document.getElementById('dpBody');
   const stats=document.getElementById('dpStats');
   body.innerHTML='<div style="padding:14px;color:var(--dimmer)">loading…</div>';
@@ -3559,6 +3584,60 @@ function showError(title,cause,fix,doc){
 let STREAM_BUF=null;
 let STREAM_STATE=null;
 
+function _newThinkFilter(){
+  return {inThink:false,pending:''};
+}
+
+function _suffixPrefixLen(text, prefix){
+  const lower=String(text||'').toLowerCase();
+  const needle=String(prefix||'').toLowerCase();
+  const max=Math.min(lower.length,needle.length-1);
+  for(let len=max;len>0;len--){
+    if(lower.slice(-len)===needle.slice(0,len))return len;
+  }
+  return 0;
+}
+
+function _stripThinkStreamChunk(text){
+  const state=STREAM_STATE?.think||_newThinkFilter();
+  let buf=(state.pending||'')+String(text||'');
+  state.pending='';
+  let out='';
+  while(buf){
+    if(state.inThink){
+      const lower=buf.toLowerCase();
+      const end=lower.indexOf('</think>');
+      if(end===-1){
+        const keep=_suffixPrefixLen(buf,'</think>');
+        state.pending=keep?buf.slice(-keep):'';
+        buf='';
+      }else{
+        buf=buf.slice(end+'</think>'.length);
+        state.inThink=false;
+      }
+      continue;
+    }
+    const lower=buf.toLowerCase();
+    const start=lower.indexOf('<think>');
+    if(start===-1){
+      const keep=_suffixPrefixLen(buf,'<think>');
+      if(keep){
+        out+=buf.slice(0,-keep);
+        state.pending=buf.slice(-keep);
+      }else{
+        out+=buf;
+      }
+      buf='';
+    }else{
+      out+=buf.slice(0,start);
+      buf=buf.slice(start+'<think>'.length);
+      state.inThink=true;
+    }
+  }
+  if(STREAM_STATE)STREAM_STATE.think=state;
+  return out;
+}
+
 // Filter helper: strip provider thinking-debris that occasionally leaks through
 // the adapter (raw XML tool calls, ANSI escapes). Returns the cleaned text, or
 // null to drop the chunk entirely when it's mostly garbage.
@@ -3585,7 +3664,7 @@ function ensureStreamRoot(){
   tag.textContent='sparrow ›';
   STREAM_BUF.appendChild(tag);
   term.appendChild(STREAM_BUF);
-  STREAM_STATE={mode:'prose',el:null,cardEl:null,lang:'',codeStarted:false,pending:''};
+  STREAM_STATE={mode:'prose',el:null,cardEl:null,lang:'',codeStarted:false,pending:'',think:_newThinkFilter()};
   openProseSpan();
 }
 
@@ -3933,8 +4012,12 @@ function streamDelta(text){
     term.scrollTop=term.scrollHeight;
     return;
   }
-  text=cleaned;
   ensureStreamRoot();
+  text=_stripThinkStreamChunk(cleaned);
+  if(!text){
+    term.scrollTop=term.scrollHeight;
+    return;
+  }
   // Hold trailing backticks across deltas in case ``` arrives in fragments
   // (e.g. tokenizer emits "``" then "`python\n").
   let buf=STREAM_STATE.pending+text;
@@ -3966,6 +4049,10 @@ function cryptoUid(){return Math.random().toString(36).slice(2,10)}
 // highlight and reset state.
 function finalizeStreamBlock(buf){
   if(!buf)return;
+  if(STREAM_STATE?.think?.pending&&!STREAM_STATE.think.inThink){
+    appendToActive(STREAM_STATE.think.pending);
+    STREAM_STATE.think.pending='';
+  }
   // Synchronous markdown flush so the user sees the rendered output
   // immediately when a non-transparent event arrives (RunFinished, etc.).
   _flushProseSync();
@@ -4043,7 +4130,42 @@ function setVerbose(on){
 }
 function verboseLine(text,cls){
   if(!VERBOSE)return;
-  line(`<span class="muted verbose" style="font-size:11px;line-height:1.35;opacity:.78">${cls?`<span class="${cls}">`:''}∙ ${esc(text)}${cls?'</span>':''}</span>`);
+  const body=ensureVerboseGroup();
+  const item=document.createElement('div');
+  item.className='verbose-item'+(cls?' '+cls:'');
+  item.textContent='∙ '+String(text||'');
+  body.appendChild(item);
+  updateVerboseSummary();
+  term.scrollTop=term.scrollHeight;
+}
+
+let VERBOSE_GROUP=null;
+let VERBOSE_BODY=null;
+let VERBOSE_COUNT=0;
+function resetVerboseGroup(){
+  VERBOSE_GROUP=null;
+  VERBOSE_BODY=null;
+  VERBOSE_COUNT=0;
+}
+function ensureVerboseGroup(){
+  if(VERBOSE_BODY&&VERBOSE_BODY.isConnected)return VERBOSE_BODY;
+  VERBOSE_GROUP=document.createElement('details');
+  VERBOSE_GROUP.className='ln verbose-group';
+  const summary=document.createElement('summary');
+  summary.textContent='détails techniques';
+  VERBOSE_GROUP.appendChild(summary);
+  VERBOSE_BODY=document.createElement('div');
+  VERBOSE_BODY.className='verbose-body';
+  VERBOSE_GROUP.appendChild(VERBOSE_BODY);
+  term.appendChild(VERBOSE_GROUP);
+  updateVerboseSummary();
+  return VERBOSE_BODY;
+}
+function updateVerboseSummary(){
+  if(!VERBOSE_GROUP)return;
+  VERBOSE_COUNT=VERBOSE_BODY?VERBOSE_BODY.children.length:0;
+  const summary=VERBOSE_GROUP.querySelector('summary');
+  if(summary)summary.textContent=`${VERBOSE_COUNT} détail${VERBOSE_COUNT>1?'s':''} technique${VERBOSE_COUNT>1?'s':''}`;
 }
 
 // Coalesce high-frequency token-estimate ticks into a single live row so the
@@ -4061,10 +4183,11 @@ function pushVerboseTick(input,output){
     VERBOSE_TICK_RAF=null;
     if(!VERBOSE_TICK_ROW||!VERBOSE_TICK_ROW.isConnected){
       VERBOSE_TICK_ROW=document.createElement('div');
-      VERBOSE_TICK_ROW.className='ln verbose-tick';
-      term.appendChild(VERBOSE_TICK_ROW);
+      VERBOSE_TICK_ROW.className='verbose-tick';
+      ensureVerboseGroup().appendChild(VERBOSE_TICK_ROW);
     }
     VERBOSE_TICK_ROW.innerHTML=`∙ streamed estimate · <b>${VERBOSE_TICK_TOTAL_IN}</b> in · <b>${VERBOSE_TICK_TOTAL_OUT}</b> out`;
+    updateVerboseSummary();
     term.scrollTop=term.scrollHeight;
   });
 }
@@ -4441,13 +4564,14 @@ function rbRenderFiles(body){
   const renderArtifacts=(items,filter='')=>{
     const host=document.getElementById('rbFilesUploads');if(!host)return;
     const q=filter.trim().toLowerCase();
-    const filtered=items.filter(it=>!q||String(it.name||'').toLowerCase().includes(q)||String(it.kind||'').toLowerCase().includes(q));
+    const filtered=items.filter(it=>!q||String(it.name||'').toLowerCase().includes(q)||String(it.path||'').toLowerCase().includes(q)||String(it.kind||'').toLowerCase().includes(q));
     const limited=filtered.slice(0,60);
     host.innerHTML=limited.length?limited.map(it=>
-      `<div class="rb-row"><div class="r-top"><span class="r-name" title="${escAttr(it.name)}">${esc(rbShortText(it.name,70))}</span></div>
+      `<div class="rb-row click" data-rb-file="${escAttr(it.path||it.name)}" title="View file"><div class="r-top"><span class="r-name" title="${escAttr(it.name)}">${esc(rbShortText(it.name,70))}</span></div>
        <div class="r-meta"><span>${esc(it.kind||'file')}</span><span>${Math.round((it.size||0)/1024)} KB</span></div></div>`).join('')+
       (filtered.length>limited.length?`<div class="rb-empty" style="padding:8px">${filtered.length-limited.length} more hidden by panel limit.</div>`:'')
       :'<div class="rb-empty" style="padding:8px">no matching files</div>';
+    host.querySelectorAll('[data-rb-file]').forEach(r=>r.addEventListener('click',()=>loadFileInPanel(r.dataset.rbFile)));
   };
   fetch('/artifacts').then(r=>r.json()).then(j=>{
     const items=Array.isArray(j.items)?j.items:[];
@@ -4660,6 +4784,7 @@ function handleEvent(ev){
     case 'RunStarted':{
       const turnCount=parseInt(localStorage.getItem('sparrow-turn-count')||'0',10)+1;
       localStorage.setItem('sparrow-turn-count',String(turnCount));
+      resetVerboseGroup();
       // The frontend already echoed `sparrow > <task>` when the user submitted
       // (runTask line()). Re-printing `▸ started` here was a noisy
       // double-render, so keep it verbose-only.
@@ -4779,13 +4904,7 @@ function handleEvent(ev){
       // cockpit indicating what the crew is doing.
       stripActiveDecorations();
       if(VERBOSE){
-        const dot=icon(ev.status);
-        const roleCl=roleCls(ev.role);
-        const newLine=line('<span class="'+roleCl+'">'+dot+'</span> <span class="'+roleCl+'" style="font-weight:500">'+esc(ev.role)+'</span>'+(isThinking?' <span class="sp">◌</span>':'')+' <span class="muted">'+esc(verbedNote)+'</span>'+(isThinking?'<span class="caret"></span>':'')+(isThinking?'<span class="agent-activity">'+esc(note||'working')+'</span>':''));
-        if(isThinking){
-          LAST_AGENT_LINE=newLine;
-          LAST_ACTIVITY=newLine.querySelector('.agent-activity');
-        }
+        verboseLine(`${icon(ev.status)} ${ev.role} · ${verbedNote}`,roleCls(ev.role));
       }
       break;
     }
@@ -4953,7 +5072,9 @@ function setRunActive(active){
   runActive=active;
   const stop=$('stopBtn'),run=$('runBtn'),ta=$('taskInput'),chromeAbort=$('abortChromeBtn');
   if(stop){
-    stop.style.display=active?'inline-flex':'none';
+    stop.style.display='inline-flex';
+    stop.disabled=!active;
+    stop.setAttribute('aria-disabled',String(!active));
     stop.style.boxShadow=active?'0 0 0 0 color-mix(in srgb,var(--rem) 60%,transparent)':'none';
     stop.style.animation=active?'abort-pulse 1.4s ease-in-out infinite':'none';
   }
@@ -5039,9 +5160,9 @@ document.addEventListener('DOMContentLoaded',()=>{
     .md-prose .md-tbl th{background:color-mix(in srgb,var(--brand) 10%,var(--panel));color:var(--brand);font-weight:700;text-align:left;padding:9px 11px;border-bottom:1px solid var(--line-hot);font-size:10.5px;letter-spacing:.02em;text-transform:uppercase}
     .md-prose .md-tbl td{padding:9px 11px;border-top:1px solid var(--line);color:var(--fg);line-height:1.45}
     .md-prose .md-tbl tr:nth-child(odd) td{background:color-mix(in srgb,var(--panel2) 70%,transparent)}
-    /* Verbose flood: collapse repeated streamed-output-estimate ticks into 1 live row */
-    .verbose-tick{font-size:11px;line-height:1.35;color:var(--dimmer);opacity:.72;letter-spacing:0;padding:2px 8px;border-left:2px solid var(--line);background:color-mix(in srgb,var(--planner) 4%,transparent)}
-    .verbose-tick b{color:var(--brand);font-variant-numeric:tabular-nums}
+    /* Verbose flood: token ticks live inside the compact details block. */
+    .verbose-group .verbose-tick{font-size:11px;line-height:1.35;color:var(--dimmer);opacity:.76;letter-spacing:0;padding:0;background:transparent;border:0}
+    .verbose-group .verbose-tick b{color:var(--brand);font-variant-numeric:tabular-nums}
     /* Live activity line near agent spinner */
     .agent-activity{display:inline-block;margin-left:7px;padding:1px 7px;border-radius:5px;background:color-mix(in srgb,var(--brand) 10%,transparent);color:var(--brand);font-size:11px;line-height:1.35;font-style:italic;animation:pulse-act 1.6s ease-in-out infinite}
     @keyframes pulse-act{0%,100%{opacity:.85}50%{opacity:.45}}

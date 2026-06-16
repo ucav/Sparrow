@@ -405,6 +405,121 @@ fn console_html_keeps_cost_updates_out_of_the_transcript() {
 }
 
 #[test]
+fn console_html_strips_streamed_think_blocks() {
+    let html =
+        std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");
+    for marker in [
+        "function _stripThinkStreamChunk(text)",
+        "STREAM_STATE.think=state",
+        "const start=lower.indexOf('<think>')",
+        "const end=lower.indexOf('</think>')",
+        "STREAM_STATE={mode:'prose',el:null,cardEl:null,lang:'',codeStarted:false,pending:'',think:_newThinkFilter()}",
+    ] {
+        assert!(
+            html.contains(marker),
+            "console.html must keep streamed think stripping marker `{}`",
+            marker
+        );
+    }
+}
+
+#[test]
+fn console_html_command_palette_button_toggles_closed() {
+    let html =
+        std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");
+    for marker in [
+        "if(palette?.classList.contains('open'))paletteClose();",
+        "else paletteOpen();",
+    ] {
+        assert!(
+            html.contains(marker),
+            "command palette button must toggle open/closed via marker `{}`",
+            marker
+        );
+    }
+}
+
+#[test]
+fn console_html_groups_verbose_lines_in_details() {
+    let html =
+        std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");
+    for marker in [
+        ".verbose-group summary",
+        "VERBOSE_GROUP=document.createElement('details')",
+        "VERBOSE_GROUP.className='ln verbose-group'",
+        "ensureVerboseGroup().appendChild(VERBOSE_TICK_ROW)",
+        "verboseLine(`${icon(ev.status)} ${ev.role} · ${verbedNote}`,roleCls(ev.role))",
+    ] {
+        assert!(
+            html.contains(marker),
+            "verbose output must stay grouped/collapsible via marker `{}`",
+            marker
+        );
+    }
+}
+
+#[test]
+fn console_html_has_abort_button_next_to_run() {
+    let html =
+        std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");
+    for marker in [
+        "grid-template-columns:auto auto minmax(280px,1fr) minmax(190px,270px) auto auto",
+        "#stopBtn{display:inline-flex",
+        "#stopBtn:disabled{opacity:.42",
+        r#"<button class="btn" id="runBtn">run</button>"#,
+        r#"<button class="btn" id="stopBtn" type="button" title="Abort the running task" aria-label="Abort the running task" disabled>abort</button>"#,
+        "stop.disabled=!active;",
+        "const _stopBtn=$('stopBtn');if(_stopBtn)_stopBtn.addEventListener('click',stopRun);",
+    ] {
+        assert!(
+            html.contains(marker),
+            "console.html must keep composer abort marker `{}`",
+            marker
+        );
+    }
+}
+
+#[test]
+fn console_html_file_rows_open_internal_viewer() {
+    let html =
+        std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");
+    for marker in [
+        r#"data-rb-file="${escAttr(path||name)}""#,
+        "host.querySelectorAll('[data-rb-file]').forEach(r=>r.addEventListener('click',()=>loadFileInPanel(r.dataset.rbFile)));",
+        r#"<div class="rb-row click" data-rb-file="${escAttr(it.path||it.name)}" title="View file">"#,
+        "String(it.path||'').toLowerCase().includes(q)",
+        "dpPath.textContent=path;",
+    ] {
+        assert!(
+            html.contains(marker),
+            "file/artifact rows must open internal viewer via marker `{}`",
+            marker
+        );
+    }
+}
+
+#[test]
+fn console_html_focus_mode_uses_roomy_but_not_huge_margins() {
+    let html =
+        std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");
+    for marker in [
+        "html[data-view=\"focus\"] #term{font-size:calc(15px * var(--read-scale,1));line-height:1.56;padding:22px clamp(28px,7vw,96px) 22px}",
+        "html[data-view=\"focus\"] .ln{max-width:min(1040px,100%);margin-left:0;margin-right:auto;padding:2px 0;line-height:1.56}",
+        ".verbose-group{margin:3px 0 5px",
+    ] {
+        assert!(
+            html.contains(marker),
+            "focus transcript density must keep marker `{}`",
+            marker
+        );
+    }
+    assert!(
+        !html.contains("padding:26px max(26px,calc((100% - 920px)/2))"),
+        "focus mode must not return to the old 200px+ centered gutters"
+    );
+}
+
+#[test]
 fn console_html_uses_system_ui_typography() {
     let html =
         std::fs::read_to_string("console.html").expect("console.html must ship with the WebView");

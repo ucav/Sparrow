@@ -27,6 +27,12 @@ impl Distiller {
         let mut convention_hints: Vec<String> = Vec::new();
         let mut directive_hints: Vec<String> = Vec::new();
 
+        // The initial user request is not always replayed as an Event::Message
+        // in WebView/console runs. Mine it directly so explicit "remember..."
+        // and preference instructions survive even on simple chat-only turns.
+        detect_preferences(task_description, &mut pref_hints);
+        detect_directives(task_description, &mut directive_hints);
+
         for event in events {
             match event {
                 Event::ToolUseProposed { name, args, .. } => {
@@ -211,6 +217,13 @@ fn detect_preferences(text: &str, hints: &mut Vec<String>) {
         ("always use", "has explicit preferences"),
         ("I like", "expressed a personal preference"),
         ("I want", "expressed a desire"),
+        ("je préfère", "expressed a personal preference"),
+        ("je prefere", "expressed a personal preference"),
+        ("j'aime", "expressed a personal preference"),
+        ("je veux", "expressed a desire"),
+        ("utilise toujours", "has explicit preferences"),
+        ("n'utilise pas", "has explicit dislikes"),
+        ("ne pas utiliser", "has explicit dislikes"),
     ];
     let lower = text.to_lowercase();
     for (pattern, hint) in pref_patterns {

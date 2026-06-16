@@ -1,6 +1,6 @@
 [package]
 name = "sparrow-intel"
-version = "0.10.2"
+version = "0.10.3"
 edition = "2024"
 description = "Public release intelligence cache for Sparrow"
 license = "MIT"

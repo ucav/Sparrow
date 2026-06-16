@@ -1,4 +1,4 @@
-use crate::capabilities::{Skill, SkillLibrary};
+use crate::capabilities::{Skill, SkillLibrary, is_unfit_for_skill};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -283,7 +283,16 @@ pub fn load_markdown_commands(project_root: &Path, config_dir: &Path) -> Vec<Sla
 }
 
 pub fn skill_commands(library: &dyn SkillLibrary) -> Vec<SlashCommand> {
-    library.all().into_iter().map(skill_to_command).collect()
+    library
+        .all()
+        .into_iter()
+        .filter(|skill| {
+            !is_unfit_for_skill(&skill.name)
+                && !is_unfit_for_skill(&skill.description)
+                && !is_unfit_for_skill(&skill.body)
+        })
+        .map(skill_to_command)
+        .collect()
 }
 
 pub fn all_commands(
@@ -513,6 +522,50 @@ mod tests {
             allowed_tools: Vec::new(),
         }]));
         let commands = all_commands(Path::new("."), Path::new("."), Some(&skills));
+        assert!(commands.iter().any(|c| c.name == "fix-ci"));
+    }
+
+    #[test]
+    fn poisoned_skill_is_not_exposed_as_slash_command() {
+        let skills = TestSkills(Mutex::new(vec![
+            Skill {
+                name: "code-review".into(),
+                description: "Reusable pattern learned from: compte les fichiers .rs du projet"
+                    .into(),
+                trigger: vec!["review".into()],
+                body: "## Approach\n.claude/worktrees/tmp/src/main.rs".into(),
+                source_file: "code-review/SKILL.md".into(),
+                usage_count: 0,
+                created_at: "2026-06-15".into(),
+                score: 0.3,
+                auto_generated: true,
+                references: Vec::new(),
+                templates: Vec::new(),
+                scripts: Vec::new(),
+                assets: Vec::new(),
+                manifest_version: None,
+                allowed_tools: Vec::new(),
+            },
+            Skill {
+                name: "Fix CI".into(),
+                description: "Repair CI failures.".into(),
+                trigger: vec!["ci".into()],
+                body: "inspect logs".into(),
+                source_file: "fix-ci/SKILL.md".into(),
+                usage_count: 0,
+                created_at: "2026-06-02".into(),
+                score: 0.8,
+                auto_generated: false,
+                references: Vec::new(),
+                templates: Vec::new(),
+                scripts: Vec::new(),
+                assets: Vec::new(),
+                manifest_version: None,
+                allowed_tools: Vec::new(),
+            },
+        ]));
+        let commands = all_commands(Path::new("."), Path::new("."), Some(&skills));
+        assert!(!commands.iter().any(|c| c.name == "code-review"));
         assert!(commands.iter().any(|c| c.name == "fix-ci"));
     }
 
